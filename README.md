@@ -1,78 +1,76 @@
-# Nuxt Minimal Starter
+# gazes v2 — Clean monochrome redesign
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+This Nuxt 4 app was redesigned to a crisp, black-and-white interface with subtle purple accents. The homepage features a focused hero, fast search, and clean cards. Anime detail pages have consistent pills, tabs, and episode grids. A safe media proxy and resolver are included.
 
-## Setup
+## What changed
+- Global CSS extracted to `assets/css/theme.css` and loaded via `nuxt.config.ts`.
+- New layout with `components/SiteHeader.vue`, unified header/footer.
+- Minimalist homepage in `pages/index.vue` with search wired to `/api/search`.
+- Detail page (`pages/anime/[id].vue`) styled to match the new theme.
+- Robust `/api/proxy` and `/api/player/resolve` for streaming friendliness.
 
-Make sure to install dependencies:
+## Run locally
+Use your preferred package manager.
 
 ```bash
-# npm
-npm install
-
-# pnpm
-pnpm install
-
-# yarn
-yarn install
-
-# bun
+# install deps
 bun install
-```
 
-## Development Server
-
-Start the development server on `http://localhost:3000`:
-
-```bash
-# npm
-npm run dev
-
-# pnpm
-pnpm dev
-
-# yarn
-yarn dev
-
-# bun
+# start dev server
 bun run dev
 ```
 
+Dev server will print the URL (e.g. http://localhost:3000 or 3001 if 3000 is busy).
+
 ## Production
-
-Build the application for production:
-
 ```bash
-# npm
-npm run build
-
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
 bun run build
-```
-
-Locally preview production build:
-
-```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
 bun run preview
 ```
 
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+## Notes
+- Styling uses custom CSS variables and small utilities; Tailwind is installed and available.
+- The proxy endpoint only serves media (m3u8/mp4) and will reject HTML pages.
+
+## Tailwind CSS
+
+This project includes Tailwind via `@nuxtjs/tailwindcss`.
+
+- Entry CSS: `assets/css/tailwind.css` (contains `@tailwind base; @tailwind components; @tailwind utilities`)
+- Custom theme: `assets/css/theme.css` (loaded after Tailwind for overrides)
+- Config: `tailwind.config.ts` (maps our CSS variables to Tailwind colors)
+
+Mapped colors you can use in classes:
+
+- `bg-bg`, `bg-panel`, `border-border`
+- `text-text`, `text-ink`, `text-muted`
+- `bg-accent`, `text-accent`, `border-accent`, `bg-accent-600`
+
+Examples:
+
+```html
+<div class="bg-panel text-ink border border-border rounded-xl p-4">
+	<h2 class="text-lg font-semibold">Panel title</h2>
+	<p class="text-muted">Muted description.</p>
+	<button class="mt-3 inline-flex items-center gap-2 bg-accent hover:bg-accent-600 text-white font-semibold px-3 py-2 rounded-lg">
+		Call to action
+	</button>
+	<a class="ml-3 text-accent underline">Link</a>
+  
+	<!-- Container helper from Tailwind config -->
+	<div class="container mt-6">Centered content with padding</div>
+  
+	<!-- Utility spacing/typography works as usual -->
+	<div class="mt-4 grid grid-cols-2 gap-4">
+		<div class="h-12 bg-bg border border-border rounded" />
+		<div class="h-12 bg-bg border border-border rounded" />
+	</div>
+```
+
+Notes:
+
+- Preflight is enabled by default. If you need to disable it, set `preflight: false` under `@nuxtjs/tailwindcss` module options or via PostCSS.
+- If you generate class names dynamically, consider a Tailwind `safelist` in `tailwind.config.ts`.
 
 ## Media proxy endpoints
 

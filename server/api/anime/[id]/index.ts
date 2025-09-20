@@ -1,3 +1,5 @@
+import { parseAnimePage } from '#shared/utils/parsers'
+
 export default defineEventHandler(async (event) => {
     const id = event.context.params?.id
 

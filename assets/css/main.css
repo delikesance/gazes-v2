@@ -1,0 +1,58 @@
+/* Base theme tokens */
+:root {
+    --bg: #09090b;           /* zinc-950 */
+    --panel: rgba(24,24,27,0.6); /* zinc-900/60 */
+    --border: #27272a;       /* zinc-800 */
+    --text: #fafafa;         /* zinc-50 */
+    --ink: #e4e4e7;          /* zinc-200 */
+    --muted: #a1a1aa;        /* zinc-400 */
+    --accent: #7c3aed;       /* violet-600 */
+    --accent-600: #6d28d9;   /* violet-700 */
+}
+
+html {
+    @apply bg-zinc-950 text-white antialiased;
+}
+
+/* Typography scale */
+h1 { @apply text-3xl md:text-4xl font-extrabold tracking-tight; }
+h2 { @apply text-2xl md:text-3xl font-bold; }
+h3 { @apply text-xl md:text-2xl font-semibold; }
+p  { @apply leading-relaxed; }
+
+.muted { color: var(--muted); }
+
+/* Generic layout helpers */
+.section { @apply py-6 md:py-8; }
+.row-title { @apply text-xl md:text-2xl font-semibold; }
+
+/* Form controls */
+.input {
+    @apply bg-zinc-900/50 border border-zinc-800 rounded-lg px-4 py-2 text-sm outline-none text-zinc-100 placeholder-zinc-500;
+}
+.input:focus { @apply ring-2 ring-violet-700/40 border-violet-700; }
+
+/* Buttons */
+.btn { @apply inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition-colors; }
+.btn.primary { @apply bg-violet-700 text-white border border-violet-700 hover:bg-violet-600; }
+.btn.secondary { @apply bg-zinc-900/60 text-zinc-100 border border-zinc-700 hover:border-zinc-600; }
+.btn.ghost { @apply bg-transparent text-zinc-200 border border-transparent hover:border-zinc-700; }
+.btn:disabled { @apply opacity-50 cursor-not-allowed; }
+
+/* Pills & badges */
+.pills { @apply flex flex-wrap gap-2; }
+.pill { @apply inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/40 px-3 py-1 text-xs text-zinc-200 hover:border-zinc-700 transition; }
+.badge { @apply inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 text-xs text-zinc-300; }
+.badge .dot { @apply inline-block h-2 w-2 rounded-full bg-violet-600; }
+
+/* Tabs */
+.tabs { @apply inline-flex items-center gap-2 bg-zinc-900/40 p-1 rounded-full border border-zinc-800; }
+.tab { @apply btn ghost px-3 py-1.5 text-xs md:text-sm rounded-full; }
+.tab.active { @apply bg-violet-700 text-white border border-violet-700; }
+
+/* Dividers */
+.divider { @apply h-px w-full bg-gradient-to-r from-transparent via-zinc-800 to-transparent my-4; }
+
+/* Overlay / modal helpers */
+.scrim { @apply fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-40; }
+.card { @apply bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-xl; }

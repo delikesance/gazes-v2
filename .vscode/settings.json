@@ -1,0 +1,9 @@
+{
+  // Silence CSS language server complaining about Tailwind at-rules
+  "css.lint.unknownAtRules": "ignore",
+  // Enable Tailwind CSS features for Vue/Nuxt
+  "tailwindCSS.includeLanguages": {
+    "vue": "html"
+  },
+  "tailwindCSS.emmetCompletions": true
+}

@@ -194,3 +194,51 @@ export function parseAnimeResults(html: string): SearchResponse {
 
     return results;
 }
+
+export interface CatalogueItem { id: string; title: string; image: string }
+
+// Parse the catalogue grid page for items. It contains anchors with posters and titles.
+// We use cheerio for resilience across minor markup changes.
+export function parseCataloguePage(html: string): CatalogueItem[] {
+    const $ = cheerio.load(html)
+    const items: CatalogueItem[] = []
+
+    // Try to find cards; anime-sama catalogue tends to use anchors wrapping an image and title.
+    // Strategy: select all anchors under the main catalogue container that link to /catalogue/<slug>
+    $('a[href*="/catalogue/"]').each((_, a) => {
+        const href = $(a).attr('href') || ''
+        const u = (() => { try { return new URL(href, 'https://anime-sama.fr') } catch { return null } })()
+        if (!u) return
+        const parts = u.pathname.split('/').filter(Boolean)
+        const idx = parts.indexOf('catalogue')
+        const slug = idx !== -1 ? parts[idx + 1] : ''
+        if (!slug) return
+
+        // Title: try common heading tags, then elements with title-like classes, then img alt, then anchor text
+        let title = $(a).find('h1, h2, h3, h4').first().text().trim()
+        if (!title) title = $(a).find('[class*="title" i], [class*="name" i]').first().text().trim()
+        if (!title) title = $(a).find('img').attr('alt')?.trim() || ''
+        if (!title) title = $(a).text().replace(/\s+/g, ' ').trim()
+        if (!title) return
+
+        // Image: handle lazy-loaded images and srcset
+        const $img = $(a).find('img').first()
+        let image = $img.attr('src') || ''
+        if (!image) image = $img.attr('data-src') || $img.attr('data-lazy-src') || ''
+        if (!image) {
+            const srcset = $img.attr('srcset') || ''
+            if (srcset) {
+                // pick the first URL from srcset
+                const first = srcset.split(',')[0]?.trim().split(' ')[0]
+                if (first) image = first
+            }
+        }
+        if (!image) return
+
+        items.push({ id: slug, title, image })
+    })
+
+    // Deduplicate by id
+    const seen = new Set<string>()
+    return items.filter(it => (seen.has(it.id) ? false : (seen.add(it.id), true)))
+}
