@@ -10,11 +10,11 @@ export interface VideoProvider {
 // Verified providers configuration - ordered by reliability
 export const VERIFIED_PROVIDERS: VideoProvider[] = [
   {
-    hostname: 'sendvid.com',
+    hostname: 'video.sibnet.ru',
     reliability: 10,
-    description: 'SendVid - Direct MP4 URLs with reliable extraction',
-    extractionPatterns: ['MP4 direct links in HTML'],
-    knownIssues: []
+    description: 'SibNet - Reliable MP4 URLs with relative path extraction',
+    extractionPatterns: ['MP4 relative paths in JavaScript'],
+    knownIssues: ['Requires relative-to-absolute URL conversion']
   },
   {
     hostname: 'streamtape.com', 
@@ -45,11 +45,18 @@ export const VERIFIED_PROVIDERS: VideoProvider[] = [
     knownIssues: ['Often requires token-based access']
   },
   {
-    hostname: 'www.myvi.top',
+    hostname: 'www.myvi.tv',
     reliability: 3,
     description: 'MyVi - Requires advanced JavaScript extraction',
     extractionPatterns: ['Dynamic JavaScript loading'],
-    knownIssues: ['Complex obfuscation', 'No direct URLs found yet']
+    knownIssues: ['Complex obfuscation', 'Anti-bot protection']
+  },
+  {
+    hostname: 'sendvid.com',
+    reliability: 2,
+    description: 'SendVid - Currently experiencing 404 errors',
+    extractionPatterns: ['MP4 direct links in HTML'],
+    knownIssues: ['Many URLs returning 404 Not Found']
   }
 ]
 

@@ -34,39 +34,133 @@ const { data: info, error } = await useFetch<AnimeInfo>(
 
 const selectedLang = ref<"vostfr" | "vf">("vostfr");
 const selectedSeason = ref<Season | null>(null);
+const selectedSeasonUrl = ref<string>("");
 const episodes = ref<Episode[]>([]);
 const loadingEps = ref(false);
+const availableLanguages = ref<{ vostfr: boolean; vf: boolean }>({ vostfr: false, vf: false });
+const checkingLanguages = ref(false);
 
-const seasonsByType = computed(() => {
-    const groups: Record<string, Season[]> = {};
-    for (const s of info.value?.seasons || []) {
-        (groups[s.type] ||= []).push(s);
-    }
-    return groups;
+// Computed property for anime seasons to ensure consistency
+const animeSeasons = computed(() => {
+    return info.value?.seasons?.filter(season => season.type?.toLowerCase() === 'anime') || [];
 });
+
+async function checkLanguageAvailability(seasonSlug: string): Promise<{ vostfr: boolean; vf: boolean }> {
+    debugLog('🔍 Checking language availability for season:', seasonSlug);
+    checkingLanguages.value = true;
+    
+    const results = { vostfr: false, vf: false };
+    
+    // Test both languages in parallel
+    const tests = await Promise.allSettled([
+        $fetch<{ episodes: Episode[] }>(`/api/anime/${id.value}/seasons/${seasonSlug}/vostfr`).then(data => ({ lang: 'vostfr', data })),
+        $fetch<{ episodes: Episode[] }>(`/api/anime/${id.value}/seasons/${seasonSlug}/vf`).then(data => ({ lang: 'vf', data }))
+    ]);
+    
+    for (const test of tests) {
+        if (test.status === 'fulfilled') {
+            const { lang, data } = test.value;
+            const hasEpisodes = data?.episodes && data.episodes.length > 0;
+            results[lang as 'vostfr' | 'vf'] = hasEpisodes;
+            debugLog(`✅ ${lang.toUpperCase()} available:`, hasEpisodes, `(${data?.episodes?.length || 0} episodes)`);
+        } else {
+            debugLog(`❌ Language test failed:`, test.reason);
+        }
+    }
+    
+    checkingLanguages.value = false;
+    return results;
+}
 
 async function pickSeason(s: Season) {
     selectedSeason.value = s;
-    // Infer language support from the season URL; switch if current lang unsupported
-    const supportsVostfr = /\/(vostfr)(?:\b|\/|$)/i.test(s.url);
-    const supportsVf = /\/(vf)(?:\b|\/|$)/i.test(s.url);
-    if (supportsVf && !supportsVostfr && selectedLang.value === "vostfr")
-        selectedLang.value = "vf";
-    if (supportsVostfr && !supportsVf && selectedLang.value === "vf")
-        selectedLang.value = "vostfr";
+    selectedSeasonUrl.value = s.url;
     loadingEps.value = true;
     episodes.value = [];
+    
     try {
+        // Extract season slug from URL
         const parts = (s.url || "").split("/").filter(Boolean);
         const last = parts[parts.length - 1];
-        const seasonSlug =
-            last === "vf" || last === "vostfr"
-                ? parts[parts.length - 2] || "saison1"
-                : last || "saison1";
+// Add this as a utility function at the top of the script
+function extractSeasonSlug(url: string): string {
+  const parts = (url || "").split("/").filter(Boolean);
+  const last = parts[parts.length - 1];
+  return last === "vf" || last === "vostfr"
+    ? parts[parts.length - 2] || "saison1"
+    : last || "saison1";
+}
+
+        const seasonSlug = extractSeasonSlug(s.url);
+            
+        debugLog('🎯 Season selected:', { name: s.name, url: s.url, seasonSlug });
+        
+        // Check which languages are available for this season
+        availableLanguages.value = await checkLanguageAvailability(seasonSlug);
+        debugLog('🌐 Available languages:', availableLanguages.value);
+        
+        // Determine which language to use
+        let targetLang = selectedLang.value;
+        
+        // If current language is not available, switch to an available one
+        if (!availableLanguages.value[selectedLang.value]) {
+            if (availableLanguages.value.vostfr) {
+                targetLang = "vostfr";
+            } else if (availableLanguages.value.vf) {
+                targetLang = "vf";
+            } else {
+                debugLog('❌ No languages available for this season');
+                episodes.value = [];
+                return;
+            }
+            selectedLang.value = targetLang;
+            debugLog(`🔄 Switched language to ${targetLang.toUpperCase()} (${selectedLang.value} not available)`);
+        }
+        
+        // Load episodes for the determined language
+        await loadEpisodesForLanguage(seasonSlug, targetLang);
+        
+    } catch (error) {
+        console.error('❌ Error in pickSeason:', error);
+        episodes.value = [];
+    } finally {
+        loadingEps.value = false;
+    }
+}
+
+async function loadEpisodesForLanguage(seasonSlug: string, lang: "vostfr" | "vf") {
+    debugLog('📺 Loading episodes for:', { seasonSlug, lang });
+    
+    try {
         const { data } = await useFetch<{ episodes: Episode[] }>(
-            `/api/anime/${id.value}/seasons/${seasonSlug}/${selectedLang.value}`,
+            `/api/anime/${id.value}/seasons/${seasonSlug}/${lang}`,
         );
         episodes.value = data.value?.episodes || [];
+        debugLog(`✅ Loaded ${episodes.value.length} episodes for ${lang.toUpperCase()}`);
+    } catch (error) {
+        console.error(`❌ Failed to load episodes for ${lang}:`, error);
+        episodes.value = [];
+    }
+}
+
+async function switchLanguage(newLang: "vostfr" | "vf") {
+    if (!selectedSeason.value || !availableLanguages.value[newLang]) {
+        debugLog(`❌ Cannot switch to ${newLang}: not available or no season selected`);
+        return;
+    }
+    
+    selectedLang.value = newLang;
+    loadingEps.value = true;
+    episodes.value = [];
+    
+    try {
+        const parts = (selectedSeason.value.url || "").split("/").filter(Boolean);
+        const last = parts[parts.length - 1];
+        const seasonSlug = last === "vf" || last === "vostfr"
+            ? parts[parts.length - 2] || "saison1"
+            : last || "saison1";
+            
+        await loadEpisodesForLanguage(seasonSlug, newLang);
     } finally {
         loadingEps.value = false;
     }
@@ -74,16 +168,11 @@ async function pickSeason(s: Season) {
 
 onMounted(() => {
     if (!selectedSeason.value) {
-        const first = info.value?.seasons?.[0];
+        const first = animeSeasons.value[0];
         if (first) {
-            // Initialize lang from first season URL to avoid empty results (e.g., only VF available)
-            const supportsVf = /\/(vf)(?:\b|\/|$)/i.test(first.url);
-            const supportsVostfr = /\/(vostfr)(?:\b|\/|$)/i.test(first.url);
-            selectedLang.value = supportsVostfr
-                ? "vostfr"
-                : supportsVf
-                  ? "vf"
-                  : selectedLang.value;
+            debugLog('🎬 Auto-selecting first anime season:', first);
+            selectedSeason.value = first;
+            selectedSeasonUrl.value = first.url;
             pickSeason(first);
         }
     }
@@ -374,7 +463,7 @@ const getVideoErrorMessage = (errorCode: number): string => {
         <section class="section px-5 md:px-20">
             <!-- No Seasons Available -->
             <div
-                v-if="!info.seasons || info.seasons.length === 0"
+                v-if="!info.seasons || info.seasons.length === 0 || animeSeasons.length === 0"
                 class="text-center py-16"
             >
                 <div class="mb-4">
@@ -436,65 +525,42 @@ const getVideoErrorMessage = (errorCode: number): string => {
                     class="flex flex-wrap items-center justify-between gap-3 mb-3"
                 >
                     <h2>Seasons</h2>
-                    <div class="tabs">
+                    <div class="tabs flex flex-wrap gap-2">
                         <button
                             class="tab"
-                            :disabled="
-                                !!(
-                                    selectedSeason &&
-                                    !/\/(vostfr)(?:\b|\/|$)/i.test(
-                                        selectedSeason.url,
-                                    )
-                                )
-                            "
-                            :class="{ active: selectedLang === 'vostfr' }"
-                            @click="
-                                selectedLang = 'vostfr';
-                                selectedSeason && pickSeason(selectedSeason);
-                            "
+                            :disabled="!availableLanguages.vostfr || checkingLanguages"
+                            :class="{ 
+                                active: selectedLang === 'vostfr',
+                                'opacity-50': checkingLanguages
+                            }"
+                            @click="switchLanguage('vostfr')"
                         >
+                            <span v-if="checkingLanguages" class="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin mr-1"></span>
                             🇯🇵 VOSTFR
                         </button>
                         <button
                             class="tab"
-                            :disabled="
-                                !!(
-                                    selectedSeason &&
-                                    !/\/(vf)(?:\b|\/|$)/i.test(
-                                        selectedSeason.url,
-                                    )
-                                )
-                            "
-                            :class="{ active: selectedLang === 'vf' }"
-                            @click="
-                                selectedLang = 'vf';
-                                selectedSeason && pickSeason(selectedSeason);
-                            "
+                            :disabled="!availableLanguages.vf || checkingLanguages"
+                            :class="{ 
+                                active: selectedLang === 'vf',
+                                'opacity-50': checkingLanguages
+                            }"
+                            @click="switchLanguage('vf')"
                         >
+                            <span v-if="checkingLanguages" class="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin mr-1"></span>
                             🇫🇷 VF
                         </button>
                     </div>
                 </div>
 
-                <div
-                    v-for="(group, t) in seasonsByType"
-                    :key="t"
-                    class="section pt-2"
-                >
-                    <div class="mb-2">
-                        <span class="badge"
-                            ><span class="dot"></span>{{ t }}</span
-                        >
-                    </div>
-                    <div class="tabs">
+                <div class="mt-2">
+                    <div class="flex flex-wrap gap-2">
                         <button
-                            v-for="s in group"
+                            v-for="s in animeSeasons"
                             :key="s.url"
-                            class="tab"
+                            class="pill"
                             :class="{
-                                active:
-                                    selectedSeason &&
-                                    selectedSeason.url === s.url,
+                                'selected': selectedSeasonUrl === s.url
                             }"
                             @click="pickSeason(s)"
                         >
@@ -542,7 +608,7 @@ const getVideoErrorMessage = (errorCode: number): string => {
                     </div>
                     <div
                         v-else-if="episodes.length > 0"
-                        class="flex flex-wrap gap-2 mt-2"
+                        class="flex flex-wrap gap-3 mt-4"
                     >
                         <button
                             v-for="e in episodes"
@@ -550,7 +616,7 @@ const getVideoErrorMessage = (errorCode: number): string => {
                             class="pill hover:border-zinc-600"
                             @click="play(e)"
                         >
-                            Ep {{ e.episode }} ▶️
+                            Ep {{ e.episode }}
                         </button>
                     </div>
                 </div>

@@ -68,6 +68,11 @@ const VIDEO_URL_PATTERNS = [
   {
     regex: /["'](https:\/\/[^"']*(?:cdn|stream|video|media)[^"']*\.(?:mp4|m3u8)[^"']*)["']/gi,
     type: 'cdn'
+  },
+  // SibNet relative URLs (need to be converted to absolute)
+  {
+    regex: /src\s*:\s*["']([^"']*\/v\/[^"']*\.mp4)["']/gi,
+    type: 'sibnet_relative'
   }
 ] as const
 
@@ -153,7 +158,16 @@ function* iterateMatches(html: string, patterns: typeof VIDEO_URL_PATTERNS) {
       }
 
       const candidate = match[1] || match[0] // Use capture group if available
-      const validation = validateUrl(candidate)
+      
+      // Convert relative URLs to absolute URLs for specific providers
+      let processedCandidate = candidate
+      if (pattern.type === 'sibnet_relative' && !candidate.startsWith('http')) {
+        // Convert SibNet relative URLs to absolute
+        processedCandidate = `https://video.sibnet.ru${candidate.startsWith('/') ? '' : '/'}${candidate}`
+        console.log(`🔗 Converting SibNet relative URL: ${candidate} -> ${processedCandidate}`)
+      }
+      
+      const validation = validateUrl(processedCandidate)
       
       if (validation.isValid && validation.url) {
         urlCounts.set(pattern.type, currentCount + 1)

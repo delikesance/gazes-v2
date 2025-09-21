@@ -42,6 +42,7 @@ p  { @apply leading-relaxed; }
 /* Pills & badges */
 .pills { @apply flex flex-wrap gap-2; }
 .pill { @apply inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/40 px-3 py-1 text-xs text-zinc-200 hover:border-zinc-700 transition; }
+.pill.selected { @apply bg-purple-500/40 border-purple-500; }
 .badge { @apply inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 text-xs text-zinc-300; }
 .badge .dot { @apply inline-block h-2 w-2 rounded-full bg-violet-600; }
 
