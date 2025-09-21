@@ -182,13 +182,6 @@ export function parseAnimeResults(html: string): SearchResponse {
     const [, url, image, title, aliasesText] = match;
     if (!title?.trim() || !url) continue;
 
-    // Skip mangas: if the HTML around this match contains " Scans"
-    const matchIndex = match.index;
-    const contextStart = Math.max(0, matchIndex - 200);
-    const contextEnd = Math.min(html.length, matchIndex + match[0].length + 200);
-    const context = html.slice(contextStart, contextEnd);
-    if (context.includes(" Scans")) continue;
-
     const aliases = aliasesText?.trim()
       ? aliasesText
           .split(",")
@@ -233,6 +226,7 @@ export interface CatalogueItem {
   id: string;
   title: string;
   image: string;
+  type?: string; // e.g. 'Anime', 'Scans', etc.
 }
 
 // Parse the catalogue grid page for items. It contains anchors with posters and titles.
@@ -270,9 +264,21 @@ export function parseCataloguePage(html: string): CatalogueItem[] {
     if (!title) title = $(a).text().replace(/\s+/g, " ").trim();
     if (!title) return;
 
-    // Skip mangas: check the full anchor text for " Scans" (indicating manga/scanlations)
+    // Extract type from the full anchor text
     const fullText = $(a).text().replace(/\s+/g, " ").trim();
-    if (fullText.includes(" Scans")) return;
+    let type = 'Unknown';
+    
+    // Prioritize detection in this order
+    if (fullText.includes(' Scans')) {
+      type = 'Scans';
+    } else if (fullText.includes(' Anime ') || fullText.includes(' VOSTFR') || fullText.includes(' VF')) {
+      type = 'Anime';
+    } else if (fullText.includes(' Film ')) {
+      type = 'Film';
+    } else {
+      // If it's not explicitly anime, film, or scans, skip it (like Kai, etc.)
+      return;
+    }
 
     // Image: handle lazy-loaded images and srcset
     const $img = $(a).find("img").first();
@@ -289,7 +295,7 @@ export function parseCataloguePage(html: string): CatalogueItem[] {
     }
     if (!image) return;
 
-    items.push({ id: slug, title, image });
+    items.push({ id: slug, title, image, type });
   });
 
   // Deduplicate by id

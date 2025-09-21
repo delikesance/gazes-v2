@@ -1,6 +1,7 @@
 <template>
     <section
         class="hero-banner relative w-full h-[60vh] md:h-[80vh] lg:h-[90vh] overflow-hidden flex items-end"
+        :class="{ 'bg-gradient-to-br from-violet-900/40 via-zinc-900 to-zinc-950': !image }"
     >
         <!-- Background Image -->
         <img

@@ -4,6 +4,12 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   modules: ['@nuxt/icon', '@nuxt/image', '@nuxtjs/tailwindcss'],
   css: ['~/assets/css/main.css'],
+  // Runtime configuration for environment variables
+  runtimeConfig: {
+    // Server-side configuration (private keys) - these will be overridden by env vars
+    searchApiUrl: "https://anime-sama.fr/template-php/defaut/fetch.php",
+    searchApiTimeoutMs: "10000",
+  },
   // Ensure a single Vue runtime instance in the client bundle to avoid hydration issues
   vite: {
     resolve: {

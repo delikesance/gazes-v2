@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from "vue";
 import Hls from "hls.js";
 import { useFetch, useRoute } from "nuxt/app";
 
@@ -107,17 +107,23 @@ async function play(ep: Episode) {
     
     try {
         const target = await pickPlayableUrl(ep);
+        console.log('🎯 Target URL:', target);
+        
         const u64 = btoa(unescape(encodeURIComponent(target)))
             .replace(/\+/g, "-")
             .replace(/\//g, "_")
             .replace(/=+$/, "");
+        
         let referer: string | undefined;
         try {
             const u = new URL(target);
             referer = u.origin + "/";
         } catch {}
+        
         const route = useRoute();
         const debug = route.query.debug === "1" || route.query.debug === "true";
+        
+        console.log('🔍 Resolving with params:', { u64, referer, debug });
         
         const { data, error } = await useFetch<any>("/api/player/resolve", {
             params: {
@@ -129,9 +135,12 @@ async function play(ep: Episode) {
         });
         
         if (error.value) {
+            console.error('❌ Fetch error:', error.value);
             resolveError.value = `Network error: ${error.value.message || 'Failed to connect'}`;
             return;
         }
+        
+        console.log('📦 Resolve response:', data.value);
         
         const ok = data.value?.ok;
         resolveError.value = ok
@@ -142,15 +151,19 @@ async function play(ep: Episode) {
         
         if (ok && urls.length > 0) {
             const hlsFirst = urls.find((u: any) => u.type === "hls") || urls[0];
-            playUrl.value =
-                hlsFirst.proxiedUrl ||
-                `/api/proxy?url=${encodeURIComponent(hlsFirst.url)}&rewrite=1`;
+            const selectedUrl = hlsFirst.proxiedUrl || hlsFirst.url;
+            
+            console.log('✅ Selected media URL:', selectedUrl);
+            console.log('📊 Media type:', hlsFirst.type);
+            
+            playUrl.value = selectedUrl;
         } else {
-            // No fallback iframe - just show error
             playUrl.value = "";
             resolveError.value = resolveError.value || "No direct video streams found";
+            console.warn('⚠️ No playable URLs found');
         }
     } catch (error: any) {
+        console.error('💥 Unexpected error:', error);
         resolveError.value = `Unexpected error: ${error.message || 'Unknown error'}`;
     } finally {
         resolving.value = false;
@@ -172,38 +185,85 @@ function destroyHls() {
     }
 }
 
+async function setupVideo() {
+    const el = videoRef.value;
+    if (!el || !playUrl.value) return;
+
+    console.log('🎬 Setting up video with URL:', playUrl.value);
+    
+    // Reset video element
+    el.pause();
+    el.removeAttribute('src');
+    el.load();
+
+    // If the URL is M3U8 and HLS.js is supported, use it
+    if (isM3U8(playUrl.value) && Hls.isSupported()) {
+        console.log('📺 Using HLS.js for M3U8 playback');
+        destroyHls();
+        hls = new Hls({ 
+            enableWorker: true,
+            debug: false,
+            lowLatencyMode: false,
+            backBufferLength: 90
+        });
+        
+        hls.loadSource(playUrl.value);
+        hls.attachMedia(el);
+        
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            console.log('✅ HLS manifest parsed, starting playback');
+            el.play().catch((err) => {
+                console.warn('Autoplay blocked:', err);
+            });
+        });
+        
+        hls.on(Hls.Events.ERROR, (event, data) => {
+            console.error('❌ HLS error:', data);
+            if (data.fatal) {
+                switch (data.type) {
+                    case Hls.ErrorTypes.NETWORK_ERROR:
+                        console.log('🔄 Trying to recover from network error');
+                        hls?.startLoad();
+                        break;
+                    case Hls.ErrorTypes.MEDIA_ERROR:
+                        console.log('🔄 Trying to recover from media error');
+                        hls?.recoverMediaError();
+                        break;
+                    default:
+                        console.log('💥 Fatal error, destroying HLS');
+                        destroyHls();
+                        resolveError.value = `HLS playback error: ${data.details}`;
+                        break;
+                }
+            }
+        });
+        
+    } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
+        // Safari and some browsers support HLS natively
+        console.log('🍎 Using native HLS support');
+        destroyHls();
+        el.src = playUrl.value;
+        el.play().catch((err) => {
+            console.warn('Autoplay blocked:', err);
+        });
+    } else {
+        // Non-HLS fallback (MP4, etc.)
+        console.log('🎥 Using native video element for direct playback');
+        destroyHls();
+        el.src = playUrl.value;
+        el.play().catch((err) => {
+            console.warn('Autoplay blocked:', err);
+        });
+    }
+}
+
 watch([showPlayer, playUrl], async () => {
     if (!showPlayer.value) {
         destroyHls();
         return;
     }
-    const el = videoRef.value;
-    if (!el || !playUrl.value) return;
-
-    // If the URL is M3U8 and HLS.js is supported, use it; otherwise let the browser handle it
-    if (isM3U8(playUrl.value) && Hls.isSupported()) {
-        destroyHls();
-        hls = new Hls({ enableWorker: true });
-        hls.loadSource(playUrl.value);
-        hls.attachMedia(el);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            el.play().catch(() => {
-                /* ignore */
-            });
-        });
-    } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
-        // Safari and some browsers support HLS natively
-        el.src = playUrl.value;
-        el.play().catch(() => {
-            /* ignore */
-        });
-    } else {
-        // Non-HLS fallback
-        el.src = playUrl.value;
-        el.play().catch(() => {
-            /* ignore */
-        });
-    }
+    await nextTick(); // Wait for DOM updates
+    setupVideo();
 });
 
 onBeforeUnmount(() => {
@@ -217,22 +277,30 @@ const handleVideoError = (event: Event) => {
 
     if (error) {
         console.error("Video playback error:", error);
-        resolveError.value = `Erreur de lecture vidéo: ${getVideoErrorMessage(error.code)}`;
+        const errorMsg = getVideoErrorMessage(error.code);
+        resolveError.value = `Video playback error: ${errorMsg}`;
+        
+        // Try to get more info about the current source
+        if (playUrl.value) {
+            console.error("Failed URL:", playUrl.value);
+            console.error("Video readyState:", video.readyState);
+            console.error("Video networkState:", video.networkState);
+        }
     }
 };
 
 const getVideoErrorMessage = (errorCode: number): string => {
     switch (errorCode) {
         case 1:
-            return "Lecture interrompue par l'utilisateur";
+            return "Playback aborted by user";
         case 2:
-            return "Erreur réseau lors du téléchargement";
+            return "Network error during download";
         case 3:
-            return "Erreur de décodage du média";
+            return "Media decoding error";
         case 4:
-            return "Format vidéo non supporté";
+            return "Video format not supported";
         default:
-            return "Erreur inconnue";
+            return "Unknown error";
     }
 };
 </script>
@@ -470,7 +538,8 @@ const getVideoErrorMessage = (errorCode: number): string => {
                             Close ✖️
                         </button>
                     </div>
-                    <div v-if="resolving" class="muted p-2">
+                    <div v-if="resolving" class="muted p-2 text-center">
+                        <div class="w-6 h-6 border-2 border-violet-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
                         Resolving media… 🧭
                     </div>
                     <video
@@ -483,6 +552,10 @@ const getVideoErrorMessage = (errorCode: number): string => {
                         controlsList="nodownload"
                         disablePictureInPicture
                         @error="handleVideoError"
+                        @loadstart="() => console.log('📺 Video loadstart')"
+                        @loadedmetadata="() => console.log('📺 Video metadata loaded')"
+                        @canplay="() => console.log('📺 Video can play')"
+                        @playing="() => console.log('📺 Video playing')"
                     ></video>
                     <div class="muted text-center py-8" v-else-if="!resolving">
                         <div class="mb-4">

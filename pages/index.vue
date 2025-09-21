@@ -98,9 +98,32 @@ const fetchHeroContent = async () => {
         if (heroItem) {
             hero.value = heroItem;
             await fetchHeroDetails(heroItem.id);
+        } else {
+            // If no content found, try with a different genre
+            for (const genre of genres.slice(1, 3)) {
+                const fallbackResponse = await $fetch<{ items: Item[] }>("/api/catalogue", {
+                    params: {
+                        genre,
+                        random: "1",
+                        limit: 1,
+                    },
+                });
+                const fallbackItem = fallbackResponse?.items?.[0];
+                if (fallbackItem) {
+                    hero.value = fallbackItem;
+                    await fetchHeroDetails(fallbackItem.id);
+                    break;
+                }
+            }
         }
     } catch (error) {
         console.error("Failed to fetch hero content:", error);
+        // Set a minimal hero to stop loading state
+        hero.value = { id: "error", title: "Gazes", image: "" };
+        heroDetails.value = {
+            synopsis: "Découvrez le meilleur de l'animation japonaise et mondiale",
+            genres: ["Animation"]
+        };
     } finally {
         loadingHero.value = false;
     }
@@ -267,20 +290,21 @@ const handleRetrySearch = () => {
             <div class="relative">
                 <!-- Loading Hero -->
                 <div
-                    v-if="loadingHero"
-                    class="h-[60vh] md:h-[80vh] lg:h-[90vh] bg-zinc-900/40 animate-pulse flex items-center justify-center"
+                    v-if="loadingHero || !hero || !heroDetails"
+                    class="h-[60vh] md:h-[80vh] lg:h-[90vh] bg-gradient-to-br from-violet-900/20 via-zinc-900 to-zinc-950 flex items-center justify-center"
                 >
                     <div class="text-center">
                         <div
                             class="w-16 h-16 border-4 border-violet-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"
                         ></div>
-                        <p class="text-zinc-400">Chargement...</p>
+                        <h2 class="text-xl font-semibold mb-2">Chargement...</h2>
+                        <p class="text-zinc-400">Préparation du contenu</p>
                     </div>
                 </div>
 
                 <!-- Actual Hero -->
                 <HeroBanner
-                    v-else-if="hero && heroDetails"
+                    v-else
                     :title="hero.title"
                     :subtitle="heroSubtitle"
                     :image="heroDetails.banner || hero.image"
@@ -288,25 +312,6 @@ const handleRetrySearch = () => {
                     :secondary-to="`/anime/${hero.id}`"
                     :synopsis="heroDetails.synopsis"
                 />
-
-                <!-- Fallback Hero -->
-                <div
-                    v-else
-                    class="h-[60vh] md:h-[80vh] lg:h-[90vh] bg-gradient-to-br from-zinc-900 to-zinc-800 flex items-center justify-center"
-                >
-                    <div class="text-center px-5">
-                        <h1 class="text-4xl md:text-6xl font-black mb-4">
-                            Bienvenue sur Gazes
-                        </h1>
-                        <p class="text-zinc-300 text-lg md:text-xl mb-8">
-                            Découvrez le meilleur de l'animation japonaise et
-                            mondiale
-                        </p>
-                        <NuxtLink to="/catalogue" class="btn primary">
-                            Explorer le catalogue
-                        </NuxtLink>
-                    </div>
-                </div>
             </div>
 
             <!-- Genre Carousels -->
