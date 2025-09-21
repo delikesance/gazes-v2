@@ -1,5 +1,6 @@
 // New simple resolve endpoint - test with Naruto
 import { Buffer } from 'buffer'
+import { getProviderInfo, getProviderReliability, sortUrlsByProviderReliability } from '~/server/utils/videoProviders'
 
 // Decode base64url encoded string to UTF-8
 function decodeBase64Url(input: string): string {
@@ -52,6 +53,21 @@ const VIDEO_URL_PATTERNS = [
   {
     regex: /(?:var|const|let)\s+\w+\s*=\s*["'](https:\/\/[^"']*\.(?:m3u8|mp4)[^"']*)["']/gi,
     type: 'javascript'
+  },
+  // API endpoint patterns (common in video players)
+  {
+    regex: /["']https:\/\/[^"']*\/(?:api|source|video|stream|player)[^"']*["']/gi,
+    type: 'api'
+  },
+  // MyVi.top specific patterns
+  {
+    regex: /["'](https:\/\/[^"']*myvi[^"']*\.(?:mp4|m3u8|json|php|aspx)[^"']*)["']/gi,
+    type: 'myvi'
+  },
+  // General video hosting patterns
+  {
+    regex: /["'](https:\/\/[^"']*(?:cdn|stream|video|media)[^"']*\.(?:mp4|m3u8)[^"']*)["']/gi,
+    type: 'cdn'
   }
 ] as const
 
@@ -282,21 +298,43 @@ export default defineEventHandler(async (event) => {
       const uniqueUrls = new Map<string, any>()
       for (const urlData of extractedUrls) {
         if (!uniqueUrls.has(urlData.url)) {
+          const providerInfo = getProviderInfo(urlData.url)
           uniqueUrls.set(urlData.url, {
             type: urlData.type === 'hls' ? 'hls' : urlData.type === 'mp4' ? 'mp4' : 'unknown',
             url: urlData.url,
             proxiedUrl: `/api/proxy?url=${encodeURIComponent(urlData.url)}&rewrite=1`,
-            quality: urlData.quality
+            quality: urlData.quality,
+            provider: providerInfo ? {
+              hostname: providerInfo.hostname,
+              reliability: providerInfo.reliability,
+              description: providerInfo.description
+            } : null
           })
         }
       }
       
-      const finalUrls = Array.from(uniqueUrls.values())
+      // Sort URLs by provider reliability (best first)
+      const finalUrls = Array.from(uniqueUrls.values()).sort((a, b) => {
+        const reliabilityA = a.provider?.reliability || 0
+        const reliabilityB = b.provider?.reliability || 0
+        return reliabilityB - reliabilityA
+      })
+      
+      // Log provider information for debugging
+      console.log('🏆 URLs sorted by provider reliability:')
+      finalUrls.forEach((urlData, index) => {
+        const provider = urlData.provider
+        if (provider) {
+          console.log(`  ${index + 1}. ${provider.hostname} (reliability: ${provider.reliability}/10) - ${urlData.type}`)
+        } else {
+          console.log(`  ${index + 1}. Unknown provider - ${urlData.type}`)
+        }
+      })
       
       return {
         ok: true,
         urls: finalUrls,
-        message: `Fetched ${html.length} bytes. Found ${finalUrls.length} unique video URLs.`
+        message: `Fetched ${html.length} bytes. Found ${finalUrls.length} unique video URLs, sorted by provider reliability.`
       }
       
     } catch (fetchError: any) {

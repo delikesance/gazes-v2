@@ -101,8 +101,38 @@ import { isBlacklisted } from "~/shared/utils/hosts";
 async function pickPlayableUrl(ep: Episode): Promise<string> {
     const candidates =
         Array.isArray(ep.urls) && ep.urls.length ? ep.urls : [ep.url];
-    const preferred =
-        candidates.find((u) => !isBlacklisted(u)) || candidates[0];
+    
+    debugLog('🎯 Original URL candidates:', candidates);
+    
+    // Filter out blacklisted URLs first
+    const nonBlacklisted = candidates.filter((u) => !isBlacklisted(u));
+    const urlsToSort = nonBlacklisted.length > 0 ? nonBlacklisted : candidates;
+    
+    debugLog('🚫 After blacklist filtering:', urlsToSort);
+    
+    // Use our provider prioritization API to sort URLs by reliability
+    try {
+        const sortParams = new URLSearchParams();
+        urlsToSort.forEach(url => sortParams.append('urls', url));
+        
+        debugLog('🔄 Requesting provider sorting for:', urlsToSort);
+        const response = await $fetch(`/api/providers?action=sort&${sortParams.toString()}`) as any;
+        
+        if (response?.sortedUrls && response.sortedUrls.length > 0) {
+            debugLog('🏆 Provider API returned sorted URLs:', response.sortedUrls);
+            debugLog('📊 URL categorization:', response.categorizedUrls);
+            debugLog('✅ Selected best provider URL:', response.sortedUrls[0]);
+            return String(response.sortedUrls[0]); // Return the best provider URL
+        } else {
+            debugLog('⚠️ Provider API returned no sorted URLs:', response);
+        }
+    } catch (error) {
+        debugLog('❌ Provider sorting failed, falling back to manual selection:', error);
+    }
+    
+    // Fallback to original logic if API fails
+    const preferred = urlsToSort.find((u) => !isBlacklisted(u)) || urlsToSort[0];
+    debugLog('🔄 Fallback selection:', preferred);
     return String(preferred || ep.url);
 }
 
