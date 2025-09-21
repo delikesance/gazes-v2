@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount, computed } from "vue";
+import { ref, watch, onMounted, onBeforeUnmount, computed, nextTick } from "vue";
 import CardPoster from "~/components/CardPoster.vue";
 import { useSearch } from "~/composables/useSearch";
 
@@ -107,36 +107,35 @@ watch(
     { deep: true },
 );
 
-// Intersection observer for infinite scroll
+// Scroll-based infinite scroll (more reliable than intersection observer)
+const handleScroll = () => {
+    // Don't trigger if already loading, no more items, or searching
+    if (loading.value || !hasMore.value || isSearching.value) return;
+    
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+    const windowHeight = window.innerHeight;
+    const documentHeight = document.documentElement.scrollHeight;
+    
+    // Trigger when user is 5% from the bottom
+    const threshold = documentHeight * 0.05;
+    const distanceFromBottom = documentHeight - (scrollTop + windowHeight);
+    
+    if (distanceFromBottom <= threshold) {
+        page.value += 1;
+        fetchPage(page.value);
+    }
+};
+
+// Intersection observer for infinite scroll (keeping as fallback but using scroll instead)
 let observer: IntersectionObserver | null = null;
 
 const setupIntersectionObserver = () => {
-    if (!sentinel.value || observer) return;
-
-    observer = new IntersectionObserver(
-        (entries) => {
-            for (const entry of entries) {
-                if (
-                    entry.isIntersecting &&
-                    hasMore.value &&
-                    !loading.value &&
-                    !isSearching.value
-                ) {
-                    page.value += 1;
-                    fetchPage(page.value);
-                }
-            }
-        },
-        {
-            rootMargin: "400px 0px",
-            threshold: 0.1,
-        },
-    );
-
-    observer.observe(sentinel.value);
+    // Use scroll-based detection instead of intersection observer
+    window.addEventListener('scroll', handleScroll, { passive: true });
 };
 
 const cleanupObserver = () => {
+    window.removeEventListener('scroll', handleScroll);
     if (observer && sentinel.value) {
         observer.unobserve(sentinel.value);
         observer.disconnect();
@@ -197,6 +196,9 @@ const fetchPage = async (pageNum: number) => {
 };
 
 const resetAndFetch = () => {
+    // Clean up existing scroll listener before reset
+    cleanupObserver();
+    
     items.value = [];
     page.value = 1;
     hasMore.value = true;
@@ -246,11 +248,20 @@ const clearAll = () => {
 };
 
 // Lifecycle
-watch([selectedGenres], resetAndFetch, { deep: true });
+watch([selectedGenres], () => {
+    resetAndFetch();
+    // Re-setup scroll listener after genre change
+    nextTick(() => {
+        setupIntersectionObserver(); // This now sets up scroll listener
+    });
+}, { deep: true });
 
 onMounted(() => {
     resetAndFetch();
-    setupIntersectionObserver();
+    // Set up scroll listener after the component is fully mounted
+    nextTick(() => {
+        setupIntersectionObserver(); // This now sets up scroll listener
+    });
 });
 
 onBeforeUnmount(() => {
