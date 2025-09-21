@@ -1,140 +1,459 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
-import CarouselRow from '~/components/CarouselRow.vue'
-import HeroBanner from '~/components/HeroBanner.vue'
-const route = useRoute()
-type Item = { id: string; title: string; image: string }
+import { ref, watch, computed, onMounted } from "vue";
+import { useRoute, useRouter } from "nuxt/app";
+import CarouselRow from "~/components/CarouselRow.vue";
+import HeroBanner from "~/components/HeroBanner.vue";
+import { useSearch } from "~/composables/useSearch";
 
-const hero = ref<Item | null>(null)
-const heroSynopsis = ref<string>('')
-const heroBanner = ref<string | undefined>(undefined)
-const heroAltTitle = ref<string | undefined>(undefined)
-const heroGenres = ref<string[]>([])
-const query = ref<string>(String(route.query.q || ''))
-const searchResults = ref<Item[]>([])
-const searching = ref(false)
+// Set page metadata
+useSeoMeta({
+    title: "Accueil - Gazes",
+    description: "Découvrez le meilleur de l'animation japonaise et mondiale",
+});
 
-// Curate a handful of genres for homepage rows
-const genres = ['Action', 'Aventure', 'Comédie', 'Drame', 'Fantastique', 'Horreur', 'Romance', 'Science-Fiction', 'Sport']
+type Item = { id: string; title: string; image: string };
+type AnimeInfo = {
+    synopsis: string;
+    banner?: string;
+    altTitle?: string;
+    genres: string[];
+};
 
-async function fetchBySearch(term: string): Promise<Item[]> {
-  const { data } = await useFetch<{ items: Item[] }>(`/api/catalogue`, {
-    params: { search: term }
-  })
-  return data.value?.items || []
+const route = useRoute();
+const router = useRouter();
+
+// Hero section state
+const hero = ref<Item | null>(null);
+const heroDetails = ref<AnimeInfo | null>(null);
+const loadingHero = ref(false);
+
+// Curated genres for homepage rows
+const genres = [
+    "Action",
+    "Aventure",
+    "Comédie",
+    "Drame",
+    "Fantastique",
+    "Horreur",
+    "Romance",
+    "Science-Fiction",
+    "Sport",
+];
+
+// Search functionality with debouncing
+const searchFn = async (term: string): Promise<Item[]> => {
+    const response = await $fetch<{ items: Item[] }>("/api/catalogue", {
+        params: { search: term },
+    });
+    return response?.items || [];
+};
+
+const { query, search, executeSearch, clearSearch } = useSearch(searchFn, {
+    debounceMs: 300,
+    minLength: 2,
+});
+
+// Initialize search query from URL
+const initialQuery = String(route.query.q || "");
+if (initialQuery) {
+    query.value = initialQuery;
 }
 
-// SSR-friendly initial load
-if (query.value && query.value.trim()) {
-  searching.value = true
-  const { data } = await useFetch<{ items: Item[] }>(`/api/catalogue`, {
-    params: { search: query.value },
-    key: `home:search:${query.value}`
-  })
-  searchResults.value = data.value?.items || []
-  searching.value = false
-} else {
-  const { data } = await useFetch<{ items: Item[] }>(`/api/catalogue`, {
-    params: { genre: genres[0], random: '1' },
-    key: `home:hero:${genres[0]}:random`
-  })
-  const first = data.value?.items?.[0]
-  hero.value = first || null
-  if (hero.value) await fetchHeroDetails(hero.value.id)
-}
+// Watch for URL query changes
+watch(
+    () => route.query.q,
+    (newQuery) => {
+        const queryString = String(newQuery || "");
+        if (queryString !== query.value) {
+            query.value = queryString;
+        }
+    },
+);
 
-watch(() => route.query.q, async (q) => {
-  query.value = String(q || '')
-  if (query.value && query.value.trim()) {
-    searching.value = true
+// Update URL when search query changes
+watch(query, (newQuery) => {
+    const currentQuery = String(route.query.q || "");
+    if (newQuery !== currentQuery) {
+        router.replace({
+            query: newQuery ? { q: newQuery } : {},
+        });
+    }
+});
+
+// Fetch hero content when not searching
+const fetchHeroContent = async () => {
+    if (hero.value) return;
+
+    loadingHero.value = true;
     try {
-      const items = await fetchBySearch(query.value.trim())
-      searchResults.value = items
+        const response = await $fetch<{ items: Item[] }>("/api/catalogue", {
+            params: {
+                genre: genres[0],
+                random: "1",
+                limit: 1,
+            },
+        });
+
+        const heroItem = response?.items?.[0];
+        if (heroItem) {
+            hero.value = heroItem;
+            await fetchHeroDetails(heroItem.id);
+        }
+    } catch (error) {
+        console.error("Failed to fetch hero content:", error);
     } finally {
-      searching.value = false
+        loadingHero.value = false;
     }
-  } else {
-    if (!hero.value) {
-      const { data } = await useFetch<{ items: Item[] }>(`/api/catalogue`, { params: { genre: genres[0], random: '1' }, key: `home:hero:${genres[0]}:random` })
-      hero.value = data.value?.items?.[0] || null
-      if (hero.value) await fetchHeroDetails(hero.value.id)
+};
+
+// Fetch detailed info for hero
+const fetchHeroDetails = async (id: string) => {
+    try {
+        const response = await $fetch<AnimeInfo>(`/api/anime/${id}`);
+        heroDetails.value = response;
+    } catch (error) {
+        console.error("Failed to fetch hero details:", error);
+        heroDetails.value = null;
     }
-  }
-})
+};
 
-// Minimal shape of anime info we care about
-type AnimeInfo = { synopsis: string; banner?: string; altTitle?: string; genres: string[] }
-
-// Fetch detailed info for the hero (synopsis and optional banner)
-async function fetchHeroDetails(id: string) {
-  // Reset to avoid stale display
-  heroSynopsis.value = ''
-  heroBanner.value = undefined
-  heroAltTitle.value = undefined
-  heroGenres.value = []
-  try {
-    const { data } = await useFetch<AnimeInfo>(`/api/anime/${id}`)
-    if (data.value) {
-      heroSynopsis.value = data.value.synopsis || ''
-      heroBanner.value = data.value.banner || undefined
-      heroAltTitle.value = data.value.altTitle || undefined
-      heroGenres.value = Array.isArray(data.value.genres) ? data.value.genres : []
-    }
-  } catch (e) {
-    console.error('Failed to fetch hero details', e)
-  }
-}
-
-// Prefer up to 3 genres as subtitle
+// Computed properties
+const isSearching = computed(
+    () => !!query.value && query.value.trim().length >= 2,
+);
 const heroSubtitle = computed(() => {
-  const g = heroGenres.value?.filter(Boolean) || []
-  return g.slice(0, 3).join(' • ')
-})
+    const genres = heroDetails.value?.genres?.filter(Boolean) || [];
+    return genres.slice(0, 3).join(" • ");
+});
+
+const searchResultsTitle = computed(() => {
+    if (search.loading.value) return "Recherche en cours...";
+    if (search.error.value) return "Erreur de recherche";
+    if (search.isEmpty.value) return "Aucun résultat";
+    return `Résultats pour "${query.value}"`;
+});
+
+// Initialize hero content on mount if not searching
+onMounted(() => {
+    if (!isSearching.value) {
+        fetchHeroContent();
+    }
+});
+
+// Clear search handler
+const handleClearSearch = () => {
+    clearSearch();
+    router.replace({ query: {} });
+};
+
+// Retry search handler
+const handleRetrySearch = () => {
+    if (query.value) {
+        executeSearch(query.value);
+    }
+};
 </script>
 
 <template>
-  <section>
-    <template v-if="!query">
-      <HeroBanner v-if="hero" :title="hero.title" :subtitle="heroSubtitle" :image="heroBanner || hero.image"
-        :primary-to="`/anime/${hero.id}`" :secondary-to="`/anime/${hero.id}`" :synopsis="heroSynopsis" />
+    <div>
+        <!-- Search Results View -->
+        <section v-if="isSearching" class="section px-5 md:px-20">
+            <!-- Search Header -->
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h1 class="text-2xl font-bold mb-2">
+                        {{ searchResultsTitle }}
+                    </h1>
+                    <div class="flex items-center gap-4">
+                        <button
+                            @click="handleClearSearch"
+                            class="btn ghost text-sm"
+                        >
+                            ← Retour à l'accueil
+                        </button>
+                        <div
+                            v-if="search.loading.value"
+                            class="flex items-center gap-2 text-sm text-zinc-400"
+                        >
+                            <div
+                                class="w-4 h-4 border-2 border-violet-600 border-t-transparent rounded-full animate-spin"
+                            ></div>
+                            Recherche...
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-      <div class="flex flex-col gap-10 ">
-        <div v-for="g in genres" :key="g">
-          <Suspense>
-            <CarouselRow :title="g" :genre="g" card-size="sm" />
-            <template #fallback>
-              <section class="section">
-                <div class="flex justify-between items-center mb-4 px-20">
-                  <h3 class="row-title">{{ g }}</h3>
-                  <div class="flex items-center gap-5">
-                    <button type="button"><ClientOnly><Icon name="grommet-icons:form-previous" /></ClientOnly></button>
-                    <button type="button"><ClientOnly><Icon name="grommet-icons:form-next" /></ClientOnly></button>
-                  </div>
+            <!-- Search Results Content -->
+            <div class="min-h-[400px]">
+                <!-- Loading State -->
+                <div
+                    v-if="search.loading.value"
+                    class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
+                >
+                    <div
+                        v-for="i in 12"
+                        :key="i"
+                        class="aspect-[9/12] bg-zinc-900/40 border border-zinc-800 rounded-xl animate-pulse"
+                    />
                 </div>
-                <div class="relative">
-                  <div aria-hidden class="pointer-events-none absolute inset-y-0 left-0 w-20 z-10 bg-gradient-to-r from-zinc-950 to-transparent" />
-                  <div aria-hidden class="pointer-events-none absolute inset-y-0 right-0 w-20 z-10 bg-gradient-to-l from-zinc-950 to-transparent" />
-                  <div class="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pl-20 pr-20 scroll-pl-20 scroll-pr-20">
-                    <div v-for="i in 8" :key="i" class="snap-start shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/40 animate-pulse aspect-[9/12] w-[170px]" />
-                  </div>
+
+                <!-- Error State -->
+                <div v-else-if="search.error.value" class="text-center py-16">
+                    <div class="mb-4">
+                        <Icon
+                            name="heroicons:exclamation-triangle"
+                            class="w-16 h-16 text-amber-500 mx-auto mb-4"
+                        />
+                        <h3 class="text-xl font-semibold mb-2">
+                            Erreur de recherche
+                        </h3>
+                        <p class="text-zinc-400 mb-4">
+                            {{ search.error.value }}
+                        </p>
+                        <button @click="handleRetrySearch" class="btn primary">
+                            Réessayer
+                        </button>
+                    </div>
                 </div>
-              </section>
-            </template>
-          </Suspense>
-        </div>
-      </div>
-    </template>
-    <template v-else>
-      <section class="section">
-        <h2 class="px-20 mb-4">Search results</h2>
-        <div v-if="searching" class="px-20 text-zinc-400">Loading…</div>
-        <div v-else-if="!searchResults.length" class="px-20 text-zinc-400">No results</div>
-        <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 px-20">
-          <NuxtLink v-for="it in searchResults" :key="it.id" :to="`/anime/${it.id}`" class="block">
-            <CardPoster :to="`/anime/${it.id}`" :src="it.image" :title="it.title" size="sm" />
-          </NuxtLink>
-        </div>
-      </section>
-    </template>
-  </section>
+
+                <!-- Empty Results -->
+                <div v-else-if="search.isEmpty.value" class="text-center py-16">
+                    <div class="mb-4">
+                        <Icon
+                            name="heroicons:magnifying-glass"
+                            class="w-16 h-16 text-zinc-500 mx-auto mb-4"
+                        />
+                        <h3 class="text-xl font-semibold mb-2">
+                            Aucun résultat
+                        </h3>
+                        <p class="text-zinc-400 mb-4">
+                            Aucun contenu trouvé pour "{{ query }}"
+                        </p>
+                        <div class="flex justify-center gap-3">
+                            <button
+                                @click="handleClearSearch"
+                                class="btn secondary"
+                            >
+                                Effacer la recherche
+                            </button>
+                            <NuxtLink to="/catalogue" class="btn primary">
+                                Parcourir le catalogue
+                            </NuxtLink>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search Results -->
+                <div
+                    v-else
+                    class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
+                >
+                    <CardPoster
+                        v-for="item in search.results.value"
+                        :key="item.id"
+                        :to="`/anime/${item.id}`"
+                        :src="item.image"
+                        :title="item.title"
+                        size="sm"
+                    />
+                </div>
+            </div>
+        </section>
+
+        <!-- Homepage View -->
+        <section v-else>
+            <!-- Hero Banner -->
+            <div class="relative">
+                <!-- Loading Hero -->
+                <div
+                    v-if="loadingHero"
+                    class="h-[60vh] md:h-[80vh] lg:h-[90vh] bg-zinc-900/40 animate-pulse flex items-center justify-center"
+                >
+                    <div class="text-center">
+                        <div
+                            class="w-16 h-16 border-4 border-violet-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"
+                        ></div>
+                        <p class="text-zinc-400">Chargement...</p>
+                    </div>
+                </div>
+
+                <!-- Actual Hero -->
+                <HeroBanner
+                    v-else-if="hero && heroDetails"
+                    :title="hero.title"
+                    :subtitle="heroSubtitle"
+                    :image="heroDetails.banner || hero.image"
+                    :primary-to="`/anime/${hero.id}`"
+                    :secondary-to="`/anime/${hero.id}`"
+                    :synopsis="heroDetails.synopsis"
+                />
+
+                <!-- Fallback Hero -->
+                <div
+                    v-else
+                    class="h-[60vh] md:h-[80vh] lg:h-[90vh] bg-gradient-to-br from-zinc-900 to-zinc-800 flex items-center justify-center"
+                >
+                    <div class="text-center px-5">
+                        <h1 class="text-4xl md:text-6xl font-black mb-4">
+                            Bienvenue sur Gazes
+                        </h1>
+                        <p class="text-zinc-300 text-lg md:text-xl mb-8">
+                            Découvrez le meilleur de l'animation japonaise et
+                            mondiale
+                        </p>
+                        <NuxtLink to="/catalogue" class="btn primary">
+                            Explorer le catalogue
+                        </NuxtLink>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Genre Carousels -->
+            <div class="flex flex-col gap-10 mt-10">
+                <div v-for="genre in genres" :key="genre">
+                    <Suspense>
+                        <CarouselRow
+                            :title="genre"
+                            :genre="genre"
+                            card-size="sm"
+                            :skeleton-count="8"
+                        />
+                        <template #fallback>
+                            <section class="section">
+                                <div
+                                    class="flex justify-between items-center mb-4 px-20"
+                                >
+                                    <h3 class="row-title">{{ genre }}</h3>
+                                    <div class="flex items-center gap-5">
+                                        <button
+                                            type="button"
+                                            disabled
+                                            class="opacity-50"
+                                        >
+                                            <Icon
+                                                name="grommet-icons:form-previous"
+                                            />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled
+                                            class="opacity-50"
+                                        >
+                                            <Icon
+                                                name="grommet-icons:form-next"
+                                            />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="relative">
+                                    <div
+                                        aria-hidden
+                                        class="pointer-events-none absolute inset-y-0 left-0 w-20 z-10 bg-gradient-to-r from-zinc-950 to-transparent"
+                                    />
+                                    <div
+                                        aria-hidden
+                                        class="pointer-events-none absolute inset-y-0 right-0 w-20 z-10 bg-gradient-to-l from-zinc-950 to-transparent"
+                                    />
+                                    <div
+                                        class="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pl-20 pr-20 scroll-pl-20 scroll-pr-20"
+                                    >
+                                        <div
+                                            v-for="i in 8"
+                                            :key="i"
+                                            class="snap-start shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/40 animate-pulse aspect-[9/12] w-[170px]"
+                                        />
+                                    </div>
+                                </div>
+                            </section>
+                        </template>
+                    </Suspense>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <section class="section px-5 md:px-20 mt-16">
+                <div class="text-center mb-8">
+                    <h2>Découvrez plus de contenus</h2>
+                    <p class="muted">Explorez nos différentes catégories</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <NuxtLink
+                        to="/series"
+                        class="card p-6 text-center group hover:border-zinc-600 transition-colors"
+                    >
+                        <div
+                            class="w-16 h-16 mx-auto mb-4 rounded-full bg-violet-700/20 flex items-center justify-center group-hover:bg-violet-700/30 transition-colors"
+                        >
+                            <Icon
+                                name="heroicons:tv"
+                                class="w-8 h-8 text-violet-400"
+                            />
+                        </div>
+                        <h3 class="mb-2">Séries</h3>
+                        <p class="muted text-sm">
+                            Plongez dans des histoires captivantes
+                        </p>
+                    </NuxtLink>
+
+                    <NuxtLink
+                        to="/movies"
+                        class="card p-6 text-center group hover:border-zinc-600 transition-colors"
+                    >
+                        <div
+                            class="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-700/20 flex items-center justify-center group-hover:bg-emerald-700/30 transition-colors"
+                        >
+                            <Icon
+                                name="heroicons:film"
+                                class="w-8 h-8 text-emerald-400"
+                            />
+                        </div>
+                        <h3 class="mb-2">Films</h3>
+                        <p class="muted text-sm">
+                            Des chefs-d'œuvre cinématographiques
+                        </p>
+                    </NuxtLink>
+
+                    <NuxtLink
+                        to="/others"
+                        class="card p-6 text-center group hover:border-zinc-600 transition-colors"
+                    >
+                        <div
+                            class="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-700/20 flex items-center justify-center group-hover:bg-amber-700/30 transition-colors"
+                        >
+                            <Icon
+                                name="heroicons:sparkles"
+                                class="w-8 h-8 text-amber-400"
+                            />
+                        </div>
+                        <h3 class="mb-2">Autres</h3>
+                        <p class="muted text-sm">
+                            Contenus exclusifs et spéciaux
+                        </p>
+                    </NuxtLink>
+                </div>
+            </section>
+        </section>
+    </div>
 </template>
+
+<style scoped>
+/* Custom loading spinner */
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Smooth transitions */
+.fade-enter-active,
+.fade-leave-active {
+    transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+    opacity: 0;
+}
+</style>

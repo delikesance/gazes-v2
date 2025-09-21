@@ -1,6 +1,13 @@
 <template>
-    <nav :class="['p-10 w-full', isHome ? 'absolute top-0 left-0' : 'relative']">
-        <ul class="flex w-full items-center py-3 px-9 gap-10 pl-5 justify-center items-center">
+    <nav
+        :class="[
+            'p-10 w-full z-[99]',
+            isHome ? 'absolute top-0 left-0' : 'relative',
+        ]"
+    >
+        <ul
+            class="flex w-full items-center py-3 px-9 gap-10 pl-5 justify-center"
+        >
             <li class="-mb-2 text-xl">
                 <NuxtLink to="/catalogue">
                     <ClientOnly>
@@ -25,8 +32,8 @@
     </nav>
 </template>
 
-    <script setup lang="ts">
-    import { computed } from 'vue'
-    const route = useRoute()
-    const isHome = computed(() => route.path === '/')
-    </script>
+<script setup lang="ts">
+import { computed } from "vue";
+const route = useRoute();
+const isHome = computed(() => route.path === "/");
+</script>

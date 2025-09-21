@@ -1,64 +1,118 @@
 <template>
-  <NuxtLink
-    class="poster relative block overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/30 aspect-[9/12]"
-    :to="to"
-    :style="{ '--poster-w': posterWidth } as any"
-  >
-    <NuxtImg
-      :src="src"
-      :alt="title"
-      :sizes="sizesAttr"
-      class="absolute inset-0 h-full w-full object-cover"
-    />
-    <div class="absolute inset-0 z-10 bg-gradient-to-t from-zinc-950" />
-    <div class="absolute inset-x-0 bottom-0 z-20 px-2 pb-2 pt-1 font-medium overflow-hidden line-clamp-2 [text-wrap:balance] [hyphens:auto]"
-      :class="[titleSizeClass, titleWrapClass]">
-      {{ title }}
-    </div>
-  </NuxtLink>
-  
+    <NuxtLink
+        class="poster group relative block overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/30 aspect-[9/12] transition-all duration-200 hover:border-zinc-600 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+        :to="to"
+        :style="{ width: cardConfig.width }"
+        :aria-label="`Watch ${title}`"
+    >
+        <NuxtImg
+            :src="src"
+            :alt="title"
+            :sizes="cardConfig.sizes"
+            class="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            loading="lazy"
+        />
+
+        <!-- Gradient overlay -->
+        <div
+            class="absolute inset-0 z-10 bg-gradient-to-t from-zinc-950/90 via-transparent to-transparent"
+        />
+
+        <!-- Content overlay -->
+        <div class="absolute inset-x-0 bottom-0 z-20 p-3 text-white">
+            <h3
+                class="font-medium leading-tight line-clamp-2"
+                :class="titleClass"
+                :title="title"
+            >
+                {{ title }}
+            </h3>
+        </div>
+
+        <!-- Hover play indicator -->
+        <div
+            class="absolute inset-0 z-30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+        >
+            <div class="bg-black/70 rounded-full p-3 backdrop-blur-sm">
+                <ClientOnly>
+                    <Icon name="heroicons:play" class="w-6 h-6 text-white" />
+                </ClientOnly>
+            </div>
+        </div>
+    </NuxtLink>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed } from "vue";
+import { useDesignSystem, type CardSize } from "~/composables/useDesignSystem";
 
-type Size = 'sm' | 'md' | 'lg'
-const props = defineProps<{ to: string; src: string; title: string; size?: Size }>()
+const props = defineProps<{
+    to: string;
+    src: string;
+    title: string;
+    size?: CardSize;
+}>();
 
-const posterWidth = computed(() => ({ sm: '170px', md: '200px', lg: '240px' }[(props.size || 'md')]))
-const sizesAttr = computed(() => {
-  const map: Record<Size, string> = {
-    sm: '170px sm:190px md:200px',
-    md: '200px sm:220px md:240px',
-    lg: '240px sm:260px md:300px',
-  }
-  return map[(props.size || 'md') as Size]
-})
+const { getCardSize, getResponsiveSizes } = useDesignSystem();
 
-// Tweak font size/leading to maximize readability within two clamped lines
-const titleSizeClass = computed(() => {
-  const len = (props.title || '').length
-  if (len > 90) return 'text-[10px] leading-tight tracking-tighter'
-  if (len > 70) return 'text-[11px] leading-tight tracking-tighter'
-  if (len > 50) return 'text-[12px] leading-tight tracking-tight'
-  if (len > 38) return 'text-[13px] leading-tight tracking-tight'
-  return 'text-sm md:text-base leading-snug'
-})
+const cardConfig = computed(() => {
+    const size = props.size || "md";
+    const sizeConfig = getCardSize(size);
+    const responsiveSizes = getResponsiveSizes(size);
 
-const titleWrapClass = computed(() => {
-  const t = (props.title || '').trim()
-  if (!t) return 'break-words'
-  const tokens = t.split(/[\s\-–—·:]+/).filter(Boolean)
-  const longest = tokens.reduce((m, s) => Math.max(m, s.length), 0)
-  const hasSpace = /\s/.test(t)
-  if (!hasSpace || longest > 24) {
-    // Extremely long or spaceless strings: allow breaking anywhere
-    return '[overflow-wrap:anywhere] break-words'
-  }
-  if (longest > 16) {
-    // Long tokens: be more aggressive with wrapping
-    return '[overflow-wrap:anywhere] break-words'
-  }
-  return 'whitespace-normal break-words'
-})
+    return {
+        width: `${sizeConfig.widthPx}px`,
+        sizes:
+            Object.entries(responsiveSizes)
+                .map(
+                    ([breakpoint, width]) =>
+                        `(min-width: ${breakpoint}) ${width}`,
+                )
+                .join(", ") + `, ${sizeConfig.widthPx}px`,
+    };
+});
+
+const titleClass = computed(() => {
+    const titleLength = props.title?.length || 0;
+
+    if (titleLength > 50) return "text-xs";
+    if (titleLength > 30) return "text-sm";
+    return "text-sm md:text-base";
+});
 </script>
+
+<style scoped>
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.poster {
+    /* Ensure consistent aspect ratio */
+    container-type: size;
+}
+
+/* Better focus styles */
+.poster:focus {
+    transform: scale(1.02);
+}
+
+/* Loading state */
+.poster img[data-loading="true"] {
+    background: linear-gradient(90deg, #3f3f46 25%, #52525b 50%, #3f3f46 75%);
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+</style>

@@ -35,31 +35,46 @@ export default defineEventHandler(async (event) => {
     setResponseStatus(event, 204)
     return ''
   }
+  
+  // Set CORS headers for all requests
+  setResponseHeader(event, 'Access-Control-Allow-Origin', '*')
+  setResponseHeader(event, 'Access-Control-Expose-Headers', 'Content-Type,Content-Length,Accept-Ranges,Content-Range')
+  setResponseHeader(event, 'Vary', 'Origin')
+  
   const query = getQuery(event)
   // Support either `url` (URL-encoded) or `u64` (base64) to avoid breaking on '&' characters
   let rawUrl = ''
   if (typeof query.u64 === 'string' && query.u64) {
     const decoded = b64urlDecodeToUtf8(query.u64)
     if (!decoded) {
-      throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: 'Invalid base64 in u64' })
+      setResponseStatus(event, 400)
+      setResponseHeader(event, 'Content-Type', 'application/json; charset=utf-8')
+      return JSON.stringify({ ok: false, message: 'Invalid base64 in u64' })
     }
     rawUrl = decoded
   } else if (typeof query.url === 'string') {
     rawUrl = query.url
   }
   if (!rawUrl) {
-    throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: 'Missing url query parameter' })
+    setResponseStatus(event, 400)
+    setResponseHeader(event, 'Content-Type', 'application/json; charset=utf-8')
+    return JSON.stringify({ ok: false, message: 'Missing url query parameter' })
   }
 
   // Validate target URL and restrict to http(s)
   let target: URL
   try {
     target = new URL(rawUrl)
-  } catch {
-    throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: 'Invalid url' })
+  } catch (error) {
+    console.warn('[proxy] Invalid URL:', rawUrl, error)
+    setResponseStatus(event, 400)
+    setResponseHeader(event, 'Content-Type', 'application/json; charset=utf-8')
+    return JSON.stringify({ ok: false, message: 'Invalid url' })
   }
   if (target.protocol !== 'http:' && target.protocol !== 'https:') {
-    throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: 'Only http/https URLs are allowed' })
+    setResponseStatus(event, 400)
+    setResponseHeader(event, 'Content-Type', 'application/json; charset=utf-8')
+    return JSON.stringify({ ok: false, message: 'Only http/https URLs are allowed' })
   }
 
   // If the caller forgot to encode the full URL, some query params may have been parsed as top-level keys.
@@ -107,7 +122,15 @@ export default defineEventHandler(async (event) => {
     ;(event as any).node?.req?.on?.('close', () => controller.abort())
   } catch {}
 
-  const res = await fetch(target.toString(), { headers, redirect: 'follow', signal: controller.signal as any })
+  let res: Response
+  try {
+    res = await fetch(target.toString(), { headers, redirect: 'follow', signal: controller.signal as any })
+  } catch (error: any) {
+    console.warn('[proxy] Fetch error:', error)
+    setResponseStatus(event, 502)
+    setResponseHeader(event, 'Content-Type', 'application/json; charset=utf-8')
+    return JSON.stringify({ ok: false, message: `Failed to fetch: ${error?.message || 'Network error'}` })
+  }
 
   // Always allow CORS for the proxied response
   setResponseHeader(event, 'Access-Control-Allow-Origin', '*')
@@ -126,45 +149,58 @@ export default defineEventHandler(async (event) => {
 
   // If it's an HLS playlist and rewrite enabled, fetch as text and transform segment URIs
   const contentType = res.headers.get('Content-Type') || ''
-  const isM3U8 = /application\/(vnd\.apple\.mpegurl|x-mpegURL)|\.m3u8($|\?)/i.test(contentType) || /\.m3u8($|\?)/i.test(target.toString())
+  const isM3U8 = /application\/(vnd\.apple\.mpegurl|x-mpegURL)|text\/plain.*\.m3u8/i.test(contentType) || /\.m3u8($|\?)/i.test(target.toString())
 
   // Disallow proxying arbitrary HTML pages: this endpoint is for media only.
   if (!isM3U8 && /text\/html|application\/xhtml\+xml/i.test(contentType)) {
     setResponseStatus(event, 415, 'Unsupported Media Type')
     setResponseHeader(event, 'Content-Type', 'application/json; charset=utf-8')
-    return JSON.stringify({ ok: false, message: 'This proxy only serves media (m3u8/mp4). Use /api/player/resolve or /api/player/proxy for embed pages.' })
+    return JSON.stringify({ ok: false, message: 'This proxy only serves media (m3u8/mp4). Use /api/player/resolve for embed pages.' })
   }
 
   if (isM3U8 && rewrite && res.ok) {
-    const playlist = await res.text()
-    const base = target
+    try {
+      const playlist = await res.text()
+      const base = target
 
-    // Helper to build proxied URL preserving spoof headers
-    const buildProxy = (u: string) => {
-      const abs = new URL(u, base)
-      const params = new URLSearchParams({ url: abs.toString() })
-      if (referer) params.set('referer', referer)
-      if (origin) params.set('origin', origin)
-      if (ua) params.set('ua', ua)
-      return `/api/proxy?${params.toString()}`
-    }
-
-    const rewritten = playlist
-      .split(/\r?\n/)
-      .map((line) => {
-        if (!line || line.startsWith('#')) {
-          // Rewrite any URI="..." attribute in HLS tags (KEY, MAP, MEDIA, PART, PRELOAD-HINT, I-FRAME-STREAM-INF, SESSION-KEY, RENDITION-REPORT)
-          return line.replace(/URI="([^"]+)"/ig, (_m, p1) => `URI="${buildProxy(p1)}"`)
+      // Helper to build proxied URL preserving spoof headers
+      const buildProxy = (u: string) => {
+        try {
+          const abs = new URL(u, base)
+          const params = new URLSearchParams({ url: abs.toString() })
+          if (referer) params.set('referer', referer)
+          if (origin) params.set('origin', origin)
+          if (ua) params.set('ua', ua)
+          return `/api/proxy?${params.toString()}`
+        } catch (error) {
+          console.warn('[proxy] Failed to build proxy URL for:', u, error)
+          return u
         }
-        // Non-comment lines are segment or playlist URIs
-        return buildProxy(line)
-      })
-      .join('\n')
+      }
 
-    // Update headers for the modified body
-    setResponseHeader(event, 'Content-Type', 'application/vnd.apple.mpegurl')
+      const rewritten = playlist
+        .split(/\r?\n/)
+        .map((line) => {
+          // Skip empty lines
+          if (!line.trim()) return line
+          
+          if (line.startsWith('#')) {
+            // Rewrite any URI="..." attribute in HLS tags (KEY, MAP, MEDIA, PART, PRELOAD-HINT, I-FRAME-STREAM-INF, SESSION-KEY, RENDITION-REPORT)
+            return line.replace(/URI="([^"]+)"/ig, (_m, p1) => `URI="${buildProxy(p1)}"`)
+          }
+          // Non-comment lines are segment or playlist URIs
+          return buildProxy(line)
+        })
+        .join('\n')
 
-    return rewritten
+      // Update headers for the modified body
+      setResponseHeader(event, 'Content-Type', 'application/vnd.apple.mpegurl')
+
+      return rewritten
+    } catch (error) {
+      console.warn('[proxy] HLS rewrite failed:', error)
+      // Fall back to streaming the original content
+    }
   }
 
   // Stream body as-is for all other content types
