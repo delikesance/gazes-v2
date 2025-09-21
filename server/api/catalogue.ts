@@ -15,9 +15,16 @@ export default defineEventHandler(async (event) => {
 
   const debug = q.debug === '1' || q.debug === 'true'
 
-  const buildUrl = (base: string, key: 'genre[]' | 'genres[]') => {
+  // To exclude mangas, we filter them out in parseCataloguePage
+  let categories: string[] = []
+  const categorie = q.type || q.categorie || q.category
+  if (Array.isArray(categorie)) categories = categorie as string[]
+  else if (typeof categorie === 'string' && categorie) categories = [categorie]
+
+  const buildUrl = (base: string, genreKey: 'genre[]' | 'genres[]', categorieKey: 'categorie[]' | 'type[]') => {
     const u = new URL(base)
-    for (const g of genres) u.searchParams.append(key, g)
+    for (const g of genres) u.searchParams.append(genreKey, g)
+    for (const c of categories) u.searchParams.append(categorieKey, c)
     // Always include search, even if empty, to satisfy upstream filter behavior
     u.searchParams.set('search', search)
     if (page) u.searchParams.set('page', page)
@@ -27,13 +34,13 @@ export default defineEventHandler(async (event) => {
 
   // Per requirement, request must be: https://anime-sama.fr/catalogue/?genre[]=Action&search=
   const candidates = [
-    { base: 'https://anime-sama.fr/catalogue/', key: 'genre[]' as const, referer: 'https://anime-sama.fr/catalogue/' },
+    { base: 'https://anime-sama.fr/catalogue/', genreKey: 'genre[]' as const, categorieKey: 'categorie[]' as const, referer: 'https://anime-sama.fr/catalogue/' },
   ]
 
   const tried: Array<{ url: string; status: number; count: number }> = []
 
   for (const c of candidates) {
-    const url = buildUrl(c.base, c.key)
+    const url = buildUrl(c.base, c.genreKey, c.categorieKey)
     try {
       const res = await fetch(url.toString(), {
         method: 'GET',
@@ -59,6 +66,7 @@ export default defineEventHandler(async (event) => {
       if (genres.length > 0) {
         const searchUrl = new URL(c.base)
         searchUrl.searchParams.set('search', genres[0])
+        for (const cat of categories) searchUrl.searchParams.append('categorie[]', cat)
         if (page) searchUrl.searchParams.set('page', page)
         const res2 = await fetch(searchUrl.toString(), {
           method: 'GET',

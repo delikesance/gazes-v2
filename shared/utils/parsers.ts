@@ -182,6 +182,13 @@ export function parseAnimeResults(html: string): SearchResponse {
     const [, url, image, title, aliasesText] = match;
     if (!title?.trim() || !url) continue;
 
+    // Skip mangas: if the HTML around this match contains " Scans"
+    const matchIndex = match.index;
+    const contextStart = Math.max(0, matchIndex - 200);
+    const contextEnd = Math.min(html.length, matchIndex + match[0].length + 200);
+    const context = html.slice(contextStart, contextEnd);
+    if (context.includes(" Scans")) continue;
+
     const aliases = aliasesText?.trim()
       ? aliasesText
           .split(",")
@@ -262,6 +269,10 @@ export function parseCataloguePage(html: string): CatalogueItem[] {
     if (!title) title = $(a).find("img").attr("alt")?.trim() || "";
     if (!title) title = $(a).text().replace(/\s+/g, " ").trim();
     if (!title) return;
+
+    // Skip mangas: check the full anchor text for " Scans" (indicating manga/scanlations)
+    const fullText = $(a).text().replace(/\s+/g, " ").trim();
+    if (fullText.includes(" Scans")) return;
 
     // Image: handle lazy-loaded images and srcset
     const $img = $(a).find("img").first();
