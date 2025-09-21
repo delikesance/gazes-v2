@@ -20,6 +20,14 @@ type Episode = { episode: number; url: string; urls?: string[] };
 const route = useRoute();
 const id = computed(() => String(route.params.id || ""));
 
+// Debug logger function
+const debug = computed(() => route.query.debug === "1" || route.query.debug === "true");
+const debugLog = (...args: any[]) => {
+    if (debug.value) {
+        console.log(...args);
+    }
+};
+
 const { data: info, error } = await useFetch<AnimeInfo>(
     `/api/anime/${id.value}`,
 );
@@ -107,7 +115,7 @@ async function play(ep: Episode) {
     
     try {
         const target = await pickPlayableUrl(ep);
-        console.log('🎯 Target URL:', target);
+        debugLog('🎯 Target URL:', target);
         
         const u64 = btoa(unescape(encodeURIComponent(target)))
             .replace(/\+/g, "-")
@@ -120,16 +128,13 @@ async function play(ep: Episode) {
             referer = u.origin + "/";
         } catch {}
         
-        const route = useRoute();
-        const debug = route.query.debug === "1" || route.query.debug === "true";
-        
-        console.log('🔍 Resolving with params:', { u64, referer, debug });
+        debugLog('🔍 Resolving with params:', { u64, referer, debug: debug.value });
         
         const { data, error } = await useFetch<any>("/api/player/resolve", {
             params: {
                 u64,
                 referer,
-                ...(debug ? { debug: "1" } : {}),
+                ...(debug.value ? { debug: "1" } : {}),
             },
             timeout: 30000, // 30 second timeout
         });
@@ -140,7 +145,7 @@ async function play(ep: Episode) {
             return;
         }
         
-        console.log('📦 Resolve response:', data.value);
+        debugLog('📦 Resolve response:', data.value);
         
         const ok = data.value?.ok;
         resolveError.value = ok
@@ -153,8 +158,8 @@ async function play(ep: Episode) {
             const hlsFirst = urls.find((u: any) => u.type === "hls") || urls[0];
             const selectedUrl = hlsFirst.proxiedUrl || hlsFirst.url;
             
-            console.log('✅ Selected media URL:', selectedUrl);
-            console.log('📊 Media type:', hlsFirst.type);
+            debugLog('✅ Selected media URL:', selectedUrl);
+            debugLog('📊 Media type:', hlsFirst.type);
             
             playUrl.value = selectedUrl;
         } else {
@@ -189,7 +194,7 @@ async function setupVideo() {
     const el = videoRef.value;
     if (!el || !playUrl.value) return;
 
-    console.log('🎬 Setting up video with URL:', playUrl.value);
+    debugLog('🎬 Setting up video with URL:', playUrl.value);
     
     // Reset video element
     el.pause();
@@ -198,7 +203,7 @@ async function setupVideo() {
 
     // If the URL is M3U8 and HLS.js is supported, use it
     if (isM3U8(playUrl.value) && Hls.isSupported()) {
-        console.log('📺 Using HLS.js for M3U8 playback');
+        debugLog('📺 Using HLS.js for M3U8 playback');
         destroyHls();
         hls = new Hls({ 
             enableWorker: true,
@@ -211,7 +216,7 @@ async function setupVideo() {
         hls.attachMedia(el);
         
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            console.log('✅ HLS manifest parsed, starting playback');
+            debugLog('✅ HLS manifest parsed, starting playback');
             el.play().catch((err) => {
                 console.warn('Autoplay blocked:', err);
             });
@@ -222,15 +227,15 @@ async function setupVideo() {
             if (data.fatal) {
                 switch (data.type) {
                     case Hls.ErrorTypes.NETWORK_ERROR:
-                        console.log('🔄 Trying to recover from network error');
+                        debugLog('🔄 Trying to recover from network error');
                         hls?.startLoad();
                         break;
                     case Hls.ErrorTypes.MEDIA_ERROR:
-                        console.log('🔄 Trying to recover from media error');
+                        debugLog('🔄 Trying to recover from media error');
                         hls?.recoverMediaError();
                         break;
                     default:
-                        console.log('💥 Fatal error, destroying HLS');
+                        debugLog('💥 Fatal error, destroying HLS');
                         destroyHls();
                         resolveError.value = `HLS playback error: ${data.details}`;
                         break;
@@ -240,7 +245,7 @@ async function setupVideo() {
         
     } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
         // Safari and some browsers support HLS natively
-        console.log('🍎 Using native HLS support');
+        debugLog('🍎 Using native HLS support');
         destroyHls();
         el.src = playUrl.value;
         el.play().catch((err) => {
@@ -248,7 +253,7 @@ async function setupVideo() {
         });
     } else {
         // Non-HLS fallback (MP4, etc.)
-        console.log('🎥 Using native video element for direct playback');
+        debugLog('🎥 Using native video element for direct playback');
         destroyHls();
         el.src = playUrl.value;
         el.play().catch((err) => {
@@ -552,10 +557,10 @@ const getVideoErrorMessage = (errorCode: number): string => {
                         controlsList="nodownload"
                         disablePictureInPicture
                         @error="handleVideoError"
-                        @loadstart="() => console.log('📺 Video loadstart')"
-                        @loadedmetadata="() => console.log('📺 Video metadata loaded')"
-                        @canplay="() => console.log('📺 Video can play')"
-                        @playing="() => console.log('📺 Video playing')"
+                        @loadstart="() => debugLog('📺 Video loadstart')"
+                        @loadedmetadata="() => debugLog('📺 Video metadata loaded')"
+                        @canplay="() => debugLog('📺 Video can play')"
+                        @playing="() => debugLog('📺 Video playing')"
                     ></video>
                     <div class="muted text-center py-8" v-else-if="!resolving">
                         <div class="mb-4">

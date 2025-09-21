@@ -1,4 +1,5 @@
 // New simple resolve endpoint - test with Naruto
+import { Buffer } from 'buffer'
 
 // Decode base64url encoded string to UTF-8
 function decodeBase64Url(input: string): string {
@@ -8,7 +9,7 @@ function decodeBase64Url(input: string): string {
     // Add padding if necessary
     const padded = base64 + '==='.slice((base64.length + 3) % 4)
     // Decode using Node.js Buffer (Node-safe alternative to browser's atob)
-    return (globalThis as any).Buffer.from(padded, 'base64').toString('utf8')
+    return Buffer.from(padded, 'base64').toString('utf8')
   } catch (error) {
     console.warn('Failed to decode base64url:', error)
     return input
