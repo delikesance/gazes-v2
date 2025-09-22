@@ -126,11 +126,14 @@ export default defineEventHandler(async (event) => {
   try {
     res = await fetch(target.toString(), { headers, redirect: 'follow', signal: controller.signal as any })
   } catch (error: any) {
-    console.warn('[proxy] Fetch error:', error)
+    console.warn('[proxy] Fetch error for URL:', target.toString(), error)
     setResponseStatus(event, 502)
     setResponseHeader(event, 'Content-Type', 'application/json; charset=utf-8')
     return JSON.stringify({ ok: false, message: `Failed to fetch: ${error?.message || 'Network error'}` })
   }
+
+  console.log('[proxy] Fetch response status:', res.status, 'for URL:', target.toString())
+  console.log('[proxy] Response headers:', Object.fromEntries(res.headers.entries()))
 
   // Always allow CORS for the proxied response
   setResponseHeader(event, 'Access-Control-Allow-Origin', '*')
@@ -151,6 +154,8 @@ export default defineEventHandler(async (event) => {
   const contentType = res.headers.get('Content-Type') || ''
   const isM3U8 = /application\/(vnd\.apple\.mpegurl|x-mpegURL)|text\/plain.*\.m3u8/i.test(contentType) || /\.m3u8($|\?)/i.test(target.toString())
 
+  console.log('[proxy] Content-Type:', contentType, 'Is M3U8:', isM3U8, 'Rewrite enabled:', rewrite)
+
   // Disallow proxying arbitrary HTML pages: this endpoint is for media only.
   if (!isM3U8 && /text\/html|application\/xhtml\+xml/i.test(contentType)) {
     setResponseStatus(event, 415, 'Unsupported Media Type')
@@ -161,6 +166,9 @@ export default defineEventHandler(async (event) => {
   if (isM3U8 && rewrite && res.ok) {
     try {
       const playlist = await res.text()
+      console.log('[proxy] Original playlist length:', playlist.length)
+      console.log('[proxy] First 500 chars of playlist:', playlist.substring(0, 500))
+      
       const base = target
 
       // Helper to build proxied URL preserving spoof headers

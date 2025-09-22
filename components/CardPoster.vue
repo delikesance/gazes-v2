@@ -1,6 +1,6 @@
 <template>
     <NuxtLink
-        class="poster group relative block overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/30 aspect-[9/12] transition-all duration-200 hover:border-zinc-600 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+        class="poster group relative block overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/30 aspect-[9/12] transition-all duration-200 hover:border-zinc-600 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
         :to="to"
         :style="{ width: cardConfig.width }"
         :aria-label="`Watch ${title}`"
@@ -33,9 +33,9 @@
         <div
             class="absolute inset-0 z-30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
         >
-            <div class="bg-black/70 rounded-full p-3 backdrop-blur-sm">
+            <div class="bg-black/70 rounded-full w-12 h-12 grid place-items-center backdrop-blur-sm">
                 <ClientOnly>
-                    <Icon name="heroicons:play" class="w-6 h-6 text-white" />
+                    <Icon name="heroicons:play" class="w-6 h-6 text-white block" />
                 </ClientOnly>
             </div>
         </div>
@@ -51,6 +51,7 @@ const props = defineProps<{
     src: string;
     title: string;
     size?: CardSize;
+    fluid?: boolean; // when true, card stretches to parent width
 }>();
 
 const { getCardSize, getResponsiveSizes } = useDesignSystem();
@@ -61,7 +62,7 @@ const cardConfig = computed(() => {
     const responsiveSizes = getResponsiveSizes(size);
 
     return {
-        width: `${sizeConfig.widthPx}px`,
+        width: props.fluid ? '100%' : `${sizeConfig.widthPx}px`,
         sizes:
             Object.entries(responsiveSizes)
                 .map(
@@ -96,9 +97,7 @@ const titleClass = computed(() => {
 }
 
 /* Better focus styles */
-.poster:focus {
-    transform: scale(1.02);
-}
+/* Remove container scaling on focus; rely on focus ring */
 
 /* Loading state */
 .poster img[data-loading="true"] {

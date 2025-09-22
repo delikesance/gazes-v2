@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from "vue";
 import Hls from "hls.js";
 import { useFetch, useRoute } from "nuxt/app";
+import { extractSeasonSlug } from "~/shared/utils/season";
 
 // Types matching server/shared parser outputs (subset)
 type Season = { name: string; url: string; type: string };
@@ -15,7 +16,7 @@ type AnimeInfo = {
     seasons: Season[];
     manga?: { url: string; name?: string }[];
 };
-type Episode = { episode: number; url: string; urls?: string[] };
+type Episode = { episode: number; title?: string; url: string; urls?: string[] };
 
 const route = useRoute();
 const id = computed(() => String(route.params.id || ""));
@@ -51,74 +52,159 @@ async function checkLanguageAvailability(seasonSlug: string): Promise<{ vostfr: 
     
     const results = { vostfr: false, vf: false };
     
-    // Test both languages in parallel
+    // Quick optimization: if the season URL already contains a language, prioritize that one
+    const seasonUrl = selectedSeason.value?.url || '';
+    const urlContainsVf = seasonUrl.includes('/vf');
+    const urlContainsVostfr = seasonUrl.includes('/vostfr');
+    
+    if (urlContainsVf && !urlContainsVostfr) {
+        debugLog('🚀 Season URL indicates VF only, testing VF first...');
+        try {
+            const vfData = await $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/vf`);
+            const hasVfEpisodes = vfData?.episodes && vfData.episodes.length > 0;
+            results.vf = hasVfEpisodes;
+            debugLog(`✅ VF available:`, hasVfEpisodes, `(${vfData?.episodes?.length || 0} episodes)`);
+            
+            if (hasVfEpisodes) {
+                // VF works, quickly test VOSTFR with shorter timeout
+                try {
+                    const vostfrData = await Promise.race([
+                        $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/vostfr`),
+                        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('VOSTFR timeout')), 3000))
+                    ]);
+                    results.vostfr = (vostfrData as any)?.episodes && (vostfrData as any).episodes.length > 0;
+                    debugLog(`✅ VOSTFR available:`, results.vostfr, `(${(vostfrData as any)?.episodes?.length || 0} episodes)`);
+                } catch (error: any) {
+                    debugLog(`⚡ VOSTFR test skipped/failed (fast):`, error?.message || error);
+                    results.vostfr = false;
+                }
+                checkingLanguages.value = false;
+                return results;
+            }
+        } catch (error: any) {
+            debugLog(`❌ VF test failed:`, error?.message || error);
+            results.vf = false;
+        }
+    } else if (urlContainsVostfr && !urlContainsVf) {
+        debugLog('🚀 Season URL indicates VOSTFR only, testing VOSTFR first...');
+        try {
+            const vostfrData = await $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/vostfr`);
+            const hasVostfrEpisodes = vostfrData?.episodes && vostfrData.episodes.length > 0;
+            results.vostfr = hasVostfrEpisodes;
+            debugLog(`✅ VOSTFR available:`, hasVostfrEpisodes, `(${vostfrData?.episodes?.length || 0} episodes)`);
+            
+            if (hasVostfrEpisodes) {
+                // VOSTFR works, quickly test VF
+                try {
+                    const vfData = await Promise.race([
+                        $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/vf`),
+                        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('VF timeout')), 3000))
+                    ]);
+                    results.vf = (vfData as any)?.episodes && (vfData as any).episodes.length > 0;
+                    debugLog(`✅ VF available:`, results.vf, `(${(vfData as any)?.episodes?.length || 0} episodes)`);
+                } catch (error: any) {
+                    debugLog(`⚡ VF test skipped/failed (fast):`, error?.message || error);
+                    results.vf = false;
+                }
+                checkingLanguages.value = false;
+                return results;
+            }
+        } catch (error: any) {
+            debugLog(`❌ VOSTFR test failed:`, error?.message || error);
+            results.vostfr = false;
+        }
+    }
+    
+    // Fallback: test both languages in parallel with timeout for slow responses
+    debugLog('🔄 Testing both languages in parallel with timeout...');
     const tests = await Promise.allSettled([
-        $fetch<{ episodes: Episode[] }>(`/api/anime/${id.value}/seasons/${seasonSlug}/vostfr`).then(data => ({ lang: 'vostfr', data })),
-        $fetch<{ episodes: Episode[] }>(`/api/anime/${id.value}/seasons/${seasonSlug}/vf`).then(data => ({ lang: 'vf', data }))
+        Promise.race([
+            $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/vostfr`).then(data => ({ lang: 'vostfr' as const, data })),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('VOSTFR timeout')), 5000))
+        ]),
+        Promise.race([
+            $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/vf`).then(data => ({ lang: 'vf' as const, data })),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('VF timeout')), 5000))
+        ])
     ]);
     
     for (const test of tests) {
         if (test.status === 'fulfilled') {
-            const { lang, data } = test.value;
+            const { lang, data } = test.value as { lang: 'vostfr' | 'vf', data: { episodes: Episode[] } };
             const hasEpisodes = data?.episodes && data.episodes.length > 0;
-            results[lang as 'vostfr' | 'vf'] = hasEpisodes;
+            results[lang] = hasEpisodes;
             debugLog(`✅ ${lang.toUpperCase()} available:`, hasEpisodes, `(${data?.episodes?.length || 0} episodes)`);
         } else {
-            debugLog(`❌ Language test failed:`, test.reason);
+            const errorMsg = String(test.reason?.message || test.reason || '');
+            let lang = 'unknown';
+            if (errorMsg.includes('vostfr') || errorMsg.includes('VOSTFR')) {
+                lang = 'vostfr';
+            } else if (errorMsg.includes('vf') || errorMsg.includes('VF')) {
+                lang = 'vf';
+            }
+            
+            debugLog(`⚡ ${lang.toUpperCase()} test failed/timeout:`, errorMsg);
+            if (lang !== 'unknown') {
+                results[lang as 'vostfr' | 'vf'] = false;
+            }
         }
     }
     
     checkingLanguages.value = false;
+    debugLog('🎯 Final language availability:', results);
     return results;
 }
 
 async function pickSeason(s: Season) {
+    // Prevent loading if already loading or same season
+    if (loadingEps.value || (selectedSeason.value?.url === s.url && episodes.value.length > 0)) {
+        debugLog('🔄 Already loading or same season selected, skipping...');
+        return;
+    }
+    
+    debugLog('🎯 pickSeason called with:', s);
     selectedSeason.value = s;
     selectedSeasonUrl.value = s.url;
     loadingEps.value = true;
     episodes.value = [];
     
     try {
-        // Extract season slug from URL
-        const parts = (s.url || "").split("/").filter(Boolean);
-        const last = parts[parts.length - 1];
-// Add this as a utility function at the top of the script
-function extractSeasonSlug(url: string): string {
-  const parts = (url || "").split("/").filter(Boolean);
-  const last = parts[parts.length - 1];
-  return last === "vf" || last === "vostfr"
-    ? parts[parts.length - 2] || "saison1"
-    : last || "saison1";
-}
-
         const seasonSlug = extractSeasonSlug(s.url);
-            
+        
         debugLog('🎯 Season selected:', { name: s.name, url: s.url, seasonSlug });
         
+        // Check which languages are available for this season (slower path)
+        debugLog('🔄 Checking language availability...');
         // Check which languages are available for this season
         availableLanguages.value = await checkLanguageAvailability(seasonSlug);
         debugLog('🌐 Available languages:', availableLanguages.value);
         
-        // Determine which language to use
+        // Determine which language to use with better priority logic
         let targetLang = selectedLang.value;
         
-        // If current language is not available, switch to an available one
+        // If current language is not available, find the best available one
         if (!availableLanguages.value[selectedLang.value]) {
             if (availableLanguages.value.vostfr) {
                 targetLang = "vostfr";
+                debugLog(`🔄 Switching to VOSTFR (${selectedLang.value} not available)`);
             } else if (availableLanguages.value.vf) {
                 targetLang = "vf";
+                debugLog(`🔄 Switching to VF (${selectedLang.value} not available)`);
             } else {
                 debugLog('❌ No languages available for this season');
                 episodes.value = [];
+                loadingEps.value = false;
                 return;
             }
             selectedLang.value = targetLang;
-            debugLog(`🔄 Switched language to ${targetLang.toUpperCase()} (${selectedLang.value} not available)`);
         }
+        
+        debugLog(`� Loading episodes in ${targetLang.toUpperCase()}...`);
         
         // Load episodes for the determined language
         await loadEpisodesForLanguage(seasonSlug, targetLang);
+        
+        debugLog(`✅ Successfully loaded ${episodes.value.length} episodes for ${targetLang.toUpperCase()}`);
         
     } catch (error) {
         console.error('❌ Error in pickSeason:', error);
@@ -132,20 +218,24 @@ async function loadEpisodesForLanguage(seasonSlug: string, lang: "vostfr" | "vf"
     debugLog('📺 Loading episodes for:', { seasonSlug, lang });
     
     try {
-        const { data } = await useFetch<{ episodes: Episode[] }>(
-            `/api/anime/${id.value}/seasons/${seasonSlug}/${lang}`,
+        const response = await $fetch<{ episodes: Episode[] }>(
+            `/api/anime/episodes/${id.value}/${seasonSlug}/${lang}`,
         );
-        episodes.value = data.value?.episodes || [];
-        debugLog(`✅ Loaded ${episodes.value.length} episodes for ${lang.toUpperCase()}`);
+        // Filter out episodes with invalid episode numbers (0 or negative)
+        const allEpisodes = response?.episodes || [];
+        episodes.value = allEpisodes.filter(ep => ep.episode > 0);
+        debugLog(`✅ Loaded ${episodes.value.length} episodes for ${lang.toUpperCase()} (filtered from ${allEpisodes.length} total)`);
+        debugLog(`📋 First 5 episodes:`, episodes.value.slice(0, 5));
     } catch (error) {
         console.error(`❌ Failed to load episodes for ${lang}:`, error);
         episodes.value = [];
+        throw error; // Re-throw to let caller handle it
     }
 }
 
 async function switchLanguage(newLang: "vostfr" | "vf") {
-    if (!selectedSeason.value || !availableLanguages.value[newLang]) {
-        debugLog(`❌ Cannot switch to ${newLang}: not available or no season selected`);
+    if (!selectedSeason.value || !availableLanguages.value[newLang] || selectedLang.value === newLang || loadingEps.value) {
+        debugLog(`❌ Cannot switch to ${newLang}: not available, already selected, or loading in progress`);
         return;
     }
     
@@ -171,8 +261,6 @@ onMounted(() => {
         const first = animeSeasons.value[0];
         if (first) {
             debugLog('🎬 Auto-selecting first anime season:', first);
-            selectedSeason.value = first;
-            selectedSeasonUrl.value = first.url;
             pickSeason(first);
         }
     }
@@ -226,72 +314,11 @@ async function pickPlayableUrl(ep: Episode): Promise<string> {
 }
 
 async function play(ep: Episode) {
-    showPlayer.value = true;
-    resolving.value = true;
-    playUrl.value = "";
-    resolvedList.value = [];
-    resolveError.value = "";
-    
-    try {
-        const target = await pickPlayableUrl(ep);
-        debugLog('🎯 Target URL:', target);
-        
-        const u64 = btoa(unescape(encodeURIComponent(target)))
-            .replace(/\+/g, "-")
-            .replace(/\//g, "_")
-            .replace(/=+$/, "");
-        
-        let referer: string | undefined;
-        try {
-            const u = new URL(target);
-            referer = u.origin + "/";
-        } catch {}
-        
-        debugLog('🔍 Resolving with params:', { u64, referer, debug: debug.value });
-        
-        const { data, error } = await useFetch<any>("/api/player/resolve", {
-            params: {
-                u64,
-                referer,
-                ...(debug.value ? { debug: "1" } : {}),
-            },
-            timeout: 30000, // 30 second timeout
-        });
-        
-        if (error.value) {
-            console.error('❌ Fetch error:', error.value);
-            resolveError.value = `Network error: ${error.value.message || 'Failed to connect'}`;
-            return;
-        }
-        
-        debugLog('📦 Resolve response:', data.value);
-        
-        const ok = data.value?.ok;
-        resolveError.value = ok
-            ? ""
-            : data.value?.message || "Failed to resolve media URL";
-        const urls = data.value?.urls || [];
-        resolvedList.value = urls;
-        
-        if (ok && urls.length > 0) {
-            const hlsFirst = urls.find((u: any) => u.type === "hls") || urls[0];
-            const selectedUrl = hlsFirst.proxiedUrl || hlsFirst.url;
-            
-            debugLog('✅ Selected media URL:', selectedUrl);
-            debugLog('📊 Media type:', hlsFirst.type);
-            
-            playUrl.value = selectedUrl;
-        } else {
-            playUrl.value = "";
-            resolveError.value = resolveError.value || "No direct video streams found";
-            console.warn('⚠️ No playable URLs found');
-        }
-    } catch (error: any) {
-        console.error('💥 Unexpected error:', error);
-        resolveError.value = `Unexpected error: ${error.message || 'Unknown error'}`;
-    } finally {
-        resolving.value = false;
-    }
+    // Navigate to dedicated watch page like Netflix
+    const seasonSlug = extractSeasonSlug(selectedSeason.value?.url || '')
+    const lang = selectedLang.value
+    const epNumber = Number(ep.episode)
+    await navigateTo(`/watch/${id.value}/${seasonSlug}/${lang}/${epNumber}`)
 }
 
 function isM3U8(url: string) {
@@ -332,7 +359,7 @@ async function setupVideo() {
         });
         
         hls.loadSource(playUrl.value);
-        hls.attachMedia(el);
+        hls.attachMedia(el as HTMLVideoElement);
         
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
             debugLog('✅ HLS manifest parsed, starting playback');
@@ -558,7 +585,7 @@ const getVideoErrorMessage = (errorCode: number): string => {
                         <button
                             v-for="s in animeSeasons"
                             :key="s.url"
-                            class="pill"
+                            class="pill pill-lg"
                             :class="{
                                 'selected': selectedSeasonUrl === s.url
                             }"
@@ -571,6 +598,14 @@ const getVideoErrorMessage = (errorCode: number): string => {
 
                 <div class="section pt-2">
                     <h2>Episodes</h2>
+                    <div v-if="debug" class="bg-zinc-800 p-3 rounded mb-4 text-xs">
+                        <div><strong>Debug Info:</strong></div>
+                        <div>Selected Season: {{ selectedSeason?.name || 'None' }}</div>
+                        <div>Selected Lang: {{ selectedLang }}</div>
+                        <div>Episodes Count: {{ episodes.length }}</div>
+                        <div>Loading: {{ loadingEps }}</div>
+                        <div>Available Languages: {{ JSON.stringify(availableLanguages) }}</div>
+                    </div>
                     <div
                         v-if="loadingEps"
                         class="muted flex items-center gap-2"
@@ -613,10 +648,18 @@ const getVideoErrorMessage = (errorCode: number): string => {
                         <button
                             v-for="e in episodes"
                             :key="e.episode"
-                            class="pill hover:border-zinc-600"
+                            class="pill pill-lg hover:border-zinc-600 text-left"
                             @click="play(e)"
+                            :title="e.title || `Épisode ${e.episode}`"
                         >
-                            Ep {{ e.episode }}
+                            <div class="flex flex-col items-start">
+                                <span class="text-sm font-medium">
+                                    {{ e.title || `Épisode ${e.episode}` }}
+                                </span>
+                                <span v-if="!e.title" class="text-xs opacity-70">
+                                    {{ selectedSeason?.name || 'Episode' }}
+                                </span>
+                            </div>
                         </button>
                     </div>
                 </div>

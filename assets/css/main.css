@@ -32,6 +32,11 @@ p  { @apply leading-relaxed; }
 }
 .input:focus { @apply ring-2 ring-violet-700/40 border-violet-700; }
 
+/* Variant: inputs with a leading icon */
+.input-with-icon {
+    @apply pl-12;
+}
+
 /* Buttons */
 .btn { @apply inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition-colors; }
 .btn.primary { @apply bg-violet-700 text-white border border-violet-700 hover:bg-violet-600; }
@@ -43,6 +48,10 @@ p  { @apply leading-relaxed; }
 .pills { @apply flex flex-wrap gap-2; }
 .pill { @apply inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/40 px-3 py-1 text-xs text-zinc-200 hover:border-zinc-700 transition; }
 .pill.selected { @apply bg-purple-500/40 border-purple-500; }
+.pill-lg { @apply text-sm px-4 py-1.5; }
+@media (min-width: 1024px) {
+    .pill-lg { @apply text-base px-5 py-2; }
+}
 .badge { @apply inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 text-xs text-zinc-300; }
 .badge .dot { @apply inline-block h-2 w-2 rounded-full bg-violet-600; }
 
@@ -57,3 +66,38 @@ p  { @apply leading-relaxed; }
 /* Overlay / modal helpers */
 .scrim { @apply fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-40; }
 .card { @apply bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded-xl; }
+
+/* Responsive poster grid: max 5 per row, keeps nice ratios */
+.poster-grid {
+    @apply flex flex-wrap gap-4;
+}
+.poster-item {
+    /* Default ~50% on very small, then 33%, 25%, and cap at 20% (5 per row) */
+    flex: 1 1 calc(50% - 1rem);
+}
+@media (min-width: 640px) {
+    .poster-item { flex-basis: calc(33.333% - 1rem); }
+}
+@media (min-width: 768px) {
+    .poster-item { flex-basis: calc(25% - 1rem); }
+}
+@media (min-width: 1024px) {
+    .poster-item { flex-basis: calc(20% - 1rem); }
+}
+@media (min-width: 1280px) {
+    /* 6 per row on big screens */
+    .poster-item { flex-basis: calc(16.666% - 1rem); }
+}
+
+    /* Placeholder to fill incomplete rows */
+    /* Invisible placeholder that still occupies space */
+    .poster-placeholder {
+        @apply w-full aspect-[9/12] invisible;
+    }
+    /* Filler visibility per breakpoint (5-col at lg, 6-col at xl+) */
+    .poster-filler-5 { display: none; }
+    @media (min-width: 1024px) { .poster-filler-5 { display: block; } }
+    @media (min-width: 1280px) { .poster-filler-5 { display: none; } }
+
+    .poster-filler-6 { display: none; }
+    @media (min-width: 1280px) { .poster-filler-6 { display: block; } }

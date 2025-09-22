@@ -2,6 +2,8 @@
 import { ref, watch, onMounted, onBeforeUnmount, computed, nextTick } from "vue";
 import CardPoster from "~/components/CardPoster.vue";
 import { useSearch } from "~/composables/useSearch";
+import GenreFilter from "~/components/GenreFilter.vue";
+import { SORTED_GENRES } from "~/shared/utils/genres";
 
 // Set page metadata
 useSeoMeta({
@@ -19,8 +21,8 @@ const selectedGenres = ref<string[]>(
     Array.isArray(route.query.genre)
         ? (route.query.genre as string[])
         : route.query.genre
-          ? [String(route.query.genre)]
-          : [],
+            ? [String(route.query.genre)]
+            : [],
 );
 
 // Pagination state
@@ -61,17 +63,8 @@ if (initialSearch) {
     search.value = initialSearch;
 }
 
-const allGenres = [
-    "Action",
-    "Aventure",
-    "Comédie",
-    "Drame",
-    "Fantastique",
-    "Horreur",
-    "Romance",
-    "Science-Fiction",
-    "Sport",
-];
+// Full, centralized genre list
+const allGenres = SORTED_GENRES;
 
 // Computed
 const isSearching = computed(
@@ -111,15 +104,15 @@ watch(
 const handleScroll = () => {
     // Don't trigger if already loading, no more items, or searching
     if (loading.value || !hasMore.value || isSearching.value) return;
-    
+
     const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
     const windowHeight = window.innerHeight;
     const documentHeight = document.documentElement.scrollHeight;
-    
+
     // Trigger when user is 5% from the bottom
     const threshold = documentHeight * 0.05;
     const distanceFromBottom = documentHeight - (scrollTop + windowHeight);
-    
+
     if (distanceFromBottom <= threshold) {
         page.value += 1;
         fetchPage(page.value);
@@ -137,7 +130,7 @@ const setupIntersectionObserver = () => {
 const cleanupObserver = () => {
     window.removeEventListener('scroll', handleScroll);
     if (observer && sentinel.value) {
-        observer.unobserve(sentinel.value);
+        observer.unobserve(sentinel.value as unknown as Element);
         observer.disconnect();
         observer = null;
     }
@@ -198,7 +191,7 @@ const fetchPage = async (pageNum: number) => {
 const resetAndFetch = () => {
     // Clean up existing scroll listener before reset
     cleanupObserver();
-    
+
     items.value = [];
     page.value = 1;
     hasMore.value = true;
@@ -248,13 +241,30 @@ const clearAll = () => {
 };
 
 // Lifecycle
-watch([selectedGenres], () => {
-    resetAndFetch();
-    // Re-setup scroll listener after genre change
-    nextTick(() => {
-        setupIntersectionObserver(); // This now sets up scroll listener
-    });
-}, { deep: true });
+// Debounce genre changes to avoid rapid refetch during multiple toggles
+let genreDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+    () => [...selectedGenres.value],
+    () => {
+        if (genreDebounceTimer) clearTimeout(genreDebounceTimer);
+        genreDebounceTimer = setTimeout(() => {
+            resetAndFetch();
+            // Re-setup scroll listener after genre change
+            nextTick(() => {
+                setupIntersectionObserver(); // This now sets up scroll listener
+            });
+        }, 250);
+    },
+    { deep: true },
+);
+
+onBeforeUnmount(() => {
+  cleanupObserver();
+  if (genreDebounceTimer) {
+    clearTimeout(genreDebounceTimer);
+    genreDebounceTimer = null;
+  }
+});
 
 onMounted(() => {
     resetAndFetch();
@@ -273,9 +283,7 @@ onBeforeUnmount(() => {
     <div>
         <section class="section px-5 md:px-20">
             <!-- Header -->
-            <div
-                class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6"
-            >
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
                 <div>
                     <h1 class="mb-2">Catalogue</h1>
                     <p class="muted">
@@ -288,13 +296,8 @@ onBeforeUnmount(() => {
                 </div>
 
                 <!-- Clear filters -->
-                <div
-                    v-if="hasFilters || search"
-                    class="flex items-center gap-3"
-                >
-                    <span class="text-sm muted"
-                        >{{ totalFilters }} filtre(s) actif(s)</span
-                    >
+                <div v-if="hasFilters || search" class="flex items-center gap-3">
+                    <span class="text-sm muted">{{ totalFilters }} filtre(s) actif(s)</span>
                     <button @click="clearAll" class="btn ghost text-sm">
                         Tout effacer
                     </button>
@@ -305,59 +308,19 @@ onBeforeUnmount(() => {
             <div class="space-y-4 mb-6">
                 <!-- Search Bar -->
                 <div class="relative">
-                    <input
-                        v-model="search"
-                        type="search"
-                        class="input w-full sm:w-[420px] pl-10"
-                        placeholder="Rechercher un anime, film..."
-                    />
-                    <Icon
-                        name="heroicons:magnifying-glass"
-                        class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-500"
-                    />
-                    <button
-                        v-if="search"
-                        @click="clearSearch"
-                        class="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-zinc-800 rounded"
-                    >
+                    <input v-model="search" type="search" class="input input-with-icon w-full sm:w-[420px]"
+                        placeholder="Rechercher un anime, film..." />
+                    <Icon name="heroicons:magnifying-glass"
+                        class="pointer-events-none absolute left-4 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                    <button v-if="search" @click="clearSearch"
+                        class="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-zinc-800 rounded">
                         <Icon name="heroicons:x-mark" class="w-4 h-4" />
                     </button>
                 </div>
 
-                <!-- Genre Pills -->
-                <div class="flex flex-wrap items-center gap-3">
-                    <span class="text-sm font-medium text-zinc-300"
-                        >Genres:</span
-                    >
-                    <div class="pills">
-                        <label
-                            v-for="genre in allGenres"
-                            :key="genre"
-                            class="pill cursor-pointer select-none transition-all duration-200"
-                            :class="{
-                                'border-violet-600 bg-violet-600/20 text-violet-300':
-                                    selectedGenres.includes(genre),
-                                'hover:border-zinc-600':
-                                    !selectedGenres.includes(genre),
-                            }"
-                        >
-                            <input
-                                type="checkbox"
-                                :value="genre"
-                                v-model="selectedGenres"
-                                class="hidden"
-                            />
-                            <span>{{ genre }}</span>
-                        </label>
-                    </div>
-                    <button
-                        v-if="hasFilters"
-                        @click="clearFilters"
-                        class="text-xs text-zinc-500 hover:text-zinc-300 underline"
-                    >
-                        Effacer les genres
-                    </button>
-                </div>
+                <!-- Genre Filter -->
+                <GenreFilter v-model="selectedGenres" :all-genres="allGenres" label="Genres" :collapsible="true"
+                    :start-open="false" :max-height="260" @clear="clearFilters" />
             </div>
 
             <div class="divider" />
@@ -370,48 +333,31 @@ onBeforeUnmount(() => {
                     <div v-if="searchState.loading.value" class="space-y-4">
                         <div class="flex items-center gap-3 mb-4">
                             <div
-                                class="w-5 h-5 border-2 border-violet-600 border-t-transparent rounded-full animate-spin"
-                            ></div>
+                                class="w-5 h-5 border-2 border-violet-600 border-t-transparent rounded-full animate-spin">
+                            </div>
                             <span class="muted">Recherche en cours...</span>
                         </div>
-                        <div
-                            class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
-                        >
-                            <div
-                                v-for="i in 12"
-                                :key="i"
-                                class="aspect-[9/12] bg-zinc-900/40 border border-zinc-800 rounded-xl animate-pulse"
-                            />
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            <div v-for="i in 12" :key="i"
+                                class="aspect-[9/12] bg-zinc-900/40 border border-zinc-800 rounded-xl animate-pulse" />
                         </div>
                     </div>
 
                     <!-- Search Error -->
-                    <div
-                        v-else-if="searchState.error.value"
-                        class="text-center py-16"
-                    >
-                        <Icon
-                            name="heroicons:exclamation-triangle"
-                            class="w-16 h-16 text-amber-500 mx-auto mb-4"
-                        />
+                    <div v-else-if="searchState.error.value" class="text-center py-16">
+                        <Icon name="heroicons:exclamation-triangle" class="w-16 h-16 text-amber-500 mx-auto mb-4" />
                         <h3 class="text-xl font-semibold mb-2">
                             Erreur de recherche
                         </h3>
                         <p class="muted mb-4">{{ searchState.error.value }}</p>
-                        <button
-                            @click="executeSearch(search)"
-                            class="btn primary"
-                        >
+                        <button @click="executeSearch(search)" class="btn primary">
                             Réessayer
                         </button>
                     </div>
 
                     <!-- Search Empty -->
                     <div v-else-if="searchEmpty" class="text-center py-16">
-                        <Icon
-                            name="heroicons:magnifying-glass"
-                            class="w-16 h-16 text-zinc-500 mx-auto mb-4"
-                        />
+                        <Icon name="heroicons:magnifying-glass" class="w-16 h-16 text-zinc-500 mx-auto mb-4" />
                         <h3 class="text-xl font-semibold mb-2">
                             Aucun résultat
                         </h3>
@@ -419,28 +365,31 @@ onBeforeUnmount(() => {
                             Aucun contenu trouvé pour "{{ search }}"
                         </p>
                         <div class="flex justify-center gap-3">
-                            <button
-                                @click="clearSearchOnly"
-                                class="btn secondary"
-                            >
+                            <button @click="clearSearchOnly" class="btn secondary">
                                 Effacer la recherche
                             </button>
                         </div>
                     </div>
 
                     <!-- Search Results -->
-                    <div
-                        v-else
-                        class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
-                    >
-                        <CardPoster
-                            v-for="item in searchState.results.value"
-                            :key="item.id"
-                            :to="`/anime/${item.id}`"
-                            :src="item.image"
-                            :title="item.title"
-                            size="sm"
-                        />
+                    <div v-else class="poster-grid">
+                        <div class="poster-item" v-for="item in searchState.results.value" :key="item.id">
+                            <CardPoster :to="`/anime/${item.id}`" :src="item.image" :title="item.title" size="sm"
+                                fluid />
+                        </div>
+                        <!-- Fillers to complete row: 5-col on lg, 6-col on xl+ -->
+                        <template v-if="searchState.results.value?.length">
+                            <!-- lg: 5 per row -->
+                            <div v-for="n in ((5 - (searchState.results.value.length % 5)) % 5)"
+                                :key="'search-filler-5-' + n" class="poster-item poster-filler-5" aria-hidden>
+                                <div class="poster-placeholder" />
+                            </div>
+                            <!-- xl+: 6 per row -->
+                            <div v-for="n in ((6 - (searchState.results.value.length % 6)) % 6)"
+                                :key="'search-filler-6-' + n" class="poster-item poster-filler-6" aria-hidden>
+                                <div class="poster-placeholder" />
+                            </div>
+                        </template>
                     </div>
                 </template>
 
@@ -450,32 +399,19 @@ onBeforeUnmount(() => {
                     <div v-if="initialLoading" class="space-y-4">
                         <div class="flex items-center gap-3 mb-4">
                             <div
-                                class="w-5 h-5 border-2 border-violet-600 border-t-transparent rounded-full animate-spin"
-                            ></div>
-                            <span class="muted"
-                                >Chargement du catalogue...</span
-                            >
+                                class="w-5 h-5 border-2 border-violet-600 border-t-transparent rounded-full animate-spin">
+                            </div>
+                            <span class="muted">Chargement du catalogue...</span>
                         </div>
-                        <div
-                            class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
-                        >
-                            <div
-                                v-for="i in 18"
-                                :key="i"
-                                class="aspect-[9/12] bg-zinc-900/40 border border-zinc-800 rounded-xl animate-pulse"
-                            />
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            <div v-for="i in 18" :key="i"
+                                class="aspect-[9/12] bg-zinc-900/40 border border-zinc-800 rounded-xl animate-pulse" />
                         </div>
                     </div>
 
                     <!-- Error State -->
-                    <div
-                        v-else-if="error && items.length === 0"
-                        class="text-center py-16"
-                    >
-                        <Icon
-                            name="heroicons:exclamation-triangle"
-                            class="w-16 h-16 text-amber-500 mx-auto mb-4"
-                        />
+                    <div v-else-if="error && items.length === 0" class="text-center py-16">
+                        <Icon name="heroicons:exclamation-triangle" class="w-16 h-16 text-amber-500 mx-auto mb-4" />
                         <h3 class="text-xl font-semibold mb-2">
                             Erreur de chargement
                         </h3>
@@ -483,9 +419,7 @@ onBeforeUnmount(() => {
                         <div class="flex justify-center gap-3">
                             <button @click="retryFetch" class="btn primary">
                                 Réessayer
-                                <span v-if="retryCount > 0" class="ml-1"
-                                    >({{ retryCount }})</span
-                                >
+                                <span v-if="retryCount > 0" class="ml-1">({{ retryCount }})</span>
                             </button>
                             <button @click="clearAll" class="btn secondary">
                                 Réinitialiser les filtres
@@ -495,10 +429,7 @@ onBeforeUnmount(() => {
 
                     <!-- Empty State -->
                     <div v-else-if="isEmpty" class="text-center py-16">
-                        <Icon
-                            name="heroicons:film"
-                            class="w-16 h-16 text-zinc-500 mx-auto mb-4"
-                        />
+                        <Icon name="heroicons:film" class="w-16 h-16 text-zinc-500 mx-auto mb-4" />
                         <h3 class="text-xl font-semibold mb-2">
                             Aucun contenu
                         </h3>
@@ -509,53 +440,48 @@ onBeforeUnmount(() => {
                                     : "Aucun contenu disponible pour le moment"
                             }}
                         </p>
-                        <button
-                            v-if="hasFilters"
-                            @click="clearFilters"
-                            class="btn primary"
-                        >
+                        <button v-if="hasFilters" @click="clearFilters" class="btn primary">
                             Effacer les filtres
                         </button>
                     </div>
 
                     <!-- Content Grid -->
                     <template v-else>
-                        <div
-                            class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
-                        >
-                            <CardPoster
-                                v-for="item in items"
-                                :key="item.id"
-                                :to="`/anime/${item.id}`"
-                                :src="item.image"
-                                :title="item.title"
-                                size="sm"
-                            />
+                        <div class="poster-grid">
+                            <div class="poster-item" v-for="item in items" :key="item.id">
+                                <CardPoster :to="`/anime/${item.id}`" :src="item.image" :title="item.title" size="sm"
+                                    fluid />
+                            </div>
+                            <!-- Fillers to complete row: 5-col on lg, 6-col on xl+ -->
+                            <template v-if="items?.length">
+                                <!-- lg: 5 per row -->
+                                <div v-for="n in ((5 - (items.length % 5)) % 5)" :key="'browse-filler-5-' + n"
+                                    class="poster-item poster-filler-5" aria-hidden>
+                                    <div class="poster-placeholder" />
+                                </div>
+                                <!-- xl+: 6 per row -->
+                                <div v-for="n in ((6 - (items.length % 6)) % 6)" :key="'browse-filler-6-' + n"
+                                    class="poster-item poster-filler-6" aria-hidden>
+                                    <div class="poster-placeholder" />
+                                </div>
+                            </template>
                         </div>
 
                         <!-- Load More Trigger -->
                         <div ref="sentinel" class="h-px mt-8"></div>
 
                         <!-- Loading More -->
-                        <div
-                            v-if="loading && !initialLoading"
-                            class="text-center py-8"
-                        >
+                        <div v-if="loading && !initialLoading" class="text-center py-8">
                             <div class="flex items-center justify-center gap-3">
                                 <div
-                                    class="w-5 h-5 border-2 border-violet-600 border-t-transparent rounded-full animate-spin"
-                                ></div>
-                                <span class="muted"
-                                    >Chargement de plus de contenus...</span
-                                >
+                                    class="w-5 h-5 border-2 border-violet-600 border-t-transparent rounded-full animate-spin">
+                                </div>
+                                <span class="muted">Chargement de plus de contenus...</span>
                             </div>
                         </div>
 
                         <!-- Load Error -->
-                        <div
-                            v-if="error && items.length > 0"
-                            class="text-center py-8"
-                        >
+                        <div v-if="error && items.length > 0" class="text-center py-8">
                             <p class="muted mb-3">{{ error }}</p>
                             <button @click="retryFetch" class="btn secondary">
                                 Réessayer
@@ -563,10 +489,7 @@ onBeforeUnmount(() => {
                         </div>
 
                         <!-- End of Results -->
-                        <div
-                            v-if="!hasMore && items.length > 0 && !loading"
-                            class="text-center py-8"
-                        >
+                        <div v-if="!hasMore && items.length > 0 && !loading" class="text-center py-8">
                             <p class="muted">
                                 Vous avez atteint la fin du catalogue
                             </p>
@@ -586,10 +509,12 @@ onBeforeUnmount(() => {
 
 /* Loading animations */
 @keyframes pulse {
+
     0%,
     100% {
         opacity: 1;
     }
+
     50% {
         opacity: 0.5;
     }
