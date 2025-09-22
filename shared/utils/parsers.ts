@@ -119,7 +119,7 @@ export function parseAnimePage(html: string): AnimeInfo {
   $("h2").each((_: number, el: any) => {
     const header = $(el).text().trim();
     let type: string | null = null;
-    if (header === "Anime") type = "Anime";
+    if (header === "Anime" || header === "Serie") type = "Anime";
     else if (header === "Anime Version Kai") type = "Kai";
     else if (header === "Manga") type = "Manga";
     if (!type) return;

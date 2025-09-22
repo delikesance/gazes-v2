@@ -1,4 +1,6 @@
-import { parseAnimePage } from '#shared/utils/parsers'
+import { parseAnimePage, parseAnimeResults } from '#shared/utils/parsers'
+
+const USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
 
 export default defineEventHandler(async (event) => {
     const id = event.context.params?.id
@@ -10,27 +12,55 @@ export default defineEventHandler(async (event) => {
             message: 'Missing or invalid id parameter'
         })
 
-    const response = await fetch("https://anime-sama.fr/catalogue/" + id + "/", {
-        "cache": "default",
-        "credentials": "include",
-        "headers": {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Priority": "u=0, i",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
+    // Try to fetch directly first
+    let response = await fetch(`https://anime-sama.fr/catalogue/${id}/`, {
+        headers: {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': USER_AGENT,
         },
-        "method": "GET",
-        "mode": "cors",
-        "redirect": "follow",
-        "referrerPolicy": "strict-origin-when-cross-origin"
+        redirect: 'follow',
     })
 
+    // If direct fetch fails, try to search for the anime
     if (!response.ok) {
-        throw createError({
-            statusCode: response.status,
-            statusMessage: response.statusText,
-            message: `Failed to fetch anime details for id: ${id}`
+        const searchTerm = id.replace(/[-_]/g, ' ')
+        
+        const searchResponse = await fetch("https://anime-sama.fr/template-php/defaut/fetch.php", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "X-Requested-With": "XMLHttpRequest"
+            },
+            body: "query=" + encodeURIComponent(searchTerm),
         })
+
+        const searchResults = parseAnimeResults(await searchResponse.text())
+
+        if (!searchResponse.ok || !searchResults || searchResults.length === 0) {
+            throw createError({
+                statusCode: 404,
+                statusMessage: 'Not Found',
+                message: `No anime found for id: ${id}`
+            })
+        }
+
+        // Use the first result's real ID
+        const realAnimeId = searchResults[0].id
+        response = await fetch(`https://anime-sama.fr/catalogue/${realAnimeId}/`, {
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'User-Agent': USER_AGENT,
+            },
+            redirect: 'follow',
+        })
+
+        if (!response.ok) {
+            throw createError({
+                statusCode: response.status,
+                statusMessage: response.statusText,
+                message: `Failed to fetch anime details for id: ${id}`
+            })
+        }
     }
 
     const html = await response.text()
@@ -39,36 +69,30 @@ export default defineEventHandler(async (event) => {
     // Scrape language flags from the first available season
     if (animeData.seasons && animeData.seasons.length > 0) {
         const firstSeason = animeData.seasons[0]
-        // Build the season URL correctly - anime-sama.fr uses this format: /catalogue/anime-id/season-path
         let seasonUrl = firstSeason.url
+        
         if (seasonUrl.startsWith('/')) {
             seasonUrl = `https://anime-sama.fr/catalogue${seasonUrl}`
         } else if (!seasonUrl.startsWith('http')) {
             seasonUrl = `https://anime-sama.fr/catalogue/${id}/${seasonUrl}`
         }
 
-        console.log(`🔍 Scraping language flags from: ${seasonUrl}`)
-
         try {
             const seasonResponse = await fetch(seasonUrl, {
                 headers: {
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+                    'User-Agent': USER_AGENT,
                 },
                 redirect: 'follow',
-                referrerPolicy: 'strict-origin-when-cross-origin',
             })
 
             if (seasonResponse.ok) {
                 const seasonHtml = await seasonResponse.text()
                 const languageFlags = parseLanguageFlags(seasonHtml)
-                console.log(`🏳️ Extracted language flags:`, languageFlags)
                 return { ...animeData, languageFlags }
-            } else {
-                console.warn(`❌ Failed to fetch season page: ${seasonResponse.status} ${seasonResponse.statusText}`)
             }
         } catch (error) {
-            console.warn('❌ Failed to scrape language flags:', error)
+            // Silent fail for language flags
         }
     }
 
@@ -79,71 +103,30 @@ export default defineEventHandler(async (event) => {
 function parseLanguageFlags(html: string): Record<string, string> {
     const flags: Record<string, string> = {}
 
-    // Dynamic flag mapping based on anime-sama.fr flag images
+    // Simplified flag mapping for common anime languages
     const flagToEmoji: Record<string, string> = {
-        'cn': '🇨🇳', // China
-        'jp': '🇯🇵', // Japan  
-        'kr': '🇰🇷', // Korea
-        'fr': '🇫🇷', // France
-        'en': '🇺🇸', // English (USA)
-        'us': '🇺🇸', // USA
-        'qc': '🇨🇦', // Quebec/Canada
-        'sa': '🇸🇦', // Saudi Arabia (Arabic)
-        'ar': '🇸🇦', // Arabic
-        'de': '🇩🇪', // Germany
-        'es': '🇪🇸', // Spain
-        'it': '🇮🇹', // Italy
-        'pt': '🇵🇹', // Portugal
-        'br': '🇧🇷', // Brazil
-        'ru': '🇷🇺', // Russia
-        'tr': '🇹🇷', // Turkey
-        'th': '🇹🇭', // Thailand
-        'in': '🇮🇳', // India
-        'mx': '🇲🇽', // Mexico
-        'nl': '🇳🇱', // Netherlands
-        'se': '🇸🇪', // Sweden
-        'no': '🇳🇴', // Norway
-        'dk': '🇩🇰', // Denmark
-        'fi': '🇫🇮', // Finland
-        'pl': '🇵🇱', // Poland
-        'cz': '🇨🇿', // Czech Republic
-        'hu': '🇭🇺', // Hungary
-        'ro': '🇷🇴', // Romania
-        'bg': '🇧🇬', // Bulgaria
-        'gr': '🇬🇷', // Greece
-        'il': '🇮🇱', // Israel
-        'ae': '🇦🇪', // UAE
-        'eg': '🇪🇬', // Egypt
-        'za': '🇿🇦', // South Africa
-        'ng': '🇳🇬', // Nigeria
-        'au': '🇦🇺', // Australia
-        'nz': '🇳🇿', // New Zealand
-        'sg': '🇸🇬', // Singapore
-        'my': '🇲🇾', // Malaysia
-        'id': '🇮🇩', // Indonesia
-        'ph': '🇵🇭', // Philippines
-        'vn': '🇻🇳', // Vietnam
-        'mm': '🇲🇲', // Myanmar
-        'kh': '🇰🇭', // Cambodia
-        'la': '🇱🇦', // Laos
-        'x': '🇯🇵', // Special case: flag_x.png often used for Japanese/Original versions
+        'cn': '🇨🇳',
+        'jp': '🇯🇵',
+        'kr': '🇰🇷',
+        'fr': '🇫🇷',
+        'en': '🇺🇸',
+        'us': '🇺🇸',
+        'qc': '🇨🇦',
+        'ar': '🇸🇦',
+        'x': '🇯🇵', // Original version
     }
 
-    // NEW STRATEGY: Extract language buttons from the language switcher div
-    // Each button has: href="../langcode" and contains img with src="...flag_xx.png"
+    // Extract language buttons
     const buttonRegex = /<a\s+href="\.\.\/([^"]+)"[^>]*id="switch[^"]*"[^>]*>[\s\S]*?<img[^>]*src="[^"]*flag_([^"\.]+)\.png"[^>]*>[\s\S]*?<\/a>/gi
     let match
 
     while ((match = buttonRegex.exec(html)) !== null) {
-        const langCode = match[1] // e.g., 'vostfr', 'vf', 'va', 'vj'
-        const flagCode = match[2]?.toLowerCase() // e.g., 'jp', 'fr', 'en', 'ar'
-        
-        // Get emoji from flag code, use generic flag if unknown
+        const langCode = match[1]
+        const flagCode = match[2]?.toLowerCase()
         const emoji = flagToEmoji[flagCode] || '🏳️'
         
         if (langCode && flagCode) {
             flags[langCode] = emoji
-            console.log(`🏳️ Found language button: ${langCode} -> flag_${flagCode}.png -> ${emoji}`)
         }
     }
 
