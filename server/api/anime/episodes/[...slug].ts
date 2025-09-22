@@ -265,11 +265,14 @@ export default defineEventHandler(async (event) => {
         })
     }
 
+    // Convert season number to anime-sama format (1 -> saison1, film -> film, etc.)
+    const seasonFormatted = /^\d+$/.test(season) ? `saison${season}` : season
+
     // Scrape episode titles from anime-sama main page
-    const episodeTitles = await scrapeEpisodeTitlesFromMainPage(id, season, lang)
+    const episodeTitles = await scrapeEpisodeTitlesFromMainPage(id, seasonFormatted, lang)
 
     // First, try to fetch episode lists from the episodes.js file
-    const jsUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/episodes.js`
+    const jsUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(seasonFormatted)}/${encodeURIComponent(lang)}/episodes.js`
     let sourceText = ''
 
     try {
@@ -292,7 +295,7 @@ export default defineEventHandler(async (event) => {
 
     // If episodes.js didn't work, try the main season page
     if (!sourceText) {
-        const seasonUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`
+        const seasonUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(seasonFormatted)}/${encodeURIComponent(lang)}/`
         try {
             const res = await fetch(seasonUrl, {
                 headers: {
@@ -313,7 +316,7 @@ export default defineEventHandler(async (event) => {
         throw createError({
             statusCode: 404,
             statusMessage: 'Not Found',
-            message: `Unable to fetch episode data for ${id}/${season}/${lang}`
+            message: `Unable to fetch episode data for ${id}/${seasonFormatted}/${lang}`
         })
     }
 

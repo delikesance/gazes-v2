@@ -15,8 +15,10 @@ type AnimeInfo = {
     genres: string[];
     seasons: Season[];
     manga?: { url: string; name?: string }[];
+    languageFlags?: Record<string, string>; // e.g., { 'vostfr': '🇯🇵', 'vf': '🇫🇷', 'va': '🇺🇸' }
 };
 type Episode = { episode: number; title?: string; url: string; urls?: string[] };
+type LanguageCode = 'vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj' | 'vo' | 'raw' | 'vq';
 
 const route = useRoute();
 const id = computed(() => String(route.params.id || ""));
@@ -33,12 +35,40 @@ const { data: info, error } = await useFetch<AnimeInfo>(
     `/api/anime/${id.value}`,
 );
 
-const selectedLang = ref<"vostfr" | "vf">("vostfr");
+const selectedLang = ref<LanguageCode>("vostfr");
 const selectedSeason = ref<Season | null>(null);
 const selectedSeasonUrl = ref<string>("");
 const episodes = ref<Episode[]>([]);
 const loadingEps = ref(false);
-const availableLanguages = ref<{ vostfr: boolean; vf: boolean }>({ vostfr: false, vf: false });
+const availableLanguages = ref<{ 
+  vostfr: boolean; 
+  vf: boolean; 
+  va: boolean; 
+  var: boolean; 
+  vkr: boolean; 
+  vcn: boolean; 
+  vqc: boolean; 
+  vf1: boolean; 
+  vf2: boolean; 
+  vj: boolean;
+  vo: boolean;
+  raw: boolean;
+  vq: boolean;
+}>({
+  vostfr: false,
+  vf: false,
+  va: false,
+  var: false,
+  vkr: false,
+  vcn: false,
+  vqc: false,
+  vf1: false,
+  vf2: false,
+  vj: false,
+  vo: false,
+  raw: false,
+  vq: false
+});
 const checkingLanguages = ref(false);
 
 // Computed property for anime seasons to ensure consistency
@@ -46,109 +76,106 @@ const animeSeasons = computed(() => {
     return info.value?.seasons?.filter(season => season.type?.toLowerCase() === 'anime') || [];
 });
 
-async function checkLanguageAvailability(seasonSlug: string): Promise<{ vostfr: boolean; vf: boolean }> {
+// Language options computed property - same as player
+const languageOptions = computed(() => {
+  const options: Array<{code: LanguageCode; label: string; fullLabel: string}> = []
+  
+  // Language display names
+  const languageLabels: Record<LanguageCode, string> = {
+    'vostfr': 'Version Originale Sous-Titrée Français',
+    'vf': 'Version Française',
+    'va': 'Version Anglaise',
+    'var': 'Version Arabe',
+    'vkr': 'Version Coréenne',
+    'vcn': 'Version Chinoise',
+    'vqc': 'Version Québécoise',
+    'vf1': 'Version Française 1',
+    'vf2': 'Version Française 2',
+    'vj': 'Version Japonaise',
+    'vo': 'Version Originale',
+    'raw': 'Version Raw',
+    'vq': 'Version Québécoise'
+  }
+
+  // Default flag fallbacks 
+  const defaultFlags: Record<LanguageCode, string> = {
+    'vostfr': '🇯🇵',
+    'vf': '🇫🇷',
+    'va': '🇺🇸',
+    'var': '🇸🇦',
+    'vkr': '🇰🇷',
+    'vcn': '🇨🇳',
+    'vqc': '🇨🇦',
+    'vf1': '🇫🇷',
+    'vf2': '🇫🇷',
+    'vj': '🇯🇵',
+    'vo': '🇯🇵',
+    'raw': '🇯🇵',
+    'vq': '🇨🇦'
+  }
+
+  // Build options only for available languages
+  Object.keys(availableLanguages.value).forEach(lang => {
+    const langCode = lang as LanguageCode
+    if (availableLanguages.value[langCode]) {
+      // Use dynamic flag from API or fall back to default
+      const emoji = info.value?.languageFlags?.[langCode] || defaultFlags[langCode] || '🏳️'
+      const shortLabel = langCode.toUpperCase()
+      const fullLabel = languageLabels[langCode] || langCode.toUpperCase()
+      
+      options.push({ 
+        code: langCode, 
+        label: `${emoji} ${shortLabel}`, 
+        fullLabel 
+      })
+    }
+  })
+
+  return options
+})
+
+async function checkLanguageAvailability(seasonSlug: string): Promise<typeof availableLanguages.value> {
     debugLog('🔍 Checking language availability for season:', seasonSlug);
     checkingLanguages.value = true;
     
-    const results = { vostfr: false, vf: false };
+    // Test ALL common languages available on anime-sama.fr - matching player approach
+    const commonLanguages: LanguageCode[] = ['vostfr', 'vf', 'vo', 'raw', 'vj', 'va', 'var', 'vkr', 'vcn', 'vqc', 'vf1', 'vf2', 'vq'];
     
-    // Quick optimization: if the season URL already contains a language, prioritize that one
-    const seasonUrl = selectedSeason.value?.url || '';
-    const urlContainsVf = seasonUrl.includes('/vf');
-    const urlContainsVostfr = seasonUrl.includes('/vostfr');
+    const results = {
+        vostfr: false,
+        vf: false,
+        va: false,
+        var: false,
+        vkr: false,
+        vcn: false,
+        vqc: false,
+        vf1: false,
+        vf2: false,
+        vj: false,
+        vo: false,
+        raw: false,
+        vq: false
+    };
     
-    if (urlContainsVf && !urlContainsVostfr) {
-        debugLog('🚀 Season URL indicates VF only, testing VF first...');
-        try {
-            const vfData = await $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/vf`);
-            const hasVfEpisodes = vfData?.episodes && vfData.episodes.length > 0;
-            results.vf = hasVfEpisodes;
-            debugLog(`✅ VF available:`, hasVfEpisodes, `(${vfData?.episodes?.length || 0} episodes)`);
-            
-            if (hasVfEpisodes) {
-                // VF works, quickly test VOSTFR with shorter timeout
-                try {
-                    const vostfrData = await Promise.race([
-                        $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/vostfr`),
-                        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('VOSTFR timeout')), 3000))
-                    ]);
-                    results.vostfr = (vostfrData as any)?.episodes && (vostfrData as any).episodes.length > 0;
-                    debugLog(`✅ VOSTFR available:`, results.vostfr, `(${(vostfrData as any)?.episodes?.length || 0} episodes)`);
-                } catch (error: any) {
-                    debugLog(`⚡ VOSTFR test skipped/failed (fast):`, error?.message || error);
-                    results.vostfr = false;
-                }
-                checkingLanguages.value = false;
-                return results;
-            }
-        } catch (error: any) {
-            debugLog(`❌ VF test failed:`, error?.message || error);
-            results.vf = false;
-        }
-    } else if (urlContainsVostfr && !urlContainsVf) {
-        debugLog('🚀 Season URL indicates VOSTFR only, testing VOSTFR first...');
-        try {
-            const vostfrData = await $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/vostfr`);
-            const hasVostfrEpisodes = vostfrData?.episodes && vostfrData.episodes.length > 0;
-            results.vostfr = hasVostfrEpisodes;
-            debugLog(`✅ VOSTFR available:`, hasVostfrEpisodes, `(${vostfrData?.episodes?.length || 0} episodes)`);
-            
-            if (hasVostfrEpisodes) {
-                // VOSTFR works, quickly test VF
-                try {
-                    const vfData = await Promise.race([
-                        $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/vf`),
-                        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('VF timeout')), 3000))
-                    ]);
-                    results.vf = (vfData as any)?.episodes && (vfData as any).episodes.length > 0;
-                    debugLog(`✅ VF available:`, results.vf, `(${(vfData as any)?.episodes?.length || 0} episodes)`);
-                } catch (error: any) {
-                    debugLog(`⚡ VF test skipped/failed (fast):`, error?.message || error);
-                    results.vf = false;
-                }
-                checkingLanguages.value = false;
-                return results;
-            }
-        } catch (error: any) {
-            debugLog(`❌ VOSTFR test failed:`, error?.message || error);
-            results.vostfr = false;
-        }
-    }
+    debugLog('🌐 Testing all common language codes:', commonLanguages);
     
-    // Fallback: test both languages in parallel with timeout for slow responses
-    debugLog('🔄 Testing both languages in parallel with timeout...');
-    const tests = await Promise.allSettled([
-        Promise.race([
-            $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/vostfr`).then(data => ({ lang: 'vostfr' as const, data })),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('VOSTFR timeout')), 5000))
-        ]),
-        Promise.race([
-            $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/vf`).then(data => ({ lang: 'vf' as const, data })),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('VF timeout')), 5000))
-        ])
-    ]);
+    // Test all languages in parallel (same approach as player)
+    debugLog('� Testing all languages in parallel...');
     
-    for (const test of tests) {
-        if (test.status === 'fulfilled') {
-            const { lang, data } = test.value as { lang: 'vostfr' | 'vf', data: { episodes: Episode[] } };
-            const hasEpisodes = data?.episodes && data.episodes.length > 0;
-            results[lang] = hasEpisodes;
-            debugLog(`✅ ${lang.toUpperCase()} available:`, hasEpisodes, `(${data?.episodes?.length || 0} episodes)`);
-        } else {
-            const errorMsg = String(test.reason?.message || test.reason || '');
-            let lang = 'unknown';
-            if (errorMsg.includes('vostfr') || errorMsg.includes('VOSTFR')) {
-                lang = 'vostfr';
-            } else if (errorMsg.includes('vf') || errorMsg.includes('VF')) {
-                lang = 'vf';
-            }
-            
-            debugLog(`⚡ ${lang.toUpperCase()} test failed/timeout:`, errorMsg);
-            if (lang !== 'unknown') {
-                results[lang as 'vostfr' | 'vf'] = false;
-            }
-        }
-    }
+    // Start fetching for all languages in parallel - matching player pattern
+    const languagePromises = commonLanguages.map(langCode => 
+        $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/${langCode}`)
+            .then(response => ({ lang: langCode, episodes: response?.episodes || [] }))
+            .catch(() => ({ lang: langCode, episodes: [] }))
+    );
+    
+    const languageResults = await Promise.all(languagePromises);
+    
+    // Update available languages based on results
+    languageResults.forEach(({ lang, episodes }) => {
+        results[lang] = episodes.length > 0;
+        debugLog(`✅ ${lang.toUpperCase()} available:`, episodes.length > 0, `(${episodes.length} episodes)`);
+    });
     
     checkingLanguages.value = false;
     debugLog('🎯 Final language availability:', results);
@@ -184,12 +211,13 @@ async function pickSeason(s: Season) {
         
         // If current language is not available, find the best available one
         if (!availableLanguages.value[selectedLang.value]) {
-            if (availableLanguages.value.vostfr) {
-                targetLang = "vostfr";
-                debugLog(`🔄 Switching to VOSTFR (${selectedLang.value} not available)`);
-            } else if (availableLanguages.value.vf) {
-                targetLang = "vf";
-                debugLog(`🔄 Switching to VF (${selectedLang.value} not available)`);
+            const availableLangKeys = (Object.keys(availableLanguages.value) as LanguageCode[]).filter(lang => availableLanguages.value[lang]);
+            if (availableLangKeys.length > 0) {
+                // Prefer vostfr, then vf, then any available language
+                targetLang = availableLangKeys.includes('vostfr') ? 'vostfr' : 
+                           availableLangKeys.includes('vf') ? 'vf' : 
+                           availableLangKeys[0]!;
+                debugLog(`🔄 Switching to ${targetLang.toUpperCase()} (${selectedLang.value} not available)`);
             } else {
                 debugLog('❌ No languages available for this season');
                 episodes.value = [];
@@ -214,7 +242,7 @@ async function pickSeason(s: Season) {
     }
 }
 
-async function loadEpisodesForLanguage(seasonSlug: string, lang: "vostfr" | "vf") {
+async function loadEpisodesForLanguage(seasonSlug: string, lang: LanguageCode) {
     debugLog('📺 Loading episodes for:', { seasonSlug, lang });
     
     try {
@@ -233,7 +261,7 @@ async function loadEpisodesForLanguage(seasonSlug: string, lang: "vostfr" | "vf"
     }
 }
 
-async function switchLanguage(newLang: "vostfr" | "vf") {
+async function switchLanguage(newLang: LanguageCode) {
     if (!selectedSeason.value || !availableLanguages.value[newLang] || selectedLang.value === newLang || loadingEps.value) {
         debugLog(`❌ Cannot switch to ${newLang}: not available, already selected, or loading in progress`);
         return;
@@ -244,12 +272,7 @@ async function switchLanguage(newLang: "vostfr" | "vf") {
     episodes.value = [];
     
     try {
-        const parts = (selectedSeason.value.url || "").split("/").filter(Boolean);
-        const last = parts[parts.length - 1];
-        const seasonSlug = last === "vf" || last === "vostfr"
-            ? parts[parts.length - 2] || "saison1"
-            : last || "saison1";
-            
+        const seasonSlug = extractSeasonSlug(selectedSeason.value.url, Object.keys(info.value?.languageFlags || {}));
         await loadEpisodesForLanguage(seasonSlug, newLang);
     } finally {
         loadingEps.value = false;
@@ -554,29 +577,23 @@ const getVideoErrorMessage = (errorCode: number): string => {
                     <h2>Seasons</h2>
                     <div class="tabs flex flex-wrap gap-2">
                         <button
+                            v-for="option in languageOptions"
+                            :key="option.code"
                             class="tab"
-                            :disabled="!availableLanguages.vostfr || checkingLanguages"
+                            :disabled="checkingLanguages"
                             :class="{ 
-                                active: selectedLang === 'vostfr',
+                                active: selectedLang === option.code,
                                 'opacity-50': checkingLanguages
                             }"
-                            @click="switchLanguage('vostfr')"
+                            @click="switchLanguage(option.code)"
+                            :title="option.fullLabel"
                         >
                             <span v-if="checkingLanguages" class="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin mr-1"></span>
-                            🇯🇵 VOSTFR
+                            {{ option.label }}
                         </button>
-                        <button
-                            class="tab"
-                            :disabled="!availableLanguages.vf || checkingLanguages"
-                            :class="{ 
-                                active: selectedLang === 'vf',
-                                'opacity-50': checkingLanguages
-                            }"
-                            @click="switchLanguage('vf')"
-                        >
-                            <span v-if="checkingLanguages" class="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin mr-1"></span>
-                            🇫🇷 VF
-                        </button>
+                        <div v-if="checkingLanguages && languageOptions.length === 0" class="text-sm text-zinc-400">
+                            Checking languages...
+                        </div>
                     </div>
                 </div>
 

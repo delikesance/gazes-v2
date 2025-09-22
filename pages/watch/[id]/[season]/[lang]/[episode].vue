@@ -12,7 +12,7 @@ const route = useRoute()
 // Get route params as refs
 const id = ref(route.params.id as string)
 const season = ref(route.params.season as string)
-const lang = ref(route.params.lang as 'vf' | 'vostfr')
+const lang = ref(route.params.lang as 'vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj')
 const episodeNum = ref(Number(route.params.episode))
 const debug = computed(() => route.query.debug === '1' || route.query.debug === 'true')
 
@@ -74,14 +74,92 @@ const showEpisodes = ref(false)
 const episodesList = ref<Array<{ episode: number; title?: string; url: string; urls?: string[] }>>([])
 const loadingEpisodes = ref(false)
 
+// Language switcher state
+const availableLanguages = ref<{ 
+  vostfr: boolean; 
+  vf: boolean; 
+  va: boolean; 
+  var: boolean; 
+  vkr: boolean; 
+  vcn: boolean; 
+  vqc: boolean; 
+  vf1: boolean; 
+  vf2: boolean; 
+  vj: boolean 
+}>({
+  vostfr: false,
+  vf: false,
+  va: false,
+  var: false,
+  vkr: false,
+  vcn: false,
+  vqc: false,
+  vf1: false,
+  vf2: false,
+  vj: false
+})
+const switchingLanguage = ref(false)
+const showLanguageDropdown = ref(false)
+
+// Computed for language options
+const languageOptions = computed(() => {
+  const options = []
+  if (availableLanguages.value.vostfr) {
+    const emoji = dynamicLanguageFlags.value['vostfr'] || '��🇳' // Fallback to Chinese flag
+    options.push({ code: 'vostfr', label: `${emoji} VOSTFR`, fullLabel: 'Version Originale Sous-Titrée Français' })
+  }
+  if (availableLanguages.value.vf) {
+    const emoji = dynamicLanguageFlags.value['vf'] || '🇫🇷'
+    options.push({ code: 'vf', label: `${emoji} VF`, fullLabel: 'Version Française' })
+  }
+  if (availableLanguages.value.va) {
+    const emoji = dynamicLanguageFlags.value['va'] || '🇺🇸'
+    options.push({ code: 'va', label: `${emoji} VA`, fullLabel: 'Version Anglaise' })
+  }
+  if (availableLanguages.value.var) {
+    const emoji = dynamicLanguageFlags.value['var'] || '🇸🇦'
+    options.push({ code: 'var', label: `${emoji} VAR`, fullLabel: 'Version Arabe' })
+  }
+  if (availableLanguages.value.vkr) {
+    const emoji = dynamicLanguageFlags.value['vkr'] || '🇰🇷'
+    options.push({ code: 'vkr', label: `${emoji} VKR`, fullLabel: 'Version Coréenne' })
+  }
+  if (availableLanguages.value.vcn) {
+    const emoji = dynamicLanguageFlags.value['vcn'] || '🇨🇳'
+    options.push({ code: 'vcn', label: `${emoji} VCN`, fullLabel: 'Version Chinoise' })
+  }
+  if (availableLanguages.value.vqc) {
+    const emoji = dynamicLanguageFlags.value['vqc'] || '🇨🇦'
+    options.push({ code: 'vqc', label: `${emoji} VQC`, fullLabel: 'Version Québécoise' })
+  }
+  if (availableLanguages.value.vf1) {
+    const emoji = dynamicLanguageFlags.value['vf1'] || '🇫🇷'
+    options.push({ code: 'vf1', label: `${emoji} VF1`, fullLabel: 'Version Française 1' })
+  }
+  if (availableLanguages.value.vf2) {
+    const emoji = dynamicLanguageFlags.value['vf2'] || '🇫🇷'
+    options.push({ code: 'vf2', label: `${emoji} VF2`, fullLabel: 'Version Française 2' })
+  }
+  if (availableLanguages.value.vj) {
+    const emoji = dynamicLanguageFlags.value['vj'] || '🇯🇵'
+    options.push({ code: 'vj', label: `${emoji} VJ`, fullLabel: 'Version Japonaise' })
+  }
+  return options
+})
+
+// Computed for current language display
+const currentLanguageDisplay = computed(() => {
+  const current = languageOptions.value.find(opt => opt.code === lang.value)
+  return current || { label: lang.value.toUpperCase(), fullLabel: lang.value.toUpperCase() }
+})
+
 // Anime and episode metadata
 const animeTitle = ref('')
 const currentEpisodeTitle = ref('')
 
-// Computed for current episode data
-const currentEpisodeData = computed(() => {
-  return episodesList.value.find(ep => ep.episode === episodeNum.value)
-})
+// Dynamic language flags from anime-sama.fr
+const dynamicLanguageFlags = ref<Record<string, string>>({})
+
 
 // Computed progress values to avoid recalculating in template
 const progressPercent = computed(() => {
@@ -263,6 +341,18 @@ function handleKeyPress(event: KeyboardEvent) {
     case 'E':
       event.preventDefault()
       toggleEpisodesPanel()
+      break
+    case 'l':
+    case 'L':
+      event.preventDefault()
+      if (languageOptions.value.length > 1) {
+        const currentIndex = languageOptions.value.findIndex(opt => opt.code === lang.value)
+        const nextIndex = (currentIndex + 1) % languageOptions.value.length
+        const nextOption = languageOptions.value[nextIndex]
+        if (nextOption) {
+          switchLanguage(nextOption.code as any)
+        }
+      }
       break
     case 'Escape':
       event.preventDefault()
@@ -650,6 +740,12 @@ async function loadAnimeMetadata() {
   try {
     const response = await $fetch(`/api/anime/${id.value}`) as any
     animeTitle.value = response?.title || response?.name || `Anime ${id.value}`
+    
+    // Extract dynamic language flags from the response
+    if (response?.languageFlags) {
+      dynamicLanguageFlags.value = response.languageFlags
+      console.log('Loaded dynamic language flags:', dynamicLanguageFlags.value)
+    }
   } catch (error) {
     console.error('Failed to load anime metadata:', error)
     animeTitle.value = `Anime ${id.value}`
@@ -696,6 +792,34 @@ function toggleEpisodesPanel() {
   }
 }
 
+async function switchLanguage(targetLang: 'vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj') {
+  if (targetLang === lang.value || switchingLanguage.value) return
+  
+  switchingLanguage.value = true
+  showLanguageDropdown.value = false // Close dropdown immediately
+  
+  try {
+    console.log(`🔄 Switching from ${lang.value} to ${targetLang}`)
+    await navigateTo({
+      path: `/watch/${id.value}/${season.value}/${targetLang}/${episodeNum.value}`,
+      replace: true
+    })
+  } catch (error) {
+    console.error('Failed to switch language:', error)
+  } finally {
+    switchingLanguage.value = false
+  }
+}
+
+function toggleLanguageDropdown() {
+  if (languageOptions.value.length <= 1) return // Don't show dropdown if only one language
+  showLanguageDropdown.value = !showLanguageDropdown.value
+}
+
+function closeLanguageDropdown() {
+  showLanguageDropdown.value = false
+}
+
 onBeforeUnmount(() => {
   destroyHls()
   stopProgressUpdates() // Ensure animation frame is stopped
@@ -710,9 +834,10 @@ onBeforeUnmount(() => {
   // Remove global event listeners to prevent memory leaks
   document.removeEventListener('keydown', handleKeyPress)
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  document.removeEventListener('click', closeLanguageDropdown)
 })
 
-async function fetchEpisodesFor(targetLang: 'vf' | 'vostfr', maxRetries: number = 3): Promise<Array<{ episode: number; title?: string; url: string; urls?: string[] }>> {
+async function fetchEpisodesFor(targetLang: 'vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj', maxRetries: number = 3): Promise<Array<{ episode: number; title?: string; url: string; urls?: string[] }>> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const response = await $fetch(`/api/anime/episodes/${id.value}/${season.value}/${targetLang}`) as any
@@ -750,49 +875,47 @@ async function resolveEpisode() {
   console.log(`🎬 Resolving episode: ${id.value}/${season.value}/${lang.value}/${episodeNum.value}`)
   
   try {
-    // Parallelize fetching episodes for both languages from the start
-    const isFallbackRoute = route.query.fallback === '1'
-    const altLang: 'vf' | 'vostfr' = lang.value === 'vf' ? 'vostfr' : 'vf'
+    // Parallelize fetching episodes for all possible languages
+    const allLanguages: ('vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj')[] = 
+      ['vostfr', 'vf', 'va', 'var', 'vkr', 'vcn', 'vqc', 'vf1', 'vf2', 'vj']
     
-    // Start both fetches in parallel (unless this is already a fallback route)
-    const fetchPromises = [
-      fetchEpisodesFor(lang.value).catch(() => []),
-    ]
+    // Start fetching for all languages in parallel
+    const languagePromises = allLanguages.map(langCode => 
+      fetchEpisodesFor(langCode).then(episodes => ({ lang: langCode, episodes })).catch(() => ({ lang: langCode, episodes: [] }))
+    )
     
-    if (!isFallbackRoute) {
-      fetchPromises.push(fetchEpisodesFor(altLang).catch(() => []))
-    }
+    const results = await Promise.all(languagePromises)
     
-    const results = await Promise.all(fetchPromises)
-    const primaryList = results[0] || []
-    const altList = results[1] || []
+    // Update available languages based on results
+    results.forEach(({ lang, episodes }) => {
+      availableLanguages.value[lang as keyof typeof availableLanguages.value] = episodes.length > 0
+    })
     
-    console.log(`✅ Fetched ${primaryList.length} episodes for ${lang.value}`)
-    if (!isFallbackRoute) {
-      console.log(`✅ Fetched ${altList.length} episodes for ${altLang}`)
-    }
+    console.log(`✅ Checked all languages, available:`, availableLanguages.value)
     
     // Try requested language first
-    let ep = primaryList.find(e => Number(e.episode) === episodeNum.value)
+    const currentLangResult = results.find(r => r.lang === lang.value)
+    let ep = currentLangResult?.episodes.find(e => Number(e.episode) === episodeNum.value)
     console.log(`🎯 Looking for episode ${episodeNum.value} in ${lang.value}, found:`, ep ? `Episode ${ep.episode}` : 'Not found')
 
-    // Fallback: if no episodes or target episode missing, try alternate lang (only once)
-    if ((!primaryList.length || !ep) && !isFallbackRoute && altList.length > 0) {
-      console.log(`🔄 Trying fallback to ${altLang} for episode ${episodeNum.value}`)
-      const altEp = altList.find((e: any) => Number(e.episode) === episodeNum.value)
-      console.log(`🎯 Looking for episode ${episodeNum.value} in ${altLang}, found:`, altEp ? `Episode ${altEp.episode}` : 'Not found')
-      if (altEp) {
-        notice.value = `Langue ${lang.value.toUpperCase()} indisponible. Basculement en ${altLang.toUpperCase()}.`
-        console.log(`🔄 Navigating to same episode in ${altLang}`)
-        // Navigate to same episode in alternate language
-        await navigateTo({
-          path: `/watch/${id.value}/${season.value}/${altLang}/${episodeNum.value}`,
-          query: { fallback: '1' },
-          replace: true,
-        })
-        return
+    // If not found in current language, try other available languages in order
+    if (!ep) {
+      for (const { lang: altLang, episodes: altEpisodes } of results) {
+        if (altLang !== lang.value && altEpisodes.length > 0) {
+          const altEp = altEpisodes.find((e: any) => Number(e.episode) === episodeNum.value)
+          if (altEp) {
+            console.log(`🔄 Found episode ${episodeNum.value} in ${altLang}, switching...`)
+            notice.value = `Langue ${lang.value.toUpperCase()} indisponible. Basculement en ${altLang.toUpperCase()}.`
+            await navigateTo({
+              path: `/watch/${id.value}/${season.value}/${altLang}/${episodeNum.value}`,
+              query: { fallback: '1' },
+              replace: true,
+            })
+            return
+          }
+        }
       }
-      console.log(`❌ Episode ${episodeNum.value} not found in ${altLang}, no fallback possible`)
+      console.log(`❌ Episode ${episodeNum.value} not found in any available language`)
     }
 
     if (!ep) {
@@ -907,6 +1030,7 @@ onMounted(async () => {
   document.addEventListener('fullscreenchange', () => {
     isFullscreen.value = !!document.fullscreenElement
   })
+  document.addEventListener('click', closeLanguageDropdown)
 })
 
 // Re-resolve when params change (e.g., after fallback navigation) - debounced to prevent rapid calls
@@ -914,6 +1038,19 @@ let resolveTimeout: number | null = null
 watch([season, lang, episodeNum], () => {
   if (resolveTimeout) clearTimeout(resolveTimeout)
   resolveTimeout = setTimeout(() => {
+    // Reset language availability when switching episodes/languages
+    availableLanguages.value = {
+      vostfr: false,
+      vf: false,
+      va: false,
+      var: false,
+      vkr: false,
+      vcn: false,
+      vqc: false,
+      vf1: false,
+      vf2: false,
+      vj: false
+    }
     resolveEpisode()
   }, 100) // Small debounce to handle rapid param changes
 })
@@ -1173,6 +1310,42 @@ watch([episodeNum, episodesList], () => {
               </div>
               
               <div class="flex items-center gap-2">
+                <!-- Language dropdown -->
+                <div v-if="languageOptions.length > 1" class="relative">
+                  <button
+                    @click.stop="toggleLanguageDropdown"
+                    :disabled="switchingLanguage"
+                    class="flex items-center gap-1 px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-sm font-medium"
+                    :title="'Changer de langue'"
+                  >
+                    <span v-if="switchingLanguage" class="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin"></span>
+                    <span v-else>{{ currentLanguageDisplay.label }}</span>
+                    <Icon name="heroicons:chevron-down" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': showLanguageDropdown }" />
+                  </button>
+                  
+                  <!-- Dropdown menu -->
+                  <div
+                    v-if="showLanguageDropdown"
+                    class="absolute bottom-full right-0 mb-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-50 w-80 overflow-hidden"
+                    @click.stop
+                  >
+                    <div class="py-1">
+                      <button
+                        v-for="option in languageOptions"
+                        :key="option.code"
+                        @click="switchLanguage(option.code as 'vf' | 'vostfr')"
+                        :disabled="option.code === lang"
+                        class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 transition-colors flex items-center gap-2 whitespace-nowrap"
+                        :class="{ 'bg-zinc-700 text-white': option.code === lang, 'text-zinc-300': option.code !== lang }"
+                      >
+                        <span>{{ option.label }}</span>
+                        <span class="text-xs opacity-75 flex-1">{{ option.fullLabel }}</span>
+                        <Icon v-if="option.code === lang" name="heroicons:check" class="w-4 h-4 ml-auto" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
                 <!-- Episodes list button -->
                 <button @click="toggleEpisodesPanel" class="p-2 hover:bg-white/10 rounded-full transition-colors" title="Épisodes">
                   <Icon name="heroicons:list-bullet" class="w-5 h-5" />
@@ -1229,6 +1402,11 @@ watch([episodeNum, episodesList], () => {
                       class="text-xs bg-white text-black px-2 py-1 rounded hover:bg-zinc-200 transition-colors">
                 Utiliser
               </button>
+            </div>
+          </div>
+          <div class="mt-2 pt-2 border-t border-zinc-600">
+            <div class="text-xs text-zinc-400">
+              Langues disponibles: VOSTFR={{ availableLanguages.vostfr }}, VF={{ availableLanguages.vf }}, VA={{ availableLanguages.va }}, VAR={{ availableLanguages.var }}, VKR={{ availableLanguages.vkr }}, VCN={{ availableLanguages.vcn }}, VQC={{ availableLanguages.vqc }}, VF1={{ availableLanguages.vf1 }}, VF2={{ availableLanguages.vf2 }}, VJ={{ availableLanguages.vj }}
             </div>
           </div>
         </div>

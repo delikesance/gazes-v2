@@ -126,25 +126,55 @@ function parseLanguageFlags(html: string): Record<string, string> {
         'mm': '🇲🇲', // Myanmar
         'kh': '🇰🇭', // Cambodia
         'la': '🇱🇦', // Laos
-        'x': '🇯🇵', // Special case: flag_x.png often used for Japanese/Original versions
     }
 
-    // NEW STRATEGY: Extract language buttons from the language switcher div
-    // Each button has: href="../langcode" and contains img with src="...flag_xx.png"
-    const buttonRegex = /<a\s+href="\.\.\/([^"]+)"[^>]*id="switch[^"]*"[^>]*>[\s\S]*?<img[^>]*src="[^"]*flag_([^"\.]+)\.png"[^>]*>[\s\S]*?<\/a>/gi
-    let match
+    // First, collect all flag images from the page, regardless of language context
+    const flagImages: Record<string, string> = {}
+    const flagImageRegex = /<img[^>]*src="[^"]*flag_([^"\.]+)(?:\.png|\.jpg|\.jpeg|\.gif|\.webp)"[^>]*>/gi
+    let imageMatch
 
-    while ((match = buttonRegex.exec(html)) !== null) {
-        const langCode = match[1] // e.g., 'vostfr', 'vf', 'va', 'vj'
-        const flagCode = match[2]?.toLowerCase() // e.g., 'jp', 'fr', 'en', 'ar'
-        
-        // Get emoji from flag code, use generic flag if unknown
-        const emoji = flagToEmoji[flagCode] || '🏳️'
-        
-        if (langCode && flagCode) {
-            flags[langCode] = emoji
-            console.log(`🏳️ Found language button: ${langCode} -> flag_${flagCode}.png -> ${emoji}`)
+    while ((imageMatch = flagImageRegex.exec(html)) !== null) {
+        const flagCode = imageMatch[1]?.toLowerCase() // e.g., 'cn', 'jp', 'fr', 'en', 'x'
+        const emoji = flagToEmoji[flagCode] || '🏳️' // Use generic flag if unknown
+        if (flagCode) {
+            flagImages[flagCode] = emoji
         }
+    }
+
+    // Now extract language mappings from links/tabs and match them with available flags
+    const langRegex = /<a href="\.\.\/([^"]+)"[^>]*id="switch[^"]*"[^>]*>/gi
+    let langMatch
+
+    while ((langMatch = langRegex.exec(html)) !== null) {
+        const langCode = langMatch[1] // e.g., 'vostfr', 'vf', 'va', 'vj'
+        
+        // For language mapping, try to find the best match from available flags
+        // Priority: exact language mapping > fallback mapping > first available flag
+        let assignedEmoji = '🏳️'
+        
+        if (langCode === 'vostfr' || langCode === 'vost') {
+            // For VOSTFR, use Chinese flag if available, or first Asian flag
+            assignedEmoji = flagImages['cn'] || flagImages['jp'] || flagImages['kr'] || Object.values(flagImages)[0] || '🇨🇳'
+        } else if (langCode === 'vf' || langCode === 'vf1' || langCode === 'vf2') {
+            assignedEmoji = flagImages['fr'] || '🇫🇷'
+        } else if (langCode === 'va') {
+            assignedEmoji = flagImages['us'] || flagImages['en'] || '🇺🇸'
+        } else if (langCode === 'vj') {
+            assignedEmoji = flagImages['jp'] || '🇯🇵'
+        } else if (langCode === 'vkr') {
+            assignedEmoji = flagImages['kr'] || '🇰🇷'
+        } else if (langCode === 'vcn') {
+            assignedEmoji = flagImages['cn'] || '🇨🇳'
+        } else if (langCode === 'vqc') {
+            assignedEmoji = flagImages['qc'] || '🇨🇦'
+        } else if (langCode === 'var') {
+            assignedEmoji = flagImages['ar'] || flagImages['sa'] || '🇸�'
+        } else {
+            // For unknown languages, use the first available flag or a generic one
+            assignedEmoji = Object.values(flagImages)[0] || '🏳️'
+        }
+        
+        flags[langCode] = assignedEmoji
     }
 
     return flags
