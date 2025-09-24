@@ -544,24 +544,30 @@ async function setupVideo() {
         hls = new Hls({ 
           enableWorker: true,
           lowLatencyMode: true, // Enable low latency mode for faster loading
-          maxLoadingDelay: 1, // Reduce from 2 to 1 second for faster startup
-          maxBufferLength: 10, // Reduce from 20 to 10 seconds for faster initial load
-          maxBufferSize: 10 * 1000 * 1000, // Reduce from 20MB to 10MB buffer
-          maxMaxBufferLength: 200, // Reduce from 300 to 200 seconds
+          maxLoadingDelay: 0.5, // Reduce to 0.5 seconds for faster startup
+          maxBufferLength: 6, // Reduce to 6 seconds for faster initial load
+          maxBufferSize: 6 * 1000 * 1000, // Reduce to 6MB buffer for faster startup
+          maxMaxBufferLength: 120, // Reduce to 120 seconds
           backBufferLength: 0, // Don't buffer behind current position
-          levelLoadingMaxRetry: 2, // Reduce from 3 to 2 retries
-          levelLoadingMaxRetryTimeout: 1000, // Reduce from 2000 to 1000ms
-          manifestLoadingMaxRetry: 2, // Reduce manifest retries
-          manifestLoadingMaxRetryTimeout: 1000, // Faster manifest retry
-          fragLoadingMaxRetry: 2, // Reduce from 3 to 2 fragment retries
-          fragLoadingMaxRetryTimeout: 1000, // Reduce from 2000 to 1000ms
+          levelLoadingMaxRetry: 1, // Reduce to 1 retry for faster failure
+          levelLoadingMaxRetryTimeout: 500, // Reduce to 500ms
+          manifestLoadingMaxRetry: 1, // Reduce manifest retries
+          manifestLoadingMaxRetryTimeout: 500, // Faster manifest retry
+          fragLoadingMaxRetry: 1, // Reduce to 1 fragment retry
+          fragLoadingMaxRetryTimeout: 500, // Reduce to 500ms
           // Enable more verbose logging for debugging
           debug: debug.value,
           // Optimize for faster startup
           startLevel: -1, // Auto level selection
           startPosition: 0, // Start from beginning immediately
-          maxBufferHole: 0.3, // Reduce from 0.5 to 0.3 for tighter buffering
-          maxFragLookUpTolerance: 0.05, // Reduce from 0.1 to 0.05 for faster lookup
+          maxBufferHole: 0.2, // Reduce to 0.2 for tighter buffering
+          maxFragLookUpTolerance: 0.02, // Reduce to 0.02 for faster lookup
+          // Additional performance optimizations
+          liveSyncDurationCount: 2, // Reduce live sync duration
+          liveMaxLatencyDurationCount: 3, // Reduce max latency
+          maxLiveSyncPlaybackRate: 1.2, // Allow slight speedup for live content
+          liveDurationInfinity: true, // Handle infinite live streams
+          highBufferWatchdogPeriod: 1, // Faster buffer monitoring
         })
 
         // Attach video element events BEFORE loading HLS
@@ -629,16 +635,16 @@ async function setupVideo() {
         // Store the timeout ID so it can be cleared on unmount
         const safetyTimeout = setTimeout(() => {
           if (videoLoading.value) {
-            console.warn('Safety timeout: clearing loading state after 3 seconds')
+            console.warn('Safety timeout: clearing loading state after 2 seconds')
             videoLoading.value = false
           }
-        }, 3000)
+        }, 2000)
         // Clear this timeout on unmount
         onBeforeUnmount(() => {
           clearTimeout(safetyTimeout)
         })
 
-        // Set a shorter timeout for HLS loading (7 seconds instead of 10)
+        // Set a shorter timeout for HLS loading (4 seconds for faster failure recovery)
         hlsLoadTimeout = setTimeout(() => {
           console.warn('HLS loading timeout, trying fallback to direct video')
           destroyHls()
@@ -651,14 +657,14 @@ async function setupVideo() {
             setupVideo()
           } else {
             console.log('No direct fallback available, trying next source')
-            videoError.value = 'Timeout lors du chargement de la vidéo HLS (7s)'
+            videoError.value = 'Timeout lors du chargement de la vidéo HLS (4s)'
             videoLoading.value = false
             // Try next source on timeout
             setTimeout(() => {
               tryNextSource()
-            }, 1000)
+            }, 500) // Reduce delay to 500ms
           }
-        }, 7000)
+        }, 4000)
       } else if (el.canPlayType('application/vnd.apple.mpegurl')) {
         // Native HLS support (Safari)
         el.src = playUrl.value
@@ -837,7 +843,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', closeLanguageDropdown)
 })
 
-async function fetchEpisodesFor(targetLang: 'vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj', maxRetries: number = 3): Promise<Array<{ episode: number; title?: string; url: string; urls?: string[] }>> {
+async function fetchEpisodesFor(targetLang: 'vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj', maxRetries: number = 2): Promise<Array<{ episode: number; title?: string; url: string; urls?: string[] }>> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const response = await $fetch(`/api/anime/episodes/${id.value}/${season.value}/${targetLang}`) as any
@@ -850,8 +856,8 @@ async function fetchEpisodesFor(targetLang: 'vostfr' | 'vf' | 'va' | 'var' | 'vk
         throw error
       }
       
-      // Wait before retrying (exponential backoff)
-      const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000)
+      // Wait before retrying (shorter delay for faster failure recovery)
+      const delay = Math.min(500 * Math.pow(2, attempt - 1), 2000)
       await new Promise(resolve => setTimeout(resolve, delay))
     }
   }
@@ -875,32 +881,43 @@ async function resolveEpisode() {
   console.log(`🎬 Resolving episode: ${id.value}/${season.value}/${lang.value}/${episodeNum.value}`)
   
   try {
-    // Parallelize fetching episodes for all possible languages
-    const allLanguages: ('vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj')[] = 
-      ['vostfr', 'vf', 'va', 'var', 'vkr', 'vcn', 'vqc', 'vf1', 'vf2', 'vj']
+    // Optimize: Only check priority languages first, then expand if needed
+    const priorityLanguages: ('vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj')[] = 
+      [lang.value as any, 'vostfr', 'vf', 'va'] // Start with requested language and most common ones
     
-    // Start fetching for all languages in parallel
-    const languagePromises = allLanguages.map(langCode => 
-      fetchEpisodesFor(langCode).then(episodes => ({ lang: langCode, episodes })).catch(() => ({ lang: langCode, episodes: [] }))
+    // Start fetching for priority languages first
+    const priorityPromises = priorityLanguages.map(langCode => 
+      fetchEpisodesFor(langCode, 2).then(episodes => ({ lang: langCode, episodes })).catch(() => ({ lang: langCode, episodes: [] }))
     )
     
-    const results = await Promise.all(languagePromises)
+    const priorityResults = await Promise.all(priorityPromises)
     
-    // Update available languages based on results
-    results.forEach(({ lang, episodes }) => {
+    // Update available languages based on priority results
+    priorityResults.forEach(({ lang, episodes }) => {
       availableLanguages.value[lang as keyof typeof availableLanguages.value] = episodes.length > 0
     })
     
-    console.log(`✅ Checked all languages, available:`, availableLanguages.value)
-    
     // Try requested language first
-    const currentLangResult = results.find(r => r.lang === lang.value)
+    const currentLangResult = priorityResults.find(r => r.lang === lang.value)
     let ep = currentLangResult?.episodes.find(e => Number(e.episode) === episodeNum.value)
     console.log(`🎯 Looking for episode ${episodeNum.value} in ${lang.value}, found:`, ep ? `Episode ${ep.episode}` : 'Not found')
 
-    // If not found in current language, try other available languages in order
+    // If not found in priority languages, check remaining languages
     if (!ep) {
-      for (const { lang: altLang, episodes: altEpisodes } of results) {
+      const remainingLanguages = ['var', 'vkr', 'vcn', 'vqc', 'vf1', 'vf2', 'vj'].filter(l => !priorityLanguages.includes(l as any))
+      const remainingPromises = remainingLanguages.map(langCode => 
+        fetchEpisodesFor(langCode as any, 2).then(episodes => ({ lang: langCode, episodes })).catch(() => ({ lang: langCode, episodes: [] }))
+      )
+      
+      const remainingResults = await Promise.all(remainingPromises)
+      
+      // Update available languages for remaining results
+      remainingResults.forEach(({ lang, episodes }) => {
+        availableLanguages.value[lang as keyof typeof availableLanguages.value] = episodes.length > 0
+      })
+      
+      // Check remaining languages for the episode
+      for (const { lang: altLang, episodes: altEpisodes } of remainingResults) {
         if (altLang !== lang.value && altEpisodes.length > 0) {
           const altEp = altEpisodes.find((e: any) => Number(e.episode) === episodeNum.value)
           if (altEp) {
@@ -922,64 +939,95 @@ async function resolveEpisode() {
       resolveError.value = `Épisode ${episodeNum.value} introuvable pour ${lang.value.toUpperCase()}`
       return
     }
-    const candidates = ep?.urls?.length ? ep.urls : ep?.url ? [ep.url] : []
+    let candidates = ep?.urls?.length ? ep.urls : ep?.url ? [ep.url] : []
     if (!candidates.length) { resolveError.value = 'Aucun lien pour cet épisode'; return }
+    
+    // Sort candidates by provider reliability (best first) for faster success
+    candidates = candidates.sort((a, b) => {
+      const getReliability = (url: string) => {
+        try {
+          const hostname = new URL(url).hostname.toLowerCase()
+          if (hostname.includes('sibnet')) return 10
+          if (hostname.includes('streamtape')) return 8
+          if (hostname.includes('vidmoly')) return 7
+          if (hostname.includes('uqload')) return 5
+          if (hostname.includes('doodstream')) return 4
+          if (hostname.includes('myvi')) return 3
+          if (hostname.includes('sendvid')) return 1
+          return 0
+        } catch {
+          return 0
+        }
+      }
+      return getReliability(b) - getReliability(a)
+    })
+    
+    console.log(`🎯 Sorted ${candidates.length} candidates by reliability:`, candidates.map(url => {
+      try {
+        const hostname = new URL(url).hostname
+        return `${hostname} (${url})`
+      } catch {
+        return url
+      }
+    }))
 
-    // Pick best provider URL and prepare stream resolution data in parallel
-    const sortParams = new URLSearchParams(); candidates.forEach(u => sortParams.append('urls', u))
+    // Try candidates in order, with smart fallback for failed providers
+    let resolvedUrls: any[] = []
+    let lastError = ''
     
-    // Start provider sorting
-    const sortPromise = $fetch(`/api/providers?action=sort&${sortParams.toString()}`).catch(() => ({ sortedUrls: [candidates[0]] }))
-    
-    // Prepare stream resolution data in parallel
-    const encoder = new TextEncoder();
-    
-    // Wait for provider sorting to complete
-    const sorted: any = await sortPromise
-    const targetUrl = sorted?.sortedUrls?.[0] || candidates[0] || ''
-    
-    if (!targetUrl) {
-      resolveError.value = 'Aucune URL valide trouvée'
-      return
+    for (let i = 0; i < Math.min(candidates.length, 3); i++) { // Try up to 3 candidates
+      const targetUrl = candidates[i]
+      if (!targetUrl) continue
+      
+      console.log(`🎯 Trying candidate ${i + 1}/${Math.min(candidates.length, 3)}: ${targetUrl}`)
+      
+      try {
+        // Resolve the provider URL to actual video stream
+        const encoder = new TextEncoder();
+        const data = encoder.encode(targetUrl);
+        const base64 = btoa(String.fromCharCode(...data))
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/, "");
+        
+        let referer: string | undefined;
+        try {
+          const u = new URL(targetUrl);
+          referer = u.origin + "/";
+        } catch {}
+        
+        const resolveResponse = await $fetch<any>("/api/player/resolve", {
+          params: {
+            u64: base64,
+            referer,
+            ...(debug.value ? { debug: "1" } : {}),
+          },
+          timeout: 6000, // Reduce to 6s for faster failure detection
+        });
+        
+        if (resolveResponse?.ok && resolveResponse?.urls?.length > 0) {
+          console.log(`✅ Successfully resolved candidate ${i + 1}: ${resolveResponse.urls.length} URLs found`)
+          resolvedUrls = resolveResponse.urls
+          break // Success! Stop trying other candidates
+        } else {
+          lastError = resolveResponse?.message || "No URLs found"
+          console.warn(`❌ Candidate ${i + 1} failed: ${lastError}`)
+        }
+      } catch (error: any) {
+        lastError = error?.message || 'Network error'
+        console.warn(`❌ Candidate ${i + 1} error: ${lastError}`)
+      }
     }
-
-    // Resolve the provider URL to actual video stream
-    const data = encoder.encode(targetUrl);
-    const base64 = btoa(String.fromCharCode(...data))
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, "");
     
-    let referer: string | undefined;
-    try {
-      const u = new URL(targetUrl);
-      referer = u.origin + "/";
-    } catch {}
-    
-    const resolveResponse = await $fetch<any>("/api/player/resolve", {
-      params: {
-        u64: base64,
-        referer,
-        ...(debug.value ? { debug: "1" } : {}),
-      },
-      timeout: 15000, // Reduce from 30s to 15s
-    });
-    
-    if (!resolveResponse?.ok) {
-      resolveError.value = resolveResponse?.message || "Failed to resolve video stream";
+    if (resolvedUrls.length === 0) {
+      resolveError.value = lastError || "Toutes les sources ont échoué";
       return;
     }
     
-    const urls = resolveResponse?.urls || [];
-    resolvedList.value = urls;
-    
-    if (urls.length > 0) {
-      currentSourceIndex.value = 0
-      const hlsFirst = urls.find((u: any) => u.type === "hls") || urls[0];
-      playUrl.value = hlsFirst.proxiedUrl || hlsFirst.url;
-    } else {
-      resolveError.value = "No video streams found";
-    }
+    resolvedList.value = resolvedUrls;
+    currentSourceIndex.value = 0
+    const hlsFirst = resolvedUrls.find((u: any) => u.type === "hls") || resolvedUrls[0];
+    playUrl.value = hlsFirst.proxiedUrl || hlsFirst.url;
   } catch (e: any) {
     resolveError.value = e?.message || 'Erreur de résolution'
   } finally {
@@ -992,6 +1040,38 @@ watch([showPlayer, playUrl], async () => {
   await nextTick(); 
   setupVideo()
 })
+
+// Preload next episode for faster navigation
+async function preloadNextEpisode() {
+  try {
+    const nextEpisodeNum = episodeNum.value + 1
+    const nextEpisodeUrl = `/api/anime/episodes/${id.value}/${season.value}/${lang.value}`
+    
+    // Prefetch the episodes list for next episode
+    const response = await $fetch(nextEpisodeUrl) as any
+    const episodes = response?.episodes || []
+    const nextEpisode = episodes.find((ep: any) => ep.episode === nextEpisodeNum)
+    
+    if (nextEpisode && nextEpisode.urls && nextEpisode.urls.length > 0) {
+      // Preload the first URL of the next episode
+      const nextUrl = nextEpisode.urls[0]
+      console.log(`🚀 Preloading next episode ${nextEpisodeNum}:`, nextUrl)
+      
+      // Create a hidden link element to prefetch the URL
+      const link = document.createElement('link')
+      link.rel = 'prefetch'
+      link.href = nextUrl
+      document.head.appendChild(link)
+      
+      // Clean up after a short delay
+      setTimeout(() => {
+        document.head.removeChild(link)
+      }, 5000)
+    }
+  } catch (error) {
+    console.debug('Failed to preload next episode:', error)
+  }
+}
 
 // Initial setup after component mounts
 onMounted(async () => {
@@ -1008,6 +1088,9 @@ onMounted(async () => {
   
   // Wait only for episode resolution
   await resolvePromise
+  
+  // Preload next episode in background (non-blocking)
+  preloadNextEpisode().catch(() => null)
   
   // Ensure video element events are set up immediately
   await nextTick()

@@ -53,10 +53,10 @@ export const VERIFIED_PROVIDERS: VideoProvider[] = [
   },
   {
     hostname: 'sendvid.com',
-    reliability: 2,
-    description: 'SendVid - Currently experiencing 404 errors',
+    reliability: 1,
+    description: 'SendVid - Frequently returns 404 errors',
     extractionPatterns: ['MP4 direct links in HTML'],
-    knownIssues: ['Many URLs returning 404 Not Found']
+    knownIssues: ['Many URLs returning 404 Not Found', 'Poor reliability']
   }
 ]
 

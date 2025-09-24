@@ -78,11 +78,11 @@ const VIDEO_URL_PATTERNS = [
 
 // Security configuration
 const EXTRACTION_CONFIG = {
-  MAX_HTML_SIZE: 5 * 1024 * 1024, // 5MB limit
-  PROCESSING_TIMEOUT: 5000, // 5 second timeout for extraction
+  MAX_HTML_SIZE: 2 * 1024 * 1024, // Reduce to 2MB limit for faster processing
+  PROCESSING_TIMEOUT: 3000, // Reduce to 3 second timeout for faster extraction
   ALLOWED_PORTS: [80, 443, 8080, 8443] as number[],
   BLOCKED_HOSTS: ['localhost', '127.0.0.1', '0.0.0.0', '::1'] as string[],
-  MAX_URLS_PER_TYPE: 10 // Limit URLs per type to prevent DoS
+  MAX_URLS_PER_TYPE: 5 // Reduce to 5 URLs per type for faster processing
 } as const
 
 // Helper function to safely strip quotes from URLs
@@ -137,6 +137,8 @@ function validateUrl(candidate: string): { isValid: boolean; url?: string; error
 function* iterateMatches(html: string, patterns: typeof VIDEO_URL_PATTERNS) {
   const urlCounts = new Map<string, number>()
   const startTime = Date.now()
+  let totalUrlsFound = 0
+  const MAX_TOTAL_URLS = 15 // Early termination after finding enough URLs
 
   for (const pattern of patterns) {
     // Reset regex lastIndex to ensure fresh start
@@ -147,6 +149,12 @@ function* iterateMatches(html: string, patterns: typeof VIDEO_URL_PATTERNS) {
       // Check timeout to prevent hanging on large documents
       if (Date.now() - startTime > EXTRACTION_CONFIG.PROCESSING_TIMEOUT) {
         console.warn('⚠️ URL extraction timeout reached, stopping')
+        return
+      }
+
+      // Early termination if we have enough URLs
+      if (totalUrlsFound >= MAX_TOTAL_URLS) {
+        console.log(`✅ Found ${totalUrlsFound} URLs, stopping early for performance`)
         return
       }
 
@@ -171,6 +179,7 @@ function* iterateMatches(html: string, patterns: typeof VIDEO_URL_PATTERNS) {
       
       if (validation.isValid && validation.url) {
         urlCounts.set(pattern.type, currentCount + 1)
+        totalUrlsFound++
         yield {
           type: pattern.type,
           url: validation.url,
@@ -277,7 +286,7 @@ export default defineEventHandler(async (event) => {
     
     // Create AbortController for timeout
     const controller = new AbortController()
-    const timeoutMs = 15000 // 15 second timeout
+    const timeoutMs = 8000 // 8 second timeout for faster failure recovery
     const timeoutId = setTimeout(() => {
       controller.abort()
     }, timeoutMs)
