@@ -504,6 +504,15 @@ function onVideoError(e: Event) {
     tryNextSource()
   }, 1000)
 }
+function onVideoEnded() { 
+  isPlaying.value = false
+  showControls.value = true
+  // Mark episode as completed when it actually ends
+  if (duration.value > 0) {
+    console.log('🎬 Episode ended, marking as completed')
+    saveProgress(duration.value, duration.value) // This will mark it as completed
+  }
+}
 // --- Stable handler references for Hls events ---
 let hlsErrorHandler: ((event: string, data: any) => void) | null = null
 let hlsManifestParsedHandler: (() => void) | null = null
@@ -522,6 +531,7 @@ function removeVideoEventListeners(el: any) {
   el.removeEventListener('volumechange', onVideoVolumeChange)
   el.removeEventListener('seeking', onVideoSeeking)
   el.removeEventListener('seeked', onVideoSeeked)
+  el.removeEventListener('ended', onVideoEnded)
   el.removeEventListener('error', onVideoError)
 }
 
@@ -534,6 +544,7 @@ function addVideoEventListeners(el: any) {
   el.addEventListener('volumechange', onVideoVolumeChange)
   el.addEventListener('seeking', onVideoSeeking)
   el.addEventListener('seeked', onVideoSeeked)
+  el.addEventListener('ended', onVideoEnded)
   el.addEventListener('error', onVideoError)
 }
 

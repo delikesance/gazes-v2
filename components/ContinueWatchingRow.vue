@@ -53,6 +53,38 @@ const formatTime = (seconds: number): string => {
   return `${minutes}:${secs.toString().padStart(2, '0')}`
 }
 
+const deleteItem = async (item: ContinueWatchingItem, event: Event) => {
+  event.preventDefault()
+  event.stopPropagation()
+  
+  if (!confirm(`Êtes-vous sûr de vouloir supprimer "${item.anime.title}" de votre liste de continuation ?`)) {
+    return
+  }
+
+  try {
+    const response = await $fetch(`/api/watch/progress/${item.anime.id}`, {
+      method: 'DELETE',
+      body: {
+        season: item.season,
+        episode: item.episode
+      }
+    })
+
+    if (response?.success) {
+      // Remove the item from the local list
+      continueWatchingItems.value = continueWatchingItems.value.filter(
+        i => !(i.anime.id === item.anime.id && i.season === item.season && i.episode === item.episode)
+      )
+    } else {
+      console.error('Failed to delete item:', response)
+      alert('Erreur lors de la suppression')
+    }
+  } catch (error) {
+    console.error('Failed to delete item:', error)
+    alert('Erreur lors de la suppression')
+  }
+}
+
 const getProgressColor = (percent: number): string => {
   if (percent < 25) return 'bg-red-500'
   if (percent < 50) return 'bg-yellow-500'
@@ -160,6 +192,17 @@ onMounted(() => {
             <!-- Episode info overlay -->
             <div class="absolute top-2 right-2 bg-black/80 rounded px-2 py-1 text-xs text-white font-medium">
               {{ item.seasonDisplay }} E{{ item.episode.toString().padStart(2, '0') }}
+            </div>
+
+            <!-- Delete button overlay -->
+            <div class="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+              <button
+                @click="deleteItem(item, $event)"
+                class="bg-red-600/90 hover:bg-red-600 text-white rounded-full p-1.5 transition-colors duration-200"
+                title="Supprimer de la liste de continuation"
+              >
+                <Icon name="heroicons:trash" class="w-3 h-3" />
+              </button>
             </div>
           </div>
 

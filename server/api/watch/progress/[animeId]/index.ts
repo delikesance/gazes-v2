@@ -115,6 +115,37 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  if (method === 'DELETE') {
+    // Delete progress for a specific episode
+    try {
+      const body = await readBody(event)
+      const { season, episode } = body
+
+      if (typeof season !== 'string' || typeof episode !== 'number') {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'Invalid request body. Required: season (string), episode (number)'
+        })
+      }
+
+      const db = DatabaseService.getInstance()
+      const success = await db.deleteWatchingProgress(user.id, animeId, season, episode)
+
+      return {
+        success,
+        message: success ? 'Progress deleted successfully' : 'Progress not found'
+      }
+    } catch (error: any) {
+      if (error.statusCode) throw error
+
+      console.error('Failed to delete watching progress:', error)
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Failed to delete watching progress'
+      })
+    }
+  }
+
   throw createError({
     statusCode: 405,
     statusMessage: 'Method not allowed'
