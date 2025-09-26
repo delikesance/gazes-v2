@@ -172,11 +172,18 @@ const currentEpisodeTitle = ref('')
 // Dynamic language flags from anime-sama.fr
 const dynamicLanguageFlags = ref<Record<string, string>>({})
 
+// Skip functionality state
+const skipTimes = ref<Array<{ type: 'op' | 'ed'; startTime: number; endTime: number }>>([])
+const skipEnabled = ref(true) // Enable/disable skip functionality
+const showSkipButtons = ref(false)
+const currentSkipType = ref<'op' | 'ed' | null>(null)
+const skipTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
+
 // Progress tracking functions
 async function loadSavedProgress() {
   try {
     const response = await $fetch(`/api/watch/progress/${id.value}`)
-    if (response?.success) {
+    if (response?.success && 'progress' in response) {
       // Handle both array and single object responses
       const progressData = Array.isArray(response.progress) ? response.progress : [response.progress]
       if (progressData.length > 0) {
@@ -579,6 +586,9 @@ function handleTimeUpdate() {
       buffered.value = el.buffered.end(el.buffered.length - 1)
     }
   }
+
+  // Check if skip buttons should be shown
+  checkSkipAvailability()
 }
 
 function handleLoadedMetadata() {
@@ -589,6 +599,9 @@ function handleLoadedMetadata() {
   isMuted.value = el.muted
   // Ensure initial playing state matches the video element
   isPlaying.value = !el.paused
+
+  // Load skip times now that we have the episode duration
+  loadSkipTimes()
 
   // Resume from saved progress if available
   if (savedProgress.value && savedProgress.value.duration > 0) {
@@ -612,6 +625,90 @@ function handleVolumeChange() {
 function handleEnded() {
   isPlaying.value = false
   showControls.value = true
+}
+
+// Skip functionality functions
+async function loadSkipTimes() {
+  try {
+    console.log('⏭️ [SKIP] Loading skip times for anime:', id.value, 'episode:', episodeNum.value, 'duration:', duration.value)
+    const params = duration.value > 0 ? { episodeLength: duration.value } : {}
+    const response = await $fetch(`/api/anime/${id.value}/skip/${episodeNum.value}`, { params })
+    if (response?.skipTimes && Array.isArray(response.skipTimes)) {
+      skipTimes.value = response.skipTimes
+      console.log('⏭️ [SKIP] Successfully loaded skip times:', skipTimes.value.length, 'entries')
+      console.log('⏭️ [SKIP] Skip times details:', skipTimes.value)
+    } else {
+      skipTimes.value = []
+      console.log('⏭️ [SKIP] No skip times found for this episode')
+    }
+  } catch (error) {
+    console.warn('⏭️ [SKIP] Failed to load skip times:', error)
+    skipTimes.value = []
+  }
+}
+
+function skipToEnd(skipType: 'op' | 'ed') {
+  const skipTime = skipTimes.value.find(s => s.type === skipType)
+  if (skipTime && videoRef.value) {
+    console.log(`⏭️ [SKIP] Skipping ${skipType.toUpperCase()} from ${currentTime.value}s to ${skipTime.endTime}s`)
+    seek(skipTime.endTime)
+    hideSkipButtons()
+  } else {
+    console.warn(`⏭️ [SKIP] Could not skip ${skipType.toUpperCase()} - skip time not found or video not ready`)
+  }
+}
+
+function hideSkipButtons() {
+  console.log('⏭️ [SKIP] Hiding skip buttons')
+  showSkipButtons.value = false
+  currentSkipType.value = null
+  if (skipTimeout.value) {
+    clearTimeout(skipTimeout.value)
+    skipTimeout.value = null
+  }
+}
+
+function checkSkipAvailability() {
+  if (!skipEnabled.value || skipTimes.value.length === 0) return
+
+  const currentVideoTime = currentTime.value
+  let shouldShowButtons = false
+  let activeSkipType: 'op' | 'ed' | null = null
+
+  for (const skipTime of skipTimes.value) {
+    const timeUntilStart = skipTime.startTime - currentVideoTime
+    const timeUntilEnd = skipTime.endTime - currentVideoTime
+
+    // Show skip button when we're within the skip period
+    if (currentVideoTime >= skipTime.startTime && currentVideoTime < skipTime.endTime) {
+      shouldShowButtons = true
+      activeSkipType = skipTime.type
+      console.log(`⏭️ [SKIP] Currently in ${skipTime.type.toUpperCase()} period (${currentVideoTime.toFixed(1)}s of ${skipTime.startTime.toFixed(1)}s-${skipTime.endTime.toFixed(1)}s)`)
+      break
+    }
+
+    // Also show a few seconds before the skip period starts
+    if (timeUntilStart > 0 && timeUntilStart <= 3) {
+      shouldShowButtons = true
+      activeSkipType = skipTime.type
+      console.log(`⏭️ [SKIP] Approaching ${skipTime.type.toUpperCase()} start in ${timeUntilStart.toFixed(1)}s`)
+      break
+    }
+  }
+
+  if (shouldShowButtons && !showSkipButtons.value) {
+    showSkipButtons.value = true
+    currentSkipType.value = activeSkipType
+    console.log(`⏭️ [SKIP] Showing skip buttons for ${activeSkipType?.toUpperCase()}`)
+    // Auto-hide after 10 seconds if not interacted with
+    skipTimeout.value = setTimeout(() => {
+      console.log('⏭️ [SKIP] Auto-hiding skip buttons (timeout)')
+      hideSkipButtons()
+    }, 10000)
+  } else if (!shouldShowButtons && showSkipButtons.value) {
+    console.log('⏭️ [SKIP] Hiding skip buttons (no longer in skip period)')
+    hideSkipButtons()
+  }
 }
 
 // Track setup attempts to prevent infinite loops
@@ -949,6 +1046,12 @@ onBeforeUnmount(() => {
     resolveTimeout = null
   }
   
+  // Clear skip timeout
+  if (skipTimeout.value) {
+    clearTimeout(skipTimeout.value)
+    skipTimeout.value = null
+  }
+  
   // Remove global event listeners to prevent memory leaks
   document.removeEventListener('keydown', handleKeyPress)
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
@@ -1263,6 +1366,7 @@ watch([season, lang, episodeNum], () => {
       vj: false
     }
     resolveEpisode()
+    // Skip times will be loaded automatically when video metadata loads
   }, 100) // Small debounce to handle rapid param changes
 })
 
@@ -1558,9 +1662,14 @@ watch([episodeNum, episodesList], () => {
                   </div>
                 </div>
                 
-                <!-- Episodes list button -->
-                <button @click="toggleEpisodesPanel" class="p-2 hover:bg-white/10 rounded-full transition-colors" title="Épisodes">
-                  <Icon name="heroicons:list-bullet" class="w-5 h-5" />
+                <!-- Skip toggle -->
+                <button 
+                  @click="skipEnabled = !skipEnabled"
+                  :class="skipEnabled ? 'text-violet-400' : 'text-zinc-400'"
+                  class="p-2 hover:bg-white/10 rounded-full transition-colors"
+                  :title="skipEnabled ? 'Désactiver le saut automatique' : 'Activer le saut automatique'"
+                >
+                  <Icon name="heroicons:forward" class="w-5 h-5" />
                 </button>
                 
                 <!-- Settings/Quality (if multiple sources) -->
@@ -1623,12 +1732,29 @@ watch([episodeNum, episodesList], () => {
           </div>
         </div>
 
-        <!-- Center play button overlay (when paused or autoplay blocked) -->
-        <div v-if="(!isPlaying || videoError) && !videoLoading && !resolveError" 
-             class="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-          <button @click="togglePlay" class="w-20 h-20 bg-black/60 rounded-full hover:bg-black/80 transition-colors pointer-events-auto border-2 border-white/20 hover:border-white/40 flex items-center justify-center">
-            <Icon name="heroicons:play" class="w-8 h-8 text-white ml-1" />
-          </button>
+        <!-- Skip buttons overlay -->
+        <div 
+          v-if="showSkipButtons && currentSkipType"
+          class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-40 transition-opacity duration-300"
+        >
+          <div class="bg-black/80 backdrop-blur-sm rounded-lg p-4 text-center text-white">
+            <div class="text-sm text-zinc-300 mb-2">
+              {{ currentSkipType === 'op' ? 'Générique de début' : 'Générique de fin' }}
+            </div>
+            <button
+              @click="skipToEnd(currentSkipType)"
+              class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2 mx-auto"
+            >
+              <Icon name="heroicons:forward" class="w-4 h-4" />
+              <span>Sauter</span>
+            </button>
+            <button
+              @click="hideSkipButtons"
+              class="text-xs text-zinc-400 hover:text-zinc-300 mt-2 block mx-auto transition-colors"
+            >
+              Masquer
+            </button>
+          </div>
         </div>
       </div>
     </div>
