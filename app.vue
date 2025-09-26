@@ -3,13 +3,13 @@ import { ref, onErrorCaptured } from "vue";
 
 // Global error handling
 const globalError = ref<string | null>(null);
-const showError = ref(false);
+const showGlobalError = ref<boolean>(false);
 
 // Capture Vue errors
 onErrorCaptured((error, instance, info) => {
     console.error("Vue error captured:", error, info);
     globalError.value = error.message || "An unexpected error occurred";
-    showError.value = true;
+    showGlobalError.value = true;
     return false; // Prevent error from propagating
 });
 
@@ -18,12 +18,12 @@ if (typeof window !== "undefined") {
     window.addEventListener("unhandledrejection", (event) => {
         console.error("Unhandled promise rejection:", event.reason);
         globalError.value = "A network or loading error occurred";
-        showError.value = true;
+        showGlobalError.value = true;
     });
 }
 
 const dismissError = () => {
-    showError.value = false;
+    showGlobalError.value = false;
     globalError.value = null;
 };
 
@@ -39,7 +39,7 @@ const reloadPage = () => {
         <!-- Global error boundary -->
         <Teleport to="body">
             <div
-                v-if="showError"
+                v-if="showGlobalError"
                 class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
                 role="dialog"
                 aria-modal="true"

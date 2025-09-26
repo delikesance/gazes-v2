@@ -71,7 +71,7 @@ function parseLanguageFlags(html: string): Record<string, string> {
         console.log(`Match ${count}: ${langCode} -> flag_${flagCode}.png`)
 
         const emoji = flagMap[`flag_${flagCode}.png`]
-        if (emoji) {
+        if (emoji && langCode) {
             flags[langCode] = emoji
             console.log(`Mapped ${langCode} to ${emoji}`)
         }

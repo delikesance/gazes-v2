@@ -2,14 +2,7 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import type { H3Event } from 'h3'
 import { DatabaseService } from './database'
-
-export interface User {
-  id: string
-  email: string
-  username: string
-  createdAt: Date
-  updatedAt: Date
-}
+import type { User } from './database'
 
 export interface JWTPayload {
   userId: string
@@ -46,6 +39,12 @@ export class AuthService {
   static generateTokens(user: User): AuthTokens {
     const config = useRuntimeConfig()
 
+    // Ensure we have valid string values with explicit typing
+    const jwtSecret = (config.jwtSecret as string) || 'default-secret'
+    const jwtRefreshSecret = (config.jwtRefreshSecret as string) || 'default-refresh-secret'
+    const jwtExpiresIn = (config.jwtExpiresIn as string) || '7d'
+    const jwtRefreshExpiresIn = (config.jwtRefreshExpiresIn as string) || '30d'
+
     const accessPayload: JWTPayload = {
       userId: user.id,
       email: user.email,
@@ -60,15 +59,16 @@ export class AuthService {
       type: 'refresh'
     }
 
-    const accessToken = jwt.sign(accessPayload, config.jwtSecret, {
-      expiresIn: config.jwtExpiresIn,
+    // Use explicit type assertion to match the correct overload
+    const accessToken = jwt.sign(accessPayload, jwtSecret, {
+      expiresIn: jwtExpiresIn,
       issuer: 'gazes-app'
-    })
+    } as jwt.SignOptions)
 
-    const refreshToken = jwt.sign(refreshPayload, config.jwtRefreshSecret, {
-      expiresIn: config.jwtRefreshExpiresIn,
+    const refreshToken = jwt.sign(refreshPayload, jwtRefreshSecret, {
+      expiresIn: jwtRefreshExpiresIn,
       issuer: 'gazes-app'
-    })
+    } as jwt.SignOptions)
 
     return { accessToken, refreshToken }
   }

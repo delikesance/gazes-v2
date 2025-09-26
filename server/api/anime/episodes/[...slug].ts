@@ -35,8 +35,8 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
         if (newSPFMatches) {
             newSPFMatches.forEach((match, index) => {
                 const titleMatch = match.match(/newSPF\("([^"]+)"\)/)
-                if (titleMatch) {
-                    const title = titleMatch[1].trim()
+                if (titleMatch && titleMatch[1]) {
+                    const title = (titleMatch[1] as string).trim()
                     if (title && title.length >= 3 && title.length <= 200) {
                         const episodeNum = index + 1
                         titles[episodeNum] = title
@@ -62,8 +62,8 @@ function extractEpisodeTitles(html: string): Record<number, string> {
         if (newSPFMatches) {
             newSPFMatches.forEach((match, index) => {
                 const titleMatch = match.match(/newSPF\("([^"]+)"\)/)
-                if (titleMatch) {
-                    const title = titleMatch[1].trim()
+                if (titleMatch && titleMatch[1]) {
+                    const title = (titleMatch[1] as string).trim()
                     if (title && title.length >= 3 && title.length <= 200) {
                         const episodeNum = index + 1
                         // Clean up the title
@@ -111,6 +111,7 @@ function extractEpisodeTitles(html: string): Record<number, string> {
         for (const pattern of episodePatterns) {
             let match
             while ((match = pattern.exec(html)) !== null) {
+                if (!match[1] || !match[2]) continue
                 const episodeNum = parseInt(match[1])
                 let title = match[2].trim()
                     .replace(/\s+/g, ' ') // normalize whitespace
@@ -160,6 +161,7 @@ function extractEpisodeTitles(html: string): Record<number, string> {
             let jsMatch
             while ((jsMatch = jsPattern.exec(html)) !== null) {
                 const content = jsMatch[1]
+                if (!content) continue
                 const titleMatches = content.match(/["']([^"']{3,100}?)["']/g)
                 if (titleMatches) {
                     titleMatches.forEach((match, index) => {
@@ -191,8 +193,9 @@ function extractEpisodeTitles(html: string): Record<number, string> {
             let metaMatch
             while ((metaMatch = metaPattern.exec(html)) !== null) {
                 const content = metaMatch[1]
+                if (!content) continue
                 const episodeMatch = content.match(/(?:Episode|Épisode)\s*(\d+)[-:\s]*(.+)/i)
-                if (episodeMatch) {
+                if (episodeMatch && episodeMatch[1] && episodeMatch[2]) {
                     const episodeNum = parseInt(episodeMatch[1])
                     const title = episodeMatch[2].trim()
                     if (episodeNum > 0 && title && title.length >= 3) {
@@ -337,8 +340,8 @@ export default defineEventHandler(async (event) => {
 
     if (matches.length > 0) {
         // Parse each eps array (eps1, eps2, eps3, etc.)
-        const epsArrays: string[][] = matches.map(arrayContent =>
-            arrayContent.split(',').map(url => url.trim().replace(/['"]/g, '')).filter(url => url.length > 0)
+        const epsArrays: string[][] = matches.map(arrayContent => 
+            arrayContent ? arrayContent.split(',').map(url => url.trim().replace(/['"]/g, '')).filter(url => url.length > 0) : []
         )
 
         // Create episodes using sequential numbering
@@ -351,7 +354,7 @@ export default defineEventHandler(async (event) => {
             // Collect URLs from all eps arrays for this episode
             epsArrays.forEach(epsArray => {
                 if (epsArray[episodeNum - 1]) {
-                    urls.push(epsArray[episodeNum - 1])
+                    urls.push(epsArray[episodeNum - 1] as string)
                 }
             })
 
@@ -377,7 +380,7 @@ export default defineEventHandler(async (event) => {
     } else {
         // Fallback: treat as single array
         const arrayMatch = sourceText.match(/\[([^\]]+)\]/)
-        if (!arrayMatch) {
+        if (!arrayMatch || !arrayMatch[1]) {
             throw createError({ statusCode: 502, statusMessage: 'Bad Gateway', message: 'No eps arrays found in source' })
         }
 

@@ -3,6 +3,7 @@ import { ref, watch, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "nuxt/app";
 import CarouselRow from "~/components/CarouselRow.vue";
 import HeroBanner from "~/components/HeroBanner.vue";
+import ContinueWatchingRow from "~/components/ContinueWatchingRow.vue";
 import { useSearch } from "~/composables/useSearch";
 
 // Set page metadata
@@ -313,6 +314,27 @@ const handleRetrySearch = () => {
                     :synopsis="heroDetails.synopsis"
                 />
             </div>
+
+            <!-- Continue Watching Section -->
+            <Suspense>
+                <ContinueWatchingRow title="Continuer à regarder" :max-items="20" />
+                <template #fallback>
+                    <section class="section">
+                        <div class="flex justify-between items-center mb-4 px-20">
+                            <h3 class="row-title">Continuer à regarder</h3>
+                        </div>
+                        <div class="relative">
+                            <div class="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pl-20 pr-20 scroll-pl-20 scroll-pr-20">
+                                <div
+                                    v-for="i in 8"
+                                    :key="i"
+                                    class="snap-start shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/40 animate-pulse aspect-[9/12] w-[170px]"
+                                />
+                            </div>
+                        </div>
+                    </section>
+                </template>
+            </Suspense>
 
             <!-- Genre Carousels -->
             <div class="flex flex-col gap-10 mt-10">

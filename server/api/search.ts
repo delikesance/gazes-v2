@@ -1,4 +1,4 @@
-import { SearchResponse } from '#shared/types/searchResponse'
+import type { SearchResponse } from '#shared/types/searchResponse'
 import { parseAnimeResults } from '#shared/utils/parsers'
 
 export default defineEventHandler(async (event): Promise<SearchResponse> => {

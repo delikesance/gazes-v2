@@ -13,6 +13,18 @@ export interface UserWithPassword extends User {
   password: string
 }
 
+export interface WatchingProgress {
+  id: string
+  userId: string
+  animeId: string
+  season: string
+  episode: number
+  currentTime: number
+  duration: number
+  lastWatchedAt: Date
+  completed: boolean
+}
+
 export class DatabaseService {
   private static instance: DatabaseService
   private db: Database.Database
@@ -53,13 +65,34 @@ export class DatabaseService {
       ON users(email)
     `)
 
-    // Create index on username for faster lookups
+    // Create watching progress table
     this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_users_username
-      ON users(username)
+      CREATE TABLE IF NOT EXISTS watching_progress (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        anime_id TEXT NOT NULL,
+        season TEXT NOT NULL,
+        episode INTEGER NOT NULL,
+        current_time REAL NOT NULL DEFAULT 0,
+        duration REAL NOT NULL DEFAULT 0,
+        last_watched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed BOOLEAN DEFAULT FALSE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(user_id, anime_id, season, episode)
+      )
     `)
 
-    console.log('📁 [DATABASE] Database schema initialized successfully')
+    // Create index on user_id for faster queries
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_watching_progress_user_id
+      ON watching_progress(user_id)
+    `)
+
+    // Create index on last_watched_at for sorting recent progress
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_watching_progress_last_watched
+      ON watching_progress(last_watched_at DESC)
+    `)
   }
 
   // User operations
@@ -175,7 +208,11 @@ export class DatabaseService {
       console.log('📁 [DATABASE] User updated successfully')
     }
 
-    return this.findUserById(id)!
+    const updatedUser = await this.findUserById(id)
+    if (!updatedUser) {
+      throw new Error(`User with ID ${id} not found after update`)
+    }
+    return updatedUser
   }
 
   async deleteUser(id: string): Promise<boolean> {
@@ -208,6 +245,126 @@ export class DatabaseService {
 
     console.log('📁 [DATABASE] User count:', result.count)
     return result.count
+  }
+
+  // Watching progress operations
+  async saveWatchingProgress(userId: string, animeId: string, season: string, episode: number, currentTime: number, duration: number): Promise<WatchingProgress> {
+    console.log('📁 [DATABASE] Saving watching progress:', { userId, animeId, season, episode, currentTime, duration })
+
+    const completed = duration > 0 && currentTime >= duration * 0.9 // Consider completed if watched 90%
+    const now = new Date().toISOString()
+
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO watching_progress
+      (id, user_id, anime_id, season, episode, current_time, duration, last_watched_at, completed)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    const id = crypto.randomUUID()
+
+    stmt.run(id, userId, animeId, season, episode, currentTime, duration, now, completed ? 1 : 0)
+
+    console.log('📁 [DATABASE] Watching progress saved successfully')
+
+    return {
+      id,
+      userId,
+      animeId,
+      season,
+      episode,
+      currentTime,
+      duration,
+      lastWatchedAt: new Date(now),
+      completed
+    }
+  }
+
+  async getWatchingProgress(userId: string, animeId: string, season: string, episode: number): Promise<WatchingProgress | null> {
+    console.log('📁 [DATABASE] Getting watching progress:', { userId, animeId, season, episode })
+
+    const stmt = this.db.prepare(`
+      SELECT * FROM watching_progress
+      WHERE user_id = ? AND anime_id = ? AND season = ? AND episode = ?
+    `)
+
+    const row = stmt.get(userId, animeId, season, episode) as any
+
+    if (row) {
+      console.log('📁 [DATABASE] Found watching progress:', row.current_time, '/', row.duration)
+      return {
+        id: row.id,
+        userId: row.user_id,
+        animeId: row.anime_id,
+        season: row.season,
+        episode: row.episode,
+        currentTime: row.current_time,
+        duration: row.duration,
+        lastWatchedAt: new Date(row.last_watched_at),
+        completed: Boolean(row.completed)
+      }
+    }
+
+    console.log('📁 [DATABASE] No watching progress found')
+    return null
+  }
+
+  async getUserContinueWatching(userId: string, limit: number = 20): Promise<WatchingProgress[]> {
+    console.log('📁 [DATABASE] Getting continue watching for user:', userId)
+
+    const stmt = this.db.prepare(`
+      SELECT * FROM watching_progress
+      WHERE user_id = ? AND completed = FALSE
+      ORDER BY last_watched_at DESC
+      LIMIT ?
+    `)
+
+    const rows = stmt.all(userId, limit) as any[]
+
+    const progress = rows.map(row => ({
+      id: row.id,
+      userId: row.user_id,
+      animeId: row.anime_id,
+      season: row.season,
+      episode: row.episode,
+      currentTime: row.current_time,
+      duration: row.duration,
+      lastWatchedAt: new Date(row.last_watched_at),
+      completed: Boolean(row.completed)
+    }))
+
+    console.log('📁 [DATABASE] Found', progress.length, 'continue watching items')
+    return progress
+  }
+
+  async deleteWatchingProgress(userId: string, animeId: string, season: string, episode: number): Promise<boolean> {
+    console.log('📁 [DATABASE] Deleting watching progress:', { userId, animeId, season, episode })
+
+    const stmt = this.db.prepare(`
+      DELETE FROM watching_progress
+      WHERE user_id = ? AND anime_id = ? AND season = ? AND episode = ?
+    `)
+
+    const result = stmt.run(userId, animeId, season, episode)
+    const deleted = result.changes > 0
+
+    console.log('📁 [DATABASE] Watching progress deleted:', deleted)
+    return deleted
+  }
+
+  async markAsCompleted(userId: string, animeId: string, season: string, episode: number): Promise<boolean> {
+    console.log('📁 [DATABASE] Marking episode as completed:', { userId, animeId, season, episode })
+
+    const stmt = this.db.prepare(`
+      UPDATE watching_progress
+      SET completed = TRUE, last_watched_at = ?
+      WHERE user_id = ? AND anime_id = ? AND season = ? AND episode = ?
+    `)
+
+    const result = stmt.run(new Date().toISOString(), userId, animeId, season, episode)
+    const updated = result.changes > 0
+
+    console.log('📁 [DATABASE] Episode marked as completed:', updated)
+    return updated
   }
 
   close(): void {

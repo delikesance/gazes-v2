@@ -21,11 +21,6 @@ export default defineNuxtConfig({
       dedupe: ['vue', 'vue-router', '@vue/runtime-core', '@vue/runtime-dom']
     }
   },
-  tailwindcss: {
-    exposeConfig: true,
-    viewer: true,
-    // and more...
-  },
   future: {
     compatibilityVersion: 4
   },

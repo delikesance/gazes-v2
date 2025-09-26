@@ -39,6 +39,9 @@ export default defineEventHandler(async (event) => {
     // Scrape language flags from the first available season
     if (animeData.seasons && animeData.seasons.length > 0) {
         const firstSeason = animeData.seasons[0]
+        if (!firstSeason?.url) {
+            return animeData
+        }
         // Build the season URL correctly - anime-sama.fr uses this format: /catalogue/anime-id/season-path
         let seasonUrl = firstSeason.url
         if (seasonUrl.startsWith('/')) {
@@ -135,7 +138,7 @@ function parseLanguageFlags(html: string): Record<string, string> {
 
     while ((imageMatch = flagImageRegex.exec(html)) !== null) {
         const flagCode = imageMatch[1]?.toLowerCase() // e.g., 'cn', 'jp', 'fr', 'en', 'x'
-        const emoji = flagToEmoji[flagCode] || '🏳️' // Use generic flag if unknown
+        const emoji = flagCode ? (flagToEmoji[flagCode] || '🏳️') : '🏳️' // Use generic flag if unknown
         if (flagCode) {
             flagImages[flagCode] = emoji
         }
@@ -147,6 +150,7 @@ function parseLanguageFlags(html: string): Record<string, string> {
 
     while ((langMatch = langRegex.exec(html)) !== null) {
         const langCode = langMatch[1] // e.g., 'vostfr', 'vf', 'va', 'vj'
+        if (!langCode) continue
         
         // For language mapping, try to find the best match from available flags
         // Priority: exact language mapping > fallback mapping > first available flag

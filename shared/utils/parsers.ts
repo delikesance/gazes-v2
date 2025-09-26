@@ -174,7 +174,7 @@ import type { SearchResponse } from "../types/searchResponse";
 export function parseAnimeResults(html: string): SearchResponse {
   const results: SearchResponse = [];
   const animeRegex =
-    /<a[^>]*href="(https:\/\/anime-sama\.org\/catalogue\/[^\"]*)"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([^<]*)<\/h3>[\s\S]*?<p[^>]*>([^<]*)<\/p>[\s\S]*?<\/a>/g;
+    /<a[^>]*href="(https:\/\/anime-sama\.(?:org|fr)\/catalogue\/[^\"]*)"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([^<]*)<\/h3>[\s\S]*?<p[^>]*>([^<]*)<\/p>[\s\S]*?<\/a>/g;
 
   let match: RegExpExecArray | null;
 

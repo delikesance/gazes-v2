@@ -96,7 +96,9 @@ export default defineEventHandler(async (event) => {
       pattern.lastIndex = 0
       let jsMatch
       while ((jsMatch = pattern.exec(html)) !== null) {
-        jsVariables[jsMatch[1]] = jsMatch[2]
+        if (jsMatch[1] && jsMatch[2]) {
+          jsVariables[jsMatch[1]] = jsMatch[2]
+        }
       }
     }
     

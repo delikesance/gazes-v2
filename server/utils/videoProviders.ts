@@ -66,7 +66,7 @@ export function getProviderInfo(url: string): VideoProvider | null {
     const hostname = new URL(url).hostname.toLowerCase()
     return VERIFIED_PROVIDERS.find(p => 
       hostname === p.hostname || 
-      hostname.includes(p.hostname.split('.')[0]) ||
+      hostname.includes(p.hostname.split('.')[0] || '') ||
       p.hostname.includes(hostname.split('.').slice(-2).join('.'))
     ) || null
   } catch {
@@ -92,7 +92,7 @@ export function sortUrlsByProviderReliability(urls: string[]): string[] {
 // Helper function to get the best provider URL from a list
 export function getBestProviderUrl(urls: string[]): string | null {
   const sorted = sortUrlsByProviderReliability(urls)
-  return sorted.length > 0 ? sorted[0] : null
+  return sorted.length > 0 ? (sorted[0] as string) : null
 }
 
 // Helper function to categorize URLs by provider reliability

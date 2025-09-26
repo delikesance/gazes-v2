@@ -21,15 +21,16 @@ export default defineEventHandler(async (event) => {
     }
   } catch (error) {
     console.error('❌ [DEBUG] Error getting users:', error)
+    const err = error as Error
     console.error('❌ [DEBUG] Error details:', {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
+      name: err.name,
+      message: err.message,
+      stack: err.stack
     })
     throw createError({
       statusCode: 500,
       statusMessage: 'Database error',
-      message: error.message
+      message: err.message
     })
   }
 })

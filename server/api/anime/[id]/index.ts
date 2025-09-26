@@ -45,6 +45,13 @@ export default defineEventHandler(async (event) => {
         }
 
         // Use the first result's real ID
+        if (!searchResults[0]?.id) {
+            throw createError({
+                statusCode: 404,
+                statusMessage: 'Not Found',
+                message: `No valid anime found for id: ${id}`
+            })
+        }
         const realAnimeId = searchResults[0].id
         response = await fetch(`https://anime-sama.fr/catalogue/${realAnimeId}/`, {
             headers: {
@@ -69,6 +76,9 @@ export default defineEventHandler(async (event) => {
     // Scrape language flags from the first available season
     if (animeData.seasons && animeData.seasons.length > 0) {
         const firstSeason = animeData.seasons[0]
+        if (!firstSeason?.url) {
+            return animeData
+        }
         let seasonUrl = firstSeason.url
         
         if (seasonUrl.startsWith('/')) {
@@ -123,7 +133,7 @@ function parseLanguageFlags(html: string): Record<string, string> {
     while ((match = buttonRegex.exec(html)) !== null) {
         const langCode = match[1]
         const flagCode = match[2]?.toLowerCase()
-        const emoji = flagToEmoji[flagCode] || '🏳️'
+        const emoji = flagCode ? (flagToEmoji[flagCode] || '🏳️') : '🏳️'
         
         if (langCode && flagCode) {
             flags[langCode] = emoji

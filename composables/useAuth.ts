@@ -1,15 +1,30 @@
 import { ref, computed } from 'vue'
-import type { User } from '~/server/utils/auth'
 
-export interface AuthState {
-  user: User | null
-  loading: boolean
+interface UserResponse {
+  id: string
+  email: string
+  username: string
+  createdAt: string
+  updatedAt: string
+}
+
+interface AuthResponse {
+  success: boolean
+  message: string
+  user: UserResponse
+}
+
+interface AuthState {
+  user: UserResponse | null
+  isAuthenticated: boolean
+  isLoading: boolean
   error: string | null
 }
 
 const authState = ref<AuthState>({
   user: null,
-  loading: false,
+  isAuthenticated: false,
+  isLoading: false,
   error: null
 })
 
@@ -18,34 +33,16 @@ export const useAuth = () => {
 
   const login = async (email: string, password: string) => {
     console.log('🔐 [CLIENT] Login attempt for email:', email)
-    authState.value.loading = true
+    authState.value.isLoading = true
     authState.value.error = null
 
     try {
       console.log('🔐 [CLIENT] Sending login request...')
-      const response = await $fetch('/api/auth/login', {
+      const data = await $fetch('/api/auth/login', {
         method: 'POST',
         body: { email, password }
       })
-      console.log('🔐 [CLIENT] Raw response received:', response)
-      console.log('🔐 [CLIENT] Response type:', typeof response)
-
-      // Handle different response formats
-      let data;
-      if (response && typeof response === 'object' && 'data' in response) {
-        data = response.data;
-        console.log('🔐 [CLIENT] Found data property:', data)
-      } else {
-        data = response;
-        console.log('🔐 [CLIENT] Using response as data:', data)
-      }
-
-      if (!data) {
-        console.error('❌ [CLIENT] No data in response:', response)
-        throw new Error('No data in response')
-      }
-
-      console.log('🔐 [CLIENT] Final data object:', data)
+      console.log('🔐 [CLIENT] Response received:', data)
 
       if (!data.user) {
         console.error('❌ [CLIENT] No user in data:', data)
@@ -68,41 +65,22 @@ export const useAuth = () => {
       console.log('❌ [CLIENT] Error message:', authState.value.error)
       return { success: false, error: authState.value.error }
     } finally {
-      authState.value.loading = false
+      authState.value.isLoading = false
       console.log('🔐 [CLIENT] Login process completed')
     }
   }
 
   const register = async (email: string, username: string, password: string) => {
     console.log('👤 [CLIENT] Registration attempt for:', username, 'with email:', email)
-    authState.value.loading = true
+    authState.value.isLoading = true
     authState.value.error = null
 
     try {
       console.log('👤 [CLIENT] Sending registration request...')
-      const response = await $fetch('/api/auth/register', {
+      const data = await $fetch('/api/auth/register', {
         method: 'POST',
         body: { email, username, password }
       })
-      console.log('👤 [CLIENT] Raw response received:', response)
-      console.log('👤 [CLIENT] Response type:', typeof response)
-
-      // Handle different response formats
-      let data;
-      if (response && typeof response === 'object' && 'data' in response) {
-        data = response.data;
-        console.log('👤 [CLIENT] Found data property:', data)
-      } else {
-        data = response;
-        console.log('👤 [CLIENT] Using response as data:', data)
-      }
-
-      if (!data) {
-        console.error('❌ [CLIENT] No data in response:', response)
-        throw new Error('No data in response')
-      }
-
-      console.log('👤 [CLIENT] Final data object:', data)
 
       if (!data.user) {
         console.error('❌ [CLIENT] No user in data:', data)
@@ -125,13 +103,13 @@ export const useAuth = () => {
       console.log('❌ [CLIENT] Final error message:', authState.value.error)
       return { success: false, error: authState.value.error }
     } finally {
-      authState.value.loading = false
+      authState.value.isLoading = false
       console.log('👤 [CLIENT] Registration process completed')
     }
   }
 
   const logout = async () => {
-    authState.value.loading = true
+    authState.value.isLoading = true
 
     try {
       await $fetch('/api/auth/logout', {
@@ -145,13 +123,13 @@ export const useAuth = () => {
       authState.value.user = null
       return { success: false, error: error.data?.message }
     } finally {
-      authState.value.loading = false
+      authState.value.isLoading = false
     }
   }
 
   const refreshToken = async () => {
     try {
-      const { data } = await $fetch('/api/auth/refresh', {
+      const data = await $fetch('/api/auth/refresh', {
         method: 'POST'
       })
 
@@ -166,30 +144,11 @@ export const useAuth = () => {
 
   const checkAuth = async () => {
     console.log('🔐 [CLIENT] Checking authentication status...')
-    authState.value.loading = true
+    authState.value.isLoading = true
 
     try {
       console.log('🔐 [CLIENT] Sending auth check request...')
-      const response = await $fetch('/api/auth/me')
-      console.log('🔐 [CLIENT] Raw auth check response:', response)
-      console.log('🔐 [CLIENT] Response type:', typeof response)
-
-      // Handle different response formats
-      let data;
-      if (response && typeof response === 'object' && 'data' in response) {
-        data = response.data;
-        console.log('🔐 [CLIENT] Found data property:', data)
-      } else {
-        data = response;
-        console.log('🔐 [CLIENT] Using response as data:', data)
-      }
-
-      if (!data) {
-        console.error('❌ [CLIENT] No data in auth check response:', response)
-        throw new Error('No data in response')
-      }
-
-      console.log('🔐 [CLIENT] Final auth check data:', data)
+      const data = await $fetch('/api/auth/me')
 
       authState.value.user = data.user || null
       if (data.user) {
@@ -204,7 +163,7 @@ export const useAuth = () => {
       authState.value.user = null
       return { success: false, error: error.data?.message || error.message }
     } finally {
-      authState.value.loading = false
+      authState.value.isLoading = false
       console.log('🔐 [CLIENT] Auth check process completed')
     }
   }
@@ -223,7 +182,8 @@ export const useAuth = () => {
   return {
     // State
     user: computed(() => authState.value.user),
-    loading: computed(() => authState.value.loading),
+    loading: computed(() => authState.value.isLoading),
+    pending: computed(() => authState.value.isLoading), // Alias for loading
     error: computed(() => authState.value.error),
     isAuthenticated,
 

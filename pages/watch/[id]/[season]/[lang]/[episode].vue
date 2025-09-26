@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Hls from 'hls.js'
 import { onBeforeUnmount, onMounted, ref, watch, nextTick, computed } from 'vue'
+import { formatSeasonDisplay } from '~/shared/utils/season'
 
 // Use player layout (no navbar)
 definePageMeta({
@@ -35,7 +36,7 @@ const volume = ref(1)
 const isMuted = ref(false)
 const isFullscreen = ref(false)
 const showControls = ref(true)
-const controlsTimeout = ref<number | null>(null)
+const controlsTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
 const isDragging = ref(false)
 const buffered = ref(0)
 const isSeeking = ref(false)
@@ -73,6 +74,11 @@ function stopProgressUpdates() {
 const showEpisodes = ref(false)
 const episodesList = ref<Array<{ episode: number; title?: string; url: string; urls?: string[] }>>([])
 const loadingEpisodes = ref(false)
+
+// Progress tracking state
+const savedProgress = ref<{ currentTime: number; duration: number } | null>(null)
+const progressSaveInterval = ref<ReturnType<typeof setInterval> | null>(null)
+const lastSavedTime = ref(0)
 
 // Language switcher state
 const availableLanguages = ref<{ 
@@ -153,12 +159,89 @@ const currentLanguageDisplay = computed(() => {
   return current || { label: lang.value.toUpperCase(), fullLabel: lang.value.toUpperCase() }
 })
 
+// Computed for formatted season display
+const formattedSeasonDisplay = computed(() => formatSeasonDisplay(season.value))
+
+// Computed for formatted episode display
+const formattedEpisodeDisplay = computed(() => `Épisode ${episodeNum.value.toString().padStart(2, '0')}`)
+
 // Anime and episode metadata
 const animeTitle = ref('')
 const currentEpisodeTitle = ref('')
 
 // Dynamic language flags from anime-sama.fr
 const dynamicLanguageFlags = ref<Record<string, string>>({})
+
+// Progress tracking functions
+async function loadSavedProgress() {
+  try {
+    const response = await $fetch(`/api/watch/progress/${id.value}`)
+    if (response?.success) {
+      // Handle both array and single object responses
+      const progressData = Array.isArray(response.progress) ? response.progress : [response.progress]
+      if (progressData.length > 0) {
+        // Find progress for current episode
+        const episodeProgress = progressData.find((p: any) =>
+          p.season === season.value && p.episode === episodeNum.value
+        )
+        if (episodeProgress && !(episodeProgress as any).completed) {
+          savedProgress.value = {
+            currentTime: (episodeProgress as any).currentTime,
+            duration: (episodeProgress as any).duration
+          }
+          console.log('📺 Loaded saved progress:', savedProgress.value)
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to load saved progress:', error)
+  }
+}
+
+async function saveProgress(currentTime: number, duration: number) {
+  // Don't save if duration is 0 or very short
+  if (duration < 10) return
+
+  // Don't save too frequently (throttle to every 5 seconds)
+  const now = Date.now()
+  if (now - lastSavedTime.value < 5000) return
+
+  try {
+    await $fetch(`/api/watch/progress/${id.value}`, {
+      method: 'POST',
+      body: {
+        season: season.value,
+        episode: episodeNum.value,
+        currentTime,
+        duration
+      }
+    })
+    lastSavedTime.value = now
+    console.log('💾 Progress saved:', { currentTime, duration })
+  } catch (error) {
+    console.warn('Failed to save progress:', error)
+  }
+}
+
+function startProgressSaving() {
+  if (progressSaveInterval.value) {
+    clearInterval(progressSaveInterval.value)
+  }
+
+  // Save progress every 30 seconds while playing
+  progressSaveInterval.value = setInterval(() => {
+    if (isPlaying.value && duration.value > 0) {
+      saveProgress(currentTime.value, duration.value)
+    }
+  }, 30000)
+}
+
+function stopProgressSaving() {
+  if (progressSaveInterval.value) {
+    clearInterval(progressSaveInterval.value)
+    progressSaveInterval.value = null
+  }
+}
 
 
 // Computed progress values to avoid recalculating in template
@@ -375,11 +458,17 @@ function onVideoPlay() {
     videoError.value = '' // Clear autoplay error when video starts
   }
   startProgressUpdates() // Start smooth progress updates
+  startProgressSaving() // Start automatic progress saving
   showControlsTemporarily()
 }
 function onVideoPause() { 
   isPlaying.value = false
   stopProgressUpdates() // Stop smooth progress updates
+  stopProgressSaving() // Stop automatic progress saving
+  // Save progress immediately when paused
+  if (duration.value > 0) {
+    saveProgress(currentTime.value, duration.value)
+  }
   showControls.value = true
 }
 function onVideoTimeUpdate() { handleTimeUpdate() }
@@ -489,6 +578,17 @@ function handleLoadedMetadata() {
   isMuted.value = el.muted
   // Ensure initial playing state matches the video element
   isPlaying.value = !el.paused
+
+  // Resume from saved progress if available
+  if (savedProgress.value && savedProgress.value.duration > 0) {
+    const resumeTime = savedProgress.value.currentTime
+    // Only resume if we're at the beginning (within first 5 seconds)
+    if (el.currentTime < 5) {
+      console.log('📺 Resuming from saved progress:', resumeTime, 'seconds')
+      el.currentTime = resumeTime
+      currentTime.value = resumeTime
+    }
+  }
 }
 
 function handleVolumeChange() {
@@ -620,7 +720,7 @@ async function setupVideo() {
           // Try to play immediately, but don't fail if autoplay is blocked
           el.play().catch(e => {
             console.log('Autoplay prevented by browser, waiting for user interaction')
-            videoError.value = 'Cliquez pour jouer' // Set autoplay error message
+            // Don't set error message - let the center play button overlay handle it
             videoLoading.value = false // Allow user interaction
           })
         }
@@ -670,6 +770,7 @@ async function setupVideo() {
         el.src = playUrl.value
         el.play().catch(e => {
           console.log('Autoplay prevented by browser, waiting for user interaction')
+          // Don't set error message - let the center play button overlay handle it
         })
 
         // Add safety timeout for native HLS too
@@ -771,11 +872,11 @@ async function loadEpisodesList() {
     
     // Update current episode title
     const currentEp = episodesList.value.find(ep => ep.episode === episodeNum.value)
-    currentEpisodeTitle.value = currentEp?.title || `Épisode ${episodeNum.value}`
+    currentEpisodeTitle.value = currentEp?.title || formattedEpisodeDisplay.value
   } catch (error) {
     console.error('Failed to load episodes:', error)
     episodesList.value = []
-    currentEpisodeTitle.value = `Épisode ${episodeNum.value}`
+    currentEpisodeTitle.value = formattedEpisodeDisplay.value
   } finally {
     loadingEpisodes.value = false
   }
@@ -936,7 +1037,7 @@ async function resolveEpisode() {
     }
 
     if (!ep) {
-      resolveError.value = `Épisode ${episodeNum.value} introuvable pour ${lang.value.toUpperCase()}`
+      resolveError.value = `Épisode ${episodeNum.value.toString().padStart(2, '0')} introuvable pour ${lang.value.toUpperCase()}`
       return
     }
     let candidates = ep?.urls?.length ? ep.urls : ep?.url ? [ep.url] : []
@@ -1075,6 +1176,9 @@ async function preloadNextEpisode() {
 
 // Initial setup after component mounts
 onMounted(async () => {
+  // Load saved progress first
+  await loadSavedProgress()
+  
   // Start metadata and episode loading immediately (before route params are fully reactive)
   const metadataPromise = loadAnimeMetadata().catch(() => null)
   const episodesPromise = loadEpisodesList().catch(() => null)
@@ -1114,10 +1218,23 @@ onMounted(async () => {
     isFullscreen.value = !!document.fullscreenElement
   })
   document.addEventListener('click', closeLanguageDropdown)
+  
+  // Save progress before unloading the page
+  const handleBeforeUnload = () => {
+    if (duration.value > 0) {
+      saveProgress(currentTime.value, duration.value)
+    }
+  }
+  window.addEventListener('beforeunload', handleBeforeUnload)
+  
+  // Clean up on unmount
+  onBeforeUnmount(() => {
+    window.removeEventListener('beforeunload', handleBeforeUnload)
+  })
 })
 
 // Re-resolve when params change (e.g., after fallback navigation) - debounced to prevent rapid calls
-let resolveTimeout: number | null = null
+let resolveTimeout: ReturnType<typeof setTimeout> | null = null
 watch([season, lang, episodeNum], () => {
   if (resolveTimeout) clearTimeout(resolveTimeout)
   resolveTimeout = setTimeout(() => {
@@ -1141,7 +1258,7 @@ watch([season, lang, episodeNum], () => {
 // Update episode title when episode changes or episodes list loads - optimized to avoid unnecessary updates
 watch([episodeNum, episodesList], () => {
   const currentEp = episodesList.value.find(ep => ep.episode === episodeNum.value)
-  const newTitle = currentEp?.title || `Épisode ${episodeNum.value}`
+  const newTitle = currentEp?.title || formattedEpisodeDisplay.value
   if (newTitle !== currentEpisodeTitle.value) {
     currentEpisodeTitle.value = newTitle
   }
@@ -1169,7 +1286,7 @@ watch([episodeNum, episodesList], () => {
                 {{ animeTitle || `Anime ${id}` }}
               </div>
               <div class="text-sm text-zinc-300">
-                {{ currentEpisodeTitle || `Épisode ${episodeNum}` }} • S{{ season }} • {{ lang.toUpperCase() }}
+                {{ currentEpisodeTitle || formattedEpisodeDisplay }} • {{ formattedSeasonDisplay }} • {{ lang.toUpperCase() }}
               </div>
             </div>
           </div>
@@ -1226,6 +1343,7 @@ watch([episodeNum, episodesList], () => {
           ref="videoRef"
           class="w-full h-full object-contain cursor-pointer"
           preload="metadata"
+          autoplay
           @click="handleVideoClick"
           @dblclick="toggleFullscreen"
         >
@@ -1242,7 +1360,7 @@ watch([episodeNum, episodesList], () => {
           <div class="flex items-center justify-between p-4 border-b border-zinc-700">
             <div>
               <h3 class="text-white font-semibold text-lg">Épisodes</h3>
-              <p class="text-zinc-400 text-sm">Saison {{ season }} • {{ lang.toUpperCase() }}</p>
+              <p class="text-zinc-400 text-sm">{{ formattedSeasonDisplay }} • {{ lang.toUpperCase() }}</p>
             </div>
             <button @click="showEpisodes = false" class="text-zinc-400 hover:text-white transition-colors p-1 hover:bg-white/10 rounded">
               <Icon name="heroicons:x-mark" class="w-5 h-5" />
@@ -1271,7 +1389,7 @@ watch([episodeNum, episodesList], () => {
               >
                 <!-- Episode thumbnail/number -->
                 <div class="flex-shrink-0 w-20 h-12 bg-zinc-800 rounded-md overflow-hidden flex items-center justify-center relative group-hover:bg-zinc-700 transition-colors">
-                  <span class="text-white font-bold text-lg">{{ ep.episode }}</span>
+                  <span class="text-white font-bold text-lg">{{ ep.episode.toString().padStart(2, '0') }}</span>
                   <div v-if="ep.episode === episodeNum" class="absolute inset-0 bg-violet-600/20 flex items-center justify-center">
                     <Icon name="heroicons:play-circle" class="w-6 h-6 text-violet-400" />
                   </div>
@@ -1284,14 +1402,14 @@ watch([episodeNum, episodesList], () => {
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 mb-1">
                     <h4 class="text-white font-medium text-base">
-                      {{ ep.title || `Épisode ${ep.episode}` }}
+                      {{ ep.title || `Épisode ${ep.episode.toString().padStart(2, '0')}` }}
                     </h4>
                     <span v-if="ep.episode === episodeNum" class="text-xs bg-violet-600 text-white px-2 py-1 rounded-full font-medium">
                       En cours
                     </span>
                   </div>
                   <p class="text-zinc-400 text-sm">
-                    {{ ep.episode === episodeNum ? 'Vous regardez actuellement cet épisode' : (ep.title ? `Épisode ${ep.episode} • ${season}` : `Épisode ${ep.episode} de la saison ${season}`) }}
+                    {{ ep.episode === episodeNum ? 'Vous regardez actuellement cet épisode' : (ep.title ? `Épisode ${ep.episode.toString().padStart(2, '0')} • ${season}` : `Épisode ${ep.episode.toString().padStart(2, '0')} de la saison ${season}`) }}
                   </p>
                 </div>
                 

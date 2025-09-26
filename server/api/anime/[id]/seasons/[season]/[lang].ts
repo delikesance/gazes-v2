@@ -36,6 +36,7 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
             for (const pattern of episodeListPatterns) {
                 let match
                 while ((match = pattern.exec(mainPageHtml)) !== null) {
+                    if (!match[1] || !match[2]) continue
                     const episodeNum = parseInt(match[1])
                     let title = match[2].trim()
                         .replace(/\s+/g, ' ') // normalize whitespace
@@ -198,6 +199,7 @@ function parseHtmlPatterns(html: string, titles: Record<number, string>): void {
     for (const pattern of EPISODE_PATTERNS) {
         let match
         while ((match = pattern.exec(html)) !== null) {
+            if (!match[1] || !match[2]) continue
             const episodeNum = parseInt(match[1])
             const cleanedTitle = cleanEpisodeTitle(match[2])
 
@@ -216,6 +218,7 @@ function parseSelectEpisodes(html: string, titles: Record<number, string>): void
     const selectEpisodesMatch = html.match(/<select[^>]*id="selectEpisodes"[^>]*>([\s\S]*?)<\/select>/i)
     if (selectEpisodesMatch) {
         const selectContent = selectEpisodesMatch[1]
+        if (!selectContent) return
         const optionMatches = selectContent.match(/<option[^>]*>([^<>]+?)<\/option>/gi)
         if (optionMatches) {
             optionMatches.forEach((optionMatch, index) => {
@@ -240,6 +243,7 @@ function parseJsArrays(html: string, titles: Record<number, string>): void {
         let jsMatch
         while ((jsMatch = jsPattern.exec(html)) !== null) {
             const content = jsMatch[1]
+            if (!content) continue
             const titleMatches = content.match(/["']([^"']{3,100}?)["']/g)
             if (titleMatches) {
                 titleMatches.forEach((match, index) => {
@@ -266,8 +270,9 @@ function parseMetaPatterns(html: string, titles: Record<number, string>): void {
         let metaMatch
         while ((metaMatch = metaPattern.exec(html)) !== null) {
             const content = metaMatch[1]
+            if (!content) continue
             const episodeMatch = content.match(/(?:Episode|Épisode)\s*(\d+)[-:\s]*(.+)/i)
-            if (episodeMatch) {
+            if (episodeMatch && episodeMatch[1] && episodeMatch[2]) {
                 const episodeNum = parseInt(episodeMatch[1])
                 const title = episodeMatch[2].trim()
                 if (episodeNum > 0 && title && title.length >= 3) {
@@ -419,13 +424,13 @@ export default defineEventHandler(async (event) => {
     let episodes: any[] = []
 
     if (matches.length > 0) {
-        const allUrls = matches.flatMap(arrayContent =>
-            arrayContent.split(',').map(url => url.trim().replace(/['"]/g, ''))
+        const allUrls = matches.flatMap(arrayContent => 
+            arrayContent ? arrayContent.split(',').map(url => url.trim().replace(/['"]/g, '')) : []
         )
 
         const grouped = allUrls.reduce((groups, url) => {
             const episodeMatch = url.match(/(?:episode?|ep|e)[-_]?(\d+)/i) || url.match(/(\d+)/)
-            const episode = episodeMatch ? parseInt(episodeMatch[1]) : Object.keys(groups).length + 1
+            const episode = episodeMatch && episodeMatch[1] ? parseInt(episodeMatch[1]) : Object.keys(groups).length + 1
 
             if (!groups[episode]) groups[episode] = []
             groups[episode].push(url)
@@ -457,7 +462,7 @@ export default defineEventHandler(async (event) => {
     } else {
         // Fallback: treat as single array
         const arrayMatch = sourceText.match(/\[([^\]]+)\]/)
-        if (!arrayMatch) {
+        if (!arrayMatch || !arrayMatch[1]) {
             if (debug) {
                 const snippet = sourceText.slice(0, 4000)
                 console.info(`[episodes] No eps arrays found for ${id}/${season}/${lang}. Source=${dbg.source} length=${sourceText.length}. First 4000 chars:\n` + snippet)

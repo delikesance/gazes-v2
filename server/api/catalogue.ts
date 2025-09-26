@@ -34,12 +34,16 @@ export default defineEventHandler(async (event) => {
         const searchResponse = await fetch(searchApiUrl, {
           method: "POST",
           headers: {
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Priority": "u=3, i",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
             "X-Requested-With": "XMLHttpRequest"
           },
           body: "query=" + encodeURIComponent(search),
-          // Removed credentials: "include" to prevent sending cookies to third parties
           mode: "cors",
+          redirect: "follow",
           signal: controller.signal
         });
         
@@ -133,7 +137,7 @@ export default defineEventHandler(async (event) => {
       }
 
       // Fallback: if a genre was requested but yielded 0 items, try using search=<genre>
-      if (genres.length > 0) {
+      if (genres.length > 0 && genres[0]) {
         const searchUrl = new URL(c.base)
         searchUrl.searchParams.set('search', genres[0])
         for (const cat of categories) searchUrl.searchParams.append('categorie[]', cat)

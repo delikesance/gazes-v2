@@ -43,8 +43,10 @@ export default defineEventHandler(async (event) => {
     
     let match
     while ((match = seasonPattern.exec(animeHtml)) !== null) {
-      seasons.add(match[1])
-      languages.add(match[2])
+      if (match[1] && match[2]) {
+        seasons.add(match[1])
+        languages.add(match[2])
+      }
     }
     
     // Method 2: Look for panneauAnime JavaScript calls
@@ -52,10 +54,12 @@ export default defineEventHandler(async (event) => {
     let panneauMatch
     while ((panneauMatch = panneauPattern.exec(animeHtml)) !== null) {
       const path = panneauMatch[2] // e.g., "saison1/vf"
-      const pathParts = path.split('/')
-      if (pathParts.length === 2) {
-        seasons.add(pathParts[0])
-        languages.add(pathParts[1])
+      if (path) {
+        const pathParts = path.split('/')
+        if (pathParts.length === 2 && pathParts[0] && pathParts[1]) {
+          seasons.add(pathParts[0])
+          languages.add(pathParts[1])
+        }
       }
     }
     
@@ -126,13 +130,15 @@ export default defineEventHandler(async (event) => {
           
           while ((arrayMatch = arrayPattern.exec(episodeSource)) !== null) {
             const inner = arrayMatch[3]
-            const urls = Array.from(inner.matchAll(/["']([^"'\s]+)["']/g))
-              .map(x => x[1])
-              .filter(u => /^https?:\/\//i.test(u))
-            
-            if (urls.length > 0) {
-              episodeArrays.push(urls)
-              console.log(`📺 Found eps${arrayMatch[2]} with ${urls.length} URLs`)
+            if (inner) {
+              const urls = Array.from(inner.matchAll(/["']([^"'\s]+)["']/g))
+                .map(x => x[1])
+                .filter((u): u is string => u !== undefined && /^https?:\/\//i.test(u))
+              
+              if (urls.length > 0) {
+                episodeArrays.push(urls)
+                console.log(`📺 Found eps${arrayMatch[2]} with ${urls.length} URLs`)
+              }
             }
           }
           
@@ -144,17 +150,19 @@ export default defineEventHandler(async (event) => {
             sourceLength: episodeSource.length,
             episodeArrays: episodeArrays.length,
             totalUrls: episodeArrays.reduce((sum, arr) => sum + arr.length, 0),
-            sampleUrls: episodeArrays.length > 0 ? episodeArrays[0].slice(0, 3) : []
+            sampleUrls: episodeArrays.length > 0 && episodeArrays[0] ? episodeArrays[0].slice(0, 3) : []
           }
           
           results.episodeData.push(episodeData)
           
           // Step 4: Test first few URLs from each provider
           if (episodeArrays.length > 0) {
-            const firstEpisodeUrls = episodeArrays.map(arr => arr[0]).filter(Boolean)
+            const firstEpisodeUrls = episodeArrays
+              .map(arr => arr[0])
+              .filter((url): url is string => url !== undefined)
             
             for (let i = 0; i < Math.min(firstEpisodeUrls.length, 5); i++) {
-              const testUrl = firstEpisodeUrls[i]
+              const testUrl = firstEpisodeUrls[i] as string
               console.log(`🧪 Testing embed URL: ${testUrl}`)
               
               try {
