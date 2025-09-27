@@ -1,32 +1,43 @@
-# Utilise l'image officielle Bun avec Node.js 20
-FROM oven/bun:1.1.43 AS builder
+# syntax = docker/dockerfile:1
 
+ARG NODE_VERSION=22.2.0
+FROM node:${NODE_VERSION}-slim as base
+
+# Installer pnpm et les outils nécessaires pour node-gyp et better-sqlite3
+RUN npm install -g pnpm && \
+    apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG PORT=3000
+ENV PORT=${PORT}
 WORKDIR /app
 
-# Installe Python et les outils de build pour better-sqlite3
-RUN apt-get update && apt-get install -y python3 python3-dev make g++ && \
-    rm -rf /var/lib/apt/lists/*
+# Copier les fichiers de dépendance
+COPY package.json .
 
-# Configure Python pour node-gyp
-ENV PYTHON=/usr/bin/python3
+# Installer les dépendances avec scripts ignorés
+RUN PNPM_IGNORE_SCRIPTS=true pnpm install
 
-# Copie les fichiers nécessaires
-COPY package.json bun.lock ./
-COPY . ./
+# Approuver les scripts de build natifs (incluant better-sqlite3)
+RUN pnpm exec pnpm approve-builds
 
-# Installe les dépendances
-RUN bun install
+# Réinstaller avec scripts activés pour compiler les dépendances natives
+RUN PNPM_IGNORE_SCRIPTS=false pnpm install
 
-# Build Nuxt en mode serveur avec optimisation mémoire
-RUN bun run build
+# Forcer la compilation de better-sqlite3 pour ARM64
+RUN cd node_modules/better-sqlite3 && npm run install
 
-# Étape finale pour exécuter l'app
-FROM oven/bun:1.1.43 AS runner
-WORKDIR /app
+# Copier le reste du projet
+COPY . .
 
-COPY --from=builder /app .
+# Build Nuxt pour server/export
+RUN pnpm run build
 
-# Expose le port par défaut de Nuxt
 EXPOSE 3000
 
-CMD ["node", ".output/server/index.mjs"]
+# Lancer le serveur Nuxt
+CMD ["pnpm", "run", "start"]
