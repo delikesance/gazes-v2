@@ -1,6 +1,3 @@
 {
   "installCommand": "rm -rf node_modules package-lock.json && npm install"
-}</content>
-</xai:function_call">  
-<xai:function_call name="bash">
-<parameter name="command">rm package-lock.json
+}
