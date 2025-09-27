@@ -3,8 +3,8 @@ FROM oven/bun:1.1.43 AS builder
 
 WORKDIR /app
 
-# Installe Python et configure pour better-sqlite3
-RUN apt-get update && apt-get install -y python3 python3-dev && \
+# Installe Python et les outils de build pour better-sqlite3
+RUN apt-get update && apt-get install -y python3 python3-dev make g++ && \
     rm -rf /var/lib/apt/lists/*
 
 # Configure Python pour node-gyp
