@@ -29,4 +29,4 @@ COPY --from=builder /app .
 # Expose le port par défaut de Nuxt
 EXPOSE 3000
 
-CMD ["bun", "run", "start"]
+CMD ["node", ".output/server/index.mjs"]
