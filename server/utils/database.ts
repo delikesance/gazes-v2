@@ -38,17 +38,18 @@ export class DatabaseService {
 
     // Validate required environment variables
     const supabaseUrl = config.supabaseUrl as string
-    const supabaseAnonKey = config.supabaseAnonKey as string
+    const supabaseServiceRoleKey = config.supabaseJwtSecret as string
 
-    if (!supabaseUrl || !supabaseAnonKey) {
-      const errorMsg = 'Missing required Supabase environment variables: SUPABASE_URL and/or SUPABASE_ANON_KEY'
+    if (!supabaseUrl || !supabaseServiceRoleKey) {
+      const errorMsg = 'Missing required Supabase environment variables: SUPABASE_URL and/or SUPABASE_JWT_SECRET (service role key)'
       console.error('❌ [DATABASE] ' + errorMsg)
       throw new Error(errorMsg)
     }
 
+    // Use service role key for server-side operations to bypass RLS
     this.supabase = createClient(
       supabaseUrl,
-      supabaseAnonKey,
+      supabaseServiceRoleKey,
       {
         auth: {
           autoRefreshToken: false,
