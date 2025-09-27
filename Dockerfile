@@ -15,7 +15,7 @@ COPY package.json bun.lock ./
 COPY . ./
 
 # Installe les dépendances sans exécuter les scripts postinstall
-RUN bun install --production --ignore-scripts
+RUN bun install --ignore-scripts
 
 # Build Nuxt en mode serveur avec optimisation mémoire
 RUN bun run build
