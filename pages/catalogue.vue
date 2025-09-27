@@ -25,6 +25,10 @@ const selectedGenres = ref<string[]>(
             : [],
 );
 
+const selectedType = ref<string>(
+    typeof route.query.type === 'string' ? route.query.type : '',
+);
+
 // Pagination state
 const items = ref<Item[]>([]);
 const loading = ref(false);
@@ -41,6 +45,7 @@ const searchFn = async (term: string): Promise<Item[]> => {
         params: {
             search: term,
             genre: selectedGenres.value,
+            type: selectedType.value,
             page: 1,
         },
     });
@@ -70,8 +75,8 @@ const allGenres = SORTED_GENRES;
 const isSearching = computed(
     () => !!search.value && search.value.trim().length >= 2,
 );
-const hasFilters = computed(() => selectedGenres.value.length > 0);
-const totalFilters = computed(() => selectedGenres.value.length);
+const hasFilters = computed(() => selectedGenres.value.length > 0 || !!selectedType.value);
+const totalFilters = computed(() => selectedGenres.value.length + (selectedType.value ? 1 : 0));
 const isEmpty = computed(
     () =>
         !loading.value &&
@@ -88,12 +93,13 @@ const updateQuery = () => {
     const query: Record<string, any> = {};
     if (search.value) query.search = search.value;
     if (selectedGenres.value.length) query.genre = selectedGenres.value;
+    if (selectedType.value) query.type = selectedType.value;
 
     router.replace({ path: "/catalogue", query });
 };
 
 watch(
-    [search, selectedGenres],
+    [search, selectedGenres, selectedType],
     () => {
         updateQuery();
     },
@@ -150,6 +156,7 @@ const fetchPage = async (pageNum: number) => {
         }>("/api/catalogue", {
             params: {
                 genre: selectedGenres.value,
+                type: selectedType.value,
                 page: String(pageNum),
             },
         });
@@ -214,7 +221,7 @@ const retryFetch = () => {
     }
 };
 
-// Genre filter handlers
+// Filter handlers
 const toggleGenre = (genre: string) => {
     const index = selectedGenres.value.indexOf(genre);
     if (index > -1) {
@@ -224,8 +231,13 @@ const toggleGenre = (genre: string) => {
     }
 };
 
+const setType = (type: string) => {
+    selectedType.value = selectedType.value === type ? '' : type;
+};
+
 const clearFilters = () => {
     selectedGenres.value = [];
+    selectedType.value = '';
 };
 
 const clearSearchOnly = () => {
@@ -236,8 +248,9 @@ const clearSearchOnly = () => {
 const clearAll = () => {
     search.value = "";
     selectedGenres.value = [];
+    selectedType.value = '';
     clearSearch();
-    router.replace({ path: "/catalogue" });
+    resetAndFetch();
 };
 
 // Lifecycle
@@ -314,6 +327,31 @@ onBeforeUnmount(() => {
                         class="pointer-events-none absolute left-4 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-500" />
                     <button v-if="search" @click="clearSearch"
                         class="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-zinc-800 rounded">
+                        <Icon name="heroicons:x-mark" class="w-4 h-4" />
+                    </button>
+                </div>
+
+                <!-- Type Filter -->
+                <div class="flex flex-wrap gap-2">
+                    <span class="text-sm font-medium text-zinc-400 mr-2 self-center">Type:</span>
+                    <button
+                        v-for="type in ['series', 'movie']"
+                        :key="type"
+                        @click="setType(type)"
+                        :class="[
+                            'px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200',
+                            selectedType === type
+                                ? 'bg-violet-600 text-white shadow-lg'
+                                : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                        ]"
+                    >
+                        {{ type === 'series' ? 'Séries' : 'Films' }}
+                    </button>
+                    <button
+                        v-if="selectedType"
+                        @click="setType('')"
+                        class="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-all duration-200"
+                    >
                         <Icon name="heroicons:x-mark" class="w-4 h-4" />
                     </button>
                 </div>

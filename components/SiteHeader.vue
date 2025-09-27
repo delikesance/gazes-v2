@@ -1,15 +1,15 @@
 <template>
     <nav
         :class="[
-            'p-10 w-full z-[99]',
-            isHome ? 'absolute top-0 left-0' : 'relative',
+            'p-10 w-full z-[99] bg-transparent',
+            (isAnimePage || isCataloguePage) ? 'relative' : 'absolute top-0 left-0',
         ]"
     >
         <div class="flex w-full items-center py-3 px-9 gap-10 pl-5 justify-between">
             <!-- Navigation Links -->
             <ul class="flex items-center gap-10">
                 <li class="-mb-2 text-xl">
-                    <NuxtLink to="/catalogue">
+                    <NuxtLink to="/catalogue" :class="{ 'text-violet-400': isCataloguePage }">
                         <ClientOnly>
                             <Icon name="heroicons-outline:search" />
                         </ClientOnly>
@@ -17,16 +17,13 @@
                 </li>
 
                 <li>
-                    <NuxtLink to="/">Accueil</NuxtLink>
+                    <NuxtLink to="/" :class="{ 'text-violet-400': isHome }">Accueil</NuxtLink>
                 </li>
                 <li>
-                    <NuxtLink to="/series">Séries</NuxtLink>
+                    <NuxtLink to="/series" :class="{ 'text-violet-400': isSeries }">Séries</NuxtLink>
                 </li>
                 <li>
-                    <NuxtLink to="/movies">Films</NuxtLink>
-                </li>
-                <li>
-                    <NuxtLink to="/others">Autre</NuxtLink>
+                    <NuxtLink to="/movies" :class="{ 'text-violet-400': isMovies }">Films</NuxtLink>
                 </li>
             </ul>
 
@@ -66,7 +63,12 @@ import { computed, ref } from "vue";
 import { useAuth } from '~/composables/useAuth'
 
 const route = useRoute();
+const isAnimePage = computed(() => route.path.startsWith("/anime/"));
+const isCataloguePage = computed(() => route.path === "/catalogue");
+
 const isHome = computed(() => route.path === "/");
+const isSeries = computed(() => route.path === "/series");
+const isMovies = computed(() => route.path === "/movies");
 
 const { user, pending, checkAuth } = useAuth()
 

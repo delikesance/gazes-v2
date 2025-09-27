@@ -1,7 +1,7 @@
-import { parseCataloguePage } from '#shared/utils/parsers'
-import { parseAnimeResults } from '#shared/utils/parsers'
+ import { parseCataloguePage } from '#shared/utils/parsers'
+ import { parseAnimeResults } from '#shared/utils/parsers'
 
-export default defineEventHandler(async (event) => {
+ export default defineEventHandler(async (event) => {
   const q = getQuery(event)
 
   // Accept: genre as string or string[], search as string, page as number
@@ -18,18 +18,19 @@ export default defineEventHandler(async (event) => {
 
   // If there's a search query, use the search API which has better results
   if (search && search.trim()) {
+    // Regular search using anime-sama.fr search API
     try {
       // Read configuration from runtime config with sensible defaults
       const config = useRuntimeConfig()
       const searchApiUrl = config.searchApiUrl || "https://anime-sama.fr/template-php/defaut/fetch.php"
       const timeoutMs = parseInt(config.searchApiTimeoutMs || "10000", 10)
-      
+
       // Create AbortController for timeout
       const controller = new AbortController()
       const timeoutId = setTimeout(() => {
         controller.abort()
       }, timeoutMs)
-      
+
       try {
         const searchResponse = await fetch(searchApiUrl, {
           method: "POST",
@@ -46,27 +47,27 @@ export default defineEventHandler(async (event) => {
           redirect: "follow",
           signal: controller.signal
         });
-        
+
         // Clear timeout on successful response
         clearTimeout(timeoutId)
-        
+
         const searchHtml = await searchResponse.text()
         const searchResults = parseAnimeResults(searchHtml)
-        
+
         // Convert search results to catalogue format and filter out mangas
         const items = searchResults.map(item => ({
           id: item.id,
           title: item.title,
           image: item.image,
-          type: 'Anime' // Search results are typically anime
-        }))
-        
+          type: item.type || 'Anime' // Search results are typically anime
+        })).filter(item => item.type !== 'Scans')
+
         return { items, count: items.length, status: searchResponse.status }
-        
+
       } catch (fetchError: any) {
         // Clear timeout on error
         clearTimeout(timeoutId)
-        
+
         // Handle different types of errors
         if (fetchError.name === 'AbortError') {
           console.warn(`Search API request timed out after ${timeoutMs}ms, falling back to catalogue search`)
@@ -76,7 +77,7 @@ export default defineEventHandler(async (event) => {
           throw fetchError
         }
       }
-      
+
     } catch (error: any) {
       // Fall back to catalogue search if search API fails
       console.warn('Search API failed, falling back to catalogue search:', {
@@ -93,6 +94,31 @@ export default defineEventHandler(async (event) => {
   if (Array.isArray(categoryParam)) categories = categoryParam as string[]
   else if (typeof categoryParam === 'string' && categoryParam) categories = [categoryParam]
 
+  // Map frontend type names to anime-sama.fr type names
+  const typeMapping: Record<string, string> = {
+    'series': 'Anime',
+    'movie': 'Film'
+  }
+
+  // Apply mapping to categories
+  categories = categories.map(cat => typeMapping[cat] || cat)
+
+  // Map specific types to their correct parameter names
+  const getParamKeys = (categories: string[]) => {
+    // Check if any category matches the specific types that use 'type[]' instead of 'categorie[]'
+    const hasSpecificType = categories.some(cat =>
+      ['Anime', 'Film'].includes(cat)
+    )
+
+    if (hasSpecificType) {
+      return { genreKey: 'genre[]' as const, categorieKey: 'type[]' as const }
+    } else {
+      return { genreKey: 'genre[]' as const, categorieKey: 'categorie[]' as const }
+    }
+  }
+
+  const paramKeys = getParamKeys(categories)
+
   const buildUrl = (base: string, genreKey: 'genre[]' | 'genres[]', categorieKey: 'categorie[]' | 'type[]') => {
     const u = new URL(base)
     for (const g of genres) u.searchParams.append(genreKey, g)
@@ -106,7 +132,7 @@ export default defineEventHandler(async (event) => {
 
   // Per requirement, request must be: https://anime-sama.fr/catalogue/?genre[]=Action&search=
   const candidates = [
-    { base: 'https://anime-sama.fr/catalogue/', genreKey: 'genre[]' as const, categorieKey: 'categorie[]' as const, referer: 'https://anime-sama.fr/catalogue/' },
+    { base: 'https://anime-sama.fr/catalogue/', genreKey: paramKeys.genreKey, categorieKey: paramKeys.categorieKey, referer: 'https://anime-sama.fr/catalogue/' },
   ]
 
   const tried: Array<{ url: string; status: number; count: number }> = []
@@ -140,7 +166,7 @@ export default defineEventHandler(async (event) => {
       if (genres.length > 0 && genres[0]) {
         const searchUrl = new URL(c.base)
         searchUrl.searchParams.set('search', genres[0])
-        for (const cat of categories) searchUrl.searchParams.append('categorie[]', cat)
+        for (const cat of categories) searchUrl.searchParams.append(paramKeys.categorieKey, cat)
         if (page) searchUrl.searchParams.set('page', page)
         const res2 = await fetch(searchUrl.toString(), {
           method: 'GET',

@@ -215,11 +215,17 @@ const handleRetrySearch = () => {
                     v-if="search.loading.value"
                     class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
                 >
-                    <div
-                        v-for="i in 12"
-                        :key="i"
-                        class="aspect-[9/12] bg-zinc-900/40 border border-zinc-800 rounded-xl animate-pulse"
-                    />
+                     <div
+                         v-for="i in 12"
+                         :key="i"
+                         class="w-40 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/50 animate-pulse"
+                     >
+                         <div class="aspect-[3/4] bg-zinc-800" />
+                         <div class="p-3">
+                             <div class="h-4 bg-zinc-800 rounded mb-2" />
+                             <div class="h-4 bg-zinc-800 rounded w-3/4" />
+                         </div>
+                     </div>
                 </div>
 
                 <!-- Error State -->
@@ -338,64 +344,35 @@ const handleRetrySearch = () => {
 
             <!-- Genre Carousels -->
             <div class="flex flex-col gap-10 mt-10">
-                <div v-for="genre in genres" :key="genre">
-                    <Suspense>
-                        <CarouselRow
-                            :title="genre"
-                            :genre="genre"
-                            card-size="sm"
-                            :skeleton-count="8"
-                        />
-                        <template #fallback>
-                            <section class="section">
-                                <div
-                                    class="flex justify-between items-center mb-4 px-20"
-                                >
-                                    <h3 class="row-title">{{ genre }}</h3>
-                                    <div class="flex items-center gap-5">
-                                        <button
-                                            type="button"
-                                            disabled
-                                            class="opacity-50"
-                                        >
-                                            <Icon
-                                                name="grommet-icons:form-previous"
-                                            />
-                                        </button>
-                                        <button
-                                            type="button"
-                                            disabled
-                                            class="opacity-50"
-                                        >
-                                            <Icon
-                                                name="grommet-icons:form-next"
-                                            />
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="relative">
-                                    <div
-                                        aria-hidden
-                                        class="pointer-events-none absolute inset-y-0 left-0 w-20 z-10 bg-gradient-to-r from-zinc-950 to-transparent"
-                                    />
-                                    <div
-                                        aria-hidden
-                                        class="pointer-events-none absolute inset-y-0 right-0 w-20 z-10 bg-gradient-to-l from-zinc-950 to-transparent"
-                                    />
-                                    <div
-                                        class="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pl-20 pr-20 scroll-pl-20 scroll-pr-20"
-                                    >
-                                        <div
-                                            v-for="i in 8"
-                                            :key="i"
-                                            class="snap-start shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/40 animate-pulse aspect-[9/12] w-[170px]"
-                                        />
-                                    </div>
-                                </div>
-                            </section>
-                        </template>
-                    </Suspense>
-                </div>
+                 <div v-for="genre in genres" :key="genre">
+                     <Suspense>
+                         <CarouselRow
+                             :title="genre"
+                             :genre="genre"
+                             card-size="sm"
+                         />
+                         <template #fallback>
+                             <section class="py-8">
+                                 <div class="mb-6 flex items-center justify-between px-4 md:px-20">
+                                     <h3 class="text-xl font-semibold text-white">{{ genre }}</h3>
+                                 </div>
+                                 <div class="relative">
+                                     <div class="pointer-events-none absolute inset-y-0 left-0 z-10 w-20 bg-gradient-to-r from-zinc-950 to-transparent" />
+                                     <div class="pointer-events-none absolute inset-y-0 right-0 z-10 w-20 bg-gradient-to-l from-zinc-950 to-transparent" />
+                                     <div class="flex gap-4 overflow-x-auto scroll-smooth px-4 md:px-20">
+                                         <div v-for="i in 8" :key="i" class="flex-shrink-0 w-40">
+                                             <div class="aspect-[3/4] rounded-lg bg-zinc-800 animate-pulse" />
+                                             <div class="mt-3 p-3">
+                                                 <div class="h-4 bg-zinc-800 rounded mb-2" />
+                                                 <div class="h-4 bg-zinc-800 rounded w-3/4" />
+                                             </div>
+                                         </div>
+                                     </div>
+                                 </div>
+                             </section>
+                         </template>
+                     </Suspense>
+                 </div>
             </div>
 
             <!-- Quick Actions -->
@@ -405,7 +382,7 @@ const handleRetrySearch = () => {
                     <p class="muted">Explorez nos différentes catégories</p>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <NuxtLink
                         to="/series"
                         class="card p-6 text-center group hover:border-zinc-600 transition-colors"
@@ -442,23 +419,7 @@ const handleRetrySearch = () => {
                         </p>
                     </NuxtLink>
 
-                    <NuxtLink
-                        to="/others"
-                        class="card p-6 text-center group hover:border-zinc-600 transition-colors"
-                    >
-                        <div
-                            class="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-700/20 flex items-center justify-center group-hover:bg-amber-700/30 transition-colors"
-                        >
-                            <Icon
-                                name="heroicons:sparkles"
-                                class="w-8 h-8 text-amber-400"
-                            />
-                        </div>
-                        <h3 class="mb-2">Autres</h3>
-                        <p class="muted text-sm">
-                            Contenus exclusifs et spéciaux
-                        </p>
-                    </NuxtLink>
+
                 </div>
             </section>
         </section>

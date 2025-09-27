@@ -1,14 +1,17 @@
 export const CARD_SIZES = {
   sm: {
     width: 'w-[170px]',
+    height: 'h-[227px]',
     widthPx: 170,
   },
   md: {
     width: 'w-[200px]',
+    height: 'h-[267px]',
     widthPx: 200,
   },
   lg: {
     width: 'w-[240px]',
+    height: 'h-[320px]',
     widthPx: 240,
   },
 } as const

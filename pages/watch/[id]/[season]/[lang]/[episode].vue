@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import Hls from 'hls.js'
+import videojs from 'video.js'
+import 'video.js/dist/video-js.css'
 import { onBeforeUnmount, onMounted, ref, watch, nextTick, computed } from 'vue'
 import { formatSeasonDisplay } from '~/shared/utils/season'
 
@@ -260,31 +261,26 @@ const bufferedPercent = computed(() => {
   return duration.value > 0 ? (buffered.value / duration.value) * 100 : 0
 })
 
-let hls: Hls | null = null
+let player: any = null
 
 function isM3U8(url: string) { return /\.m3u8(\?.*)?$/i.test(url) }
 
 let hlsLoadTimeout: ReturnType<typeof setTimeout> | null = null
 
-function destroyHls() { 
+function destroyPlayer() {
   try {
-    if (hls) {
+    if (player) {
       // Clear any pending timeouts
       if (hlsLoadTimeout) {
         clearTimeout(hlsLoadTimeout)
         hlsLoadTimeout = null
       }
-      // Remove Hls event listeners before destroy
-      if (hlsErrorHandler) hls.off(Hls.Events.ERROR, hlsErrorHandler)
-      if (hlsManifestParsedHandler) hls.off(Hls.Events.MANIFEST_PARSED, hlsManifestParsedHandler)
-      hls.destroy()
-      hlsErrorHandler = null
-      hlsManifestParsedHandler = null
+      player.dispose()
     }
   } catch (e) {
-    console.warn('Error destroying HLS:', e)
+    console.warn('Error destroying player:', e)
   }
-  hls = null
+  player = null
   stopProgressUpdates() // Stop smooth progress updates
   // Also remove video event listeners
   removeVideoEventListeners(videoRef.value)
@@ -292,15 +288,25 @@ function destroyHls() {
 
 // Custom controls functions
 function togglePlay() {
-  const el = videoRef.value
-  if (!el) return
-  
-  if (isPlaying.value) {
-    el.pause()
+  if (player) {
+    if (isPlaying.value) {
+      player.pause()
+    } else {
+      player.play().catch(e => {
+        console.log('Play failed:', e)
+      })
+    }
   } else {
-    el.play().catch(e => {
-      console.log('Play failed:', e)
-    })
+    const el = videoRef.value
+    if (!el) return
+
+    if (isPlaying.value) {
+      el.pause()
+    } else {
+      el.play().catch(e => {
+        console.log('Play failed:', e)
+      })
+    }
   }
   showControlsTemporarily()
 }
@@ -311,37 +317,60 @@ function handleVideoClick(event: MouseEvent) {
 }
 
 function seek(time: number) {
-  const el = videoRef.value
-  if (!el) return
-  el.currentTime = time
-  // Update immediately for instant visual feedback on progress bar
-  currentTime.value = time
+  if (player) {
+    player.currentTime(time)
+    currentTime.value = time
+  } else {
+    const el = videoRef.value
+    if (!el) return
+    el.currentTime = time
+    currentTime.value = time
+  }
 }
 
 function seekBy(seconds: number) {
-  const el = videoRef.value
-  if (!el) return
-  const newTime = Math.max(0, Math.min(el.duration, el.currentTime + seconds))
-  el.currentTime = newTime
-  // Update immediately for instant visual feedback on progress bar
-  currentTime.value = newTime
+  if (player) {
+    const newTime = Math.max(0, Math.min(player.duration(), player.currentTime() + seconds))
+    player.currentTime(newTime)
+    currentTime.value = newTime
+  } else {
+    const el = videoRef.value
+    if (!el) return
+    const newTime = Math.max(0, Math.min(el.duration, el.currentTime + seconds))
+    el.currentTime = newTime
+    currentTime.value = newTime
+  }
 }
 
 function toggleMute() {
-  const el = videoRef.value
-  if (!el) return
-  el.muted = !el.muted
-  isMuted.value = el.muted
+  if (player) {
+    player.muted(!player.muted())
+    isMuted.value = player.muted()
+  } else {
+    const el = videoRef.value
+    if (!el) return
+    el.muted = !el.muted
+    isMuted.value = el.muted
+  }
 }
 
 function setVolume(newVolume: number) {
-  const el = videoRef.value
-  if (!el) return
-  el.volume = Math.max(0, Math.min(1, newVolume))
-  volume.value = el.volume
-  if (el.volume > 0) {
-    el.muted = false
-    isMuted.value = false
+  if (player) {
+    player.volume(Math.max(0, Math.min(1, newVolume)))
+    volume.value = player.volume()
+    if (player.volume() > 0) {
+      player.muted(false)
+      isMuted.value = false
+    }
+  } else {
+    const el = videoRef.value
+    if (!el) return
+    el.volume = Math.max(0, Math.min(1, newVolume))
+    volume.value = el.volume
+    if (el.volume > 0) {
+      el.muted = false
+      isMuted.value = false
+    }
   }
 }
 
@@ -592,13 +621,19 @@ function handleTimeUpdate() {
 }
 
 function handleLoadedMetadata() {
-  const el = videoRef.value
-  if (!el) return
-  duration.value = el.duration
-  volume.value = el.volume
-  isMuted.value = el.muted
-  // Ensure initial playing state matches the video element
-  isPlaying.value = !el.paused
+  if (player) {
+    duration.value = player.duration()
+    volume.value = player.volume()
+    isMuted.value = player.muted()
+    isPlaying.value = !player.paused()
+  } else {
+    const el = videoRef.value
+    if (!el) return
+    duration.value = el.duration
+    volume.value = el.volume
+    isMuted.value = el.muted
+    isPlaying.value = !el.paused
+  }
 
   // Load skip times now that we have the episode duration
   loadSkipTimes()
@@ -607,19 +642,28 @@ function handleLoadedMetadata() {
   if (savedProgress.value && savedProgress.value.duration > 0) {
     const resumeTime = savedProgress.value.currentTime
     // Only resume if we're at the beginning (within first 5 seconds)
-    if (el.currentTime < 5) {
+    if ((player ? player.currentTime() : videoRef.value?.currentTime || 0) < 5) {
       console.log('📺 Resuming from saved progress:', resumeTime, 'seconds')
-      el.currentTime = resumeTime
+      if (player) {
+        player.currentTime(resumeTime)
+      } else if (videoRef.value) {
+        videoRef.value.currentTime = resumeTime
+      }
       currentTime.value = resumeTime
     }
   }
 }
 
 function handleVolumeChange() {
-  const el = videoRef.value
-  if (!el) return
-  volume.value = el.volume
-  isMuted.value = el.muted
+  if (player) {
+    volume.value = player.volume()
+    isMuted.value = player.muted()
+  } else {
+    const el = videoRef.value
+    if (!el) return
+    volume.value = el.volume
+    isMuted.value = el.muted
+  }
 }
 
 function handleEnded() {
@@ -734,175 +778,170 @@ async function setupVideo() {
   videoLoading.value = true
   isPlaying.value = false
 
-  // Clear any existing source and HLS instance
+  // Clear any existing player
   el.pause()
-  destroyHls()
+  destroyPlayer()
   el.removeAttribute('src')
   el.load()
 
   console.log(`setupVideo: Attempt ${setupAttempts} - Setting up video with URL:`, playUrl.value)
   console.log('setupVideo: Is M3U8:', isM3U8(playUrl.value))
-  console.log('setupVideo: HLS.js supported:', Hls.isSupported())
-  console.log('setupVideo: Native HLS supported:', el.canPlayType('application/vnd.apple.mpegurl'))
 
   try {
     if (isM3U8(playUrl.value)) {
-      if (Hls.isSupported()) {
-        // Use HLS.js for browsers that don't have native HLS support
-        hls = new Hls({ 
-          enableWorker: true,
-          lowLatencyMode: true, // Enable low latency mode for faster loading
-          maxLoadingDelay: 0.5, // Reduce to 0.5 seconds for faster startup
-          maxBufferLength: 6, // Reduce to 6 seconds for faster initial load
-          maxBufferSize: 6 * 1000 * 1000, // Reduce to 6MB buffer for faster startup
-          maxMaxBufferLength: 120, // Reduce to 120 seconds
-          backBufferLength: 0, // Don't buffer behind current position
-          levelLoadingMaxRetry: 1, // Reduce to 1 retry for faster failure
-          levelLoadingMaxRetryTimeout: 500, // Reduce to 500ms
-          manifestLoadingMaxRetry: 1, // Reduce manifest retries
-          manifestLoadingMaxRetryTimeout: 500, // Faster manifest retry
-          fragLoadingMaxRetry: 1, // Reduce to 1 fragment retry
-          fragLoadingMaxRetryTimeout: 500, // Reduce to 500ms
-          // Enable more verbose logging for debugging
-          debug: debug.value,
-          // Optimize for faster startup
-          startLevel: -1, // Auto level selection
-          startPosition: 0, // Start from beginning immediately
-          maxBufferHole: 0.2, // Reduce to 0.2 for tighter buffering
-          maxFragLookUpTolerance: 0.02, // Reduce to 0.02 for faster lookup
-          // Additional performance optimizations
-          liveSyncDurationCount: 2, // Reduce live sync duration
-          liveMaxLatencyDurationCount: 3, // Reduce max latency
-          maxLiveSyncPlaybackRate: 1.2, // Allow slight speedup for live content
-          liveDurationInfinity: true, // Handle infinite live streams
-          highBufferWatchdogPeriod: 1, // Faster buffer monitoring
-        })
+      // Use Video.js for HLS streams
+      player = videojs(el, {
+        controls: false, // We use custom controls
+        autoplay: false, // Handle autoplay manually
+        preload: 'metadata',
+        html5: {
+          hls: {
+            overrideNative: true, // Use video.js HLS plugin
+            enableLowInitialPlaylist: true,
+            smoothQualityChange: true,
+            // Better seeking configuration
+            maxBufferLength: 30,
+            maxMaxBufferLength: 600,
+            maxBufferSize: 60 * 1000 * 1000, // 60MB
+            maxBufferHole: 0.5,
+            maxSeekHole: 2,
+            seekHoleNudgeDuration: 0.1,
+            // Retry settings
+            levelLoadingMaxRetry: 4,
+            levelLoadingMaxRetryTimeout: 4000,
+            fragLoadingMaxRetry: 6,
+            fragLoadingMaxRetryTimeout: 4000,
+            // Performance
+            enableWorker: true,
+            startLevel: -1,
+            debug: debug.value,
+          },
+          nativeAudioTracks: false,
+          nativeVideoTracks: false,
+        },
+        // Additional options for better performance
+        liveui: false,
+        responsive: true,
+        fluid: true,
+      })
 
-        // Attach video element events BEFORE loading HLS
-        handleVideoEvents()
+      // Attach video element events BEFORE setting source
+      handleVideoEvents()
 
-        // --- Stable Hls event handlers ---
-        hlsErrorHandler = (event, data) => {
-          console.error('HLS Error:', data)
-          if (data.fatal) {
-            switch (data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                console.log('Network error, attempting recovery...')
-                videoError.value = 'Erreur réseau lors du chargement de la vidéo'
-                // Try to recover network errors
-                setTimeout(() => {
-                  if (hls) hls.startLoad()
-                }, 1000)
-                break
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                console.log('Media error, attempting recovery...')
-                videoError.value = 'Erreur de décodage vidéo'
-                // Try to recover media errors
-                setTimeout(() => {
-                  if (hls) hls.recoverMediaError()
-                }, 1000)
-                break
-              default:
-                console.log('Fatal HLS error, trying next source...')
-                videoError.value = 'Erreur fatale de lecture vidéo'
-                destroyHls()
-                // Automatically try next source instead of just failing
-                setTimeout(() => {
-                  tryNextSource()
-                }, 1000)
-                break
-            }
-          }
+      // Set up video.js event handlers
+      player.on('error', (e) => {
+        console.error('Video.js error:', e)
+        const error = player.error()
+        if (error) {
+          videoError.value = `Erreur vidéo: ${error.message || 'Unknown error'}`
           videoLoading.value = false
+          // Try next source on error
+          setTimeout(() => {
+            tryNextSource()
+          }, 1000)
         }
-        
-        hlsManifestParsedHandler = () => {
-          console.log('HLS manifest parsed successfully')
-          // Clear the loading timeout since manifest loaded successfully
-          if (hlsLoadTimeout) {
-            clearTimeout(hlsLoadTimeout)
-            hlsLoadTimeout = null
-          }
-          // Don't set videoLoading to false here yet - wait for actual buffer
-          
-          // Try to play immediately, but don't fail if autoplay is blocked
-          el.play().catch(e => {
-            console.log('Autoplay prevented by browser, waiting for user interaction')
-            // Don't set error message - let the center play button overlay handle it
-            videoLoading.value = false // Allow user interaction
-          })
-        }
-        
-        hls.on(Hls.Events.ERROR, hlsErrorHandler)
-        hls.on(Hls.Events.MANIFEST_PARSED, hlsManifestParsedHandler)
+      })
 
-        hls.loadSource(playUrl.value)
-        hls.attachMedia(el as any)
+      player.on('loadedmetadata', () => {
+        console.log('Video.js loadedmetadata')
+        // Handle loaded metadata
+        handleLoadedMetadata()
+      })
 
-        // Add a safety timeout to clear loading state if nothing happens
-        // Store the timeout ID so it can be cleared on unmount
-        const safetyTimeout = setTimeout(() => {
-          if (videoLoading.value) {
-            console.warn('Safety timeout: clearing loading state after 2 seconds')
-            videoLoading.value = false
-          }
-        }, 2000)
-        // Clear this timeout on unmount
-        onBeforeUnmount(() => {
-          clearTimeout(safetyTimeout)
-        })
+      player.on('canplay', () => {
+        console.log('Video.js canplay')
+        videoLoading.value = false
+      })
 
-        // Set a shorter timeout for HLS loading (4 seconds for faster failure recovery)
-        hlsLoadTimeout = setTimeout(() => {
-          console.warn('HLS loading timeout, trying fallback to direct video')
-          destroyHls()
-          
-          // Try loading the original URL directly as a fallback
-          const originalUrl = resolvedList.value.find(s => s.proxiedUrl === playUrl.value)?.url
-          if (originalUrl) {
-            console.log('Trying direct URL fallback:', originalUrl)
-            playUrl.value = originalUrl
-            setupVideo()
-          } else {
-            console.log('No direct fallback available, trying next source')
-            videoError.value = 'Timeout lors du chargement de la vidéo HLS (4s)'
-            videoLoading.value = false
-            // Try next source on timeout
-            setTimeout(() => {
-              tryNextSource()
-            }, 500) // Reduce delay to 500ms
-          }
-        }, 4000)
-      } else if (el.canPlayType('application/vnd.apple.mpegurl')) {
-        // Native HLS support (Safari)
-        el.src = playUrl.value
-        el.play().catch(e => {
-          console.log('Autoplay prevented by browser, waiting for user interaction')
-          // Don't set error message - let the center play button overlay handle it
-        })
+      player.on('waiting', () => {
+        console.log('Video.js waiting')
+        videoLoading.value = true
+      })
 
-        // Add safety timeout for native HLS too
+      player.on('playing', () => {
+        console.log('Video.js playing')
+        videoLoading.value = false
+      })
+
+      // Set the source
+      player.src({
+        src: playUrl.value,
+        type: 'application/x-mpegURL'
+      })
+
+      // Load the video
+      player.load()
+
+      // Try to play
+      player.play().catch(e => {
+        console.log('Autoplay prevented by browser, waiting for user interaction')
+        videoLoading.value = false // Allow user interaction
+      })
+
+      // Set timeout for loading
+      hlsLoadTimeout = setTimeout(() => {
+        console.warn('HLS loading timeout, trying next source')
+        destroyPlayer()
+        videoError.value = 'Timeout lors du chargement de la vidéo HLS'
+        videoLoading.value = false
         setTimeout(() => {
-          if (videoLoading.value) {
-            console.warn('Safety timeout: clearing loading state after 3 seconds (native HLS)')
-            videoLoading.value = false
-          }
-        }, 3000)
-      } else {
-        throw new Error('HLS not supported in this browser')
-      }
+          tryNextSource()
+        }, 500)
+      }, 10000)
     } else {
-      // Direct video file (MP4, etc.)
+      // Use native video element for MP4
+      console.log('Using native video element for MP4')
       el.src = playUrl.value
 
-      // Add safety timeout for direct video too
-      setTimeout(() => {
+      // Attach video element events
+      handleVideoEvents()
+
+      // Add specific event listeners for native video loading
+      const onCanPlay = () => {
+        console.log('Native video canplay')
+        videoLoading.value = false
+        el.removeEventListener('canplay', onCanPlay)
+      }
+      const onLoadedData = () => {
+        console.log('Native video loadeddata')
+        videoLoading.value = false
+        el.removeEventListener('loadeddata', onLoadedData)
+      }
+      const onError = (e: Event) => {
+        console.error('Native video error:', e)
+        videoError.value = 'Erreur de chargement vidéo'
+        videoLoading.value = false
+        el.removeEventListener('error', onError)
+      }
+
+      el.addEventListener('canplay', onCanPlay)
+      el.addEventListener('loadeddata', onLoadedData)
+      el.addEventListener('error', onError)
+
+      // Try to play
+      el.play().catch(e => {
+        console.log('Autoplay prevented by browser, waiting for user interaction')
+        videoLoading.value = false // Allow user interaction
+      })
+
+      // Add safety timeout for native video
+      const safetyTimeout = setTimeout(() => {
         if (videoLoading.value) {
-          console.warn('Safety timeout: clearing loading state after 3 seconds (direct video)')
+          console.warn('Safety timeout: clearing loading state after 10 seconds (native)')
           videoLoading.value = false
         }
-      }, 3000)
+      }, 10000)
+      onBeforeUnmount(() => {
+        clearTimeout(safetyTimeout)
+        el.removeEventListener('canplay', onCanPlay)
+        el.removeEventListener('loadeddata', onLoadedData)
+        el.removeEventListener('error', onError)
+      })
+
+      // Remove the aggressive timeout for native video - let it load naturally
+      // Large MP4 files may take time to buffer
     }
+
   } catch (error) {
     console.error('Setup video error:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -1036,22 +1075,22 @@ function closeLanguageDropdown() {
 }
 
 onBeforeUnmount(() => {
-  destroyHls()
+  destroyPlayer()
   stopProgressUpdates() // Ensure animation frame is stopped
   removeVideoEventListeners(videoRef.value)
-  
+
   // Clear any pending timeouts
   if (resolveTimeout) {
     clearTimeout(resolveTimeout)
     resolveTimeout = null
   }
-  
+
   // Clear skip timeout
   if (skipTimeout.value) {
     clearTimeout(skipTimeout.value)
     skipTimeout.value = null
   }
-  
+
   // Remove global event listeners to prevent memory leaks
   document.removeEventListener('keydown', handleKeyPress)
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
@@ -1251,8 +1290,8 @@ async function resolveEpisode() {
 }
 
 watch([showPlayer, playUrl], async () => {
-  if (!showPlayer.value) { destroyHls(); return }
-  await nextTick(); 
+  if (!showPlayer.value) { destroyPlayer(); return }
+  await nextTick();
   setupVideo()
 })
 

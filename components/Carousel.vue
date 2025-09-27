@@ -1,0 +1,46 @@
+<template>
+  <section class="section">
+    <div class="flex justify-between items-center mb-4 px-5 md:px-20">
+      <h3 class="row-title">{{ title || 'Continuer à regarder' }}</h3>
+      <div class="flex items-center gap-5">
+        <button
+          type="button"
+          class="opacity-50"
+          disabled
+        >
+          <Icon name="grommet-icons:form-previous" />
+        </button>
+        <button
+          type="button"
+          class="opacity-50"
+          disabled
+        >
+          <Icon name="grommet-icons:form-next" />
+        </button>
+      </div>
+    </div>
+
+    <div class="relative">
+      <!-- Gradient overlays -->
+      <div
+        aria-hidden
+        class="pointer-events-none absolute inset-y-0 left-0 w-20 z-10 bg-gradient-to-r from-zinc-950 to-transparent"
+      />
+      <div
+        aria-hidden
+        class="pointer-events-none absolute inset-y-0 right-0 w-20 z-10 bg-gradient-to-l from-zinc-950 to-transparent"
+      />
+
+      <slot />
+    </div>
+  </section>
+</template>
+
+<script setup lang="ts">
+defineProps<{
+  title?: string
+}>()
+</script>
+
+<style scoped>
+</style>

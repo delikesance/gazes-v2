@@ -98,131 +98,101 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="section">
-    <div class="flex justify-between items-center mb-4 px-5 md:px-20">
-      <h3 class="row-title">{{ title || 'Continuer à regarder' }}</h3>
-      <div class="flex items-center gap-5">
-        <button
-          type="button"
-          class="opacity-50"
-          disabled
-        >
-          <Icon name="grommet-icons:form-previous" />
-        </button>
-        <button
-          type="button"
-          class="opacity-50"
-          disabled
-        >
-          <Icon name="grommet-icons:form-next" />
-        </button>
+  <Carousel :title="title">
+    <!-- Loading state -->
+    <div v-if="loading" class="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pl-5 md:pl-20 pr-5 md:pr-20 scroll-pl-5 md:scroll-pl-20 scroll-pr-5 md:scroll-pr-20">
+      <div
+        v-for="i in 8"
+        :key="i"
+        class="snap-start shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/40 animate-pulse w-[200px] h-[320px]"
+      />
+    </div>
+
+    <!-- Error state -->
+    <div v-else-if="error" class="px-5 md:px-20">
+      <div class="text-center py-8">
+        <Icon name="heroicons:exclamation-triangle" class="w-12 h-12 mx-auto mb-4 text-amber-500" />
+        <p class="text-zinc-400">{{ error }}</p>
       </div>
     </div>
 
-    <div class="relative">
-      <!-- Gradient overlays -->
-      <div
-        aria-hidden
-        class="pointer-events-none absolute inset-y-0 left-0 w-20 z-10 bg-gradient-to-r from-zinc-950 to-transparent"
-      />
-      <div
-        aria-hidden
-        class="pointer-events-none absolute inset-y-0 right-0 w-20 z-10 bg-gradient-to-l from-zinc-950 to-transparent"
-      />
-
-      <!-- Loading state -->
-      <div v-if="loading" class="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pl-5 md:pl-20 pr-5 md:pr-20 scroll-pl-5 md:scroll-pl-20 scroll-pr-5 md:scroll-pr-20">
-        <div
-          v-for="i in 8"
-          :key="i"
-          class="snap-start shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/40 animate-pulse aspect-[9/12] w-[170px]"
-        />
+    <!-- Empty state -->
+    <div v-else-if="continueWatchingItems.length === 0" class="px-5 md:px-20">
+      <div class="text-center py-8">
+        <Icon name="heroicons:play-circle" class="w-12 h-12 mx-auto mb-4 text-zinc-500" />
+        <p class="text-zinc-400">Aucun contenu en cours</p>
+        <p class="text-sm text-zinc-500 mt-2">Commencez à regarder pour voir vos progrès ici</p>
       </div>
+    </div>
 
-      <!-- Error state -->
-      <div v-else-if="error" class="px-5 md:px-20">
-        <div class="text-center py-8">
-          <Icon name="heroicons:exclamation-triangle" class="w-12 h-12 mx-auto mb-4 text-amber-500" />
-          <p class="text-zinc-400">{{ error }}</p>
-        </div>
-      </div>
+    <!-- Continue watching items -->
+    <div v-else class="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pl-5 md:pl-20 pr-5 md:pr-20 scroll-pl-5 md:scroll-pl-20 scroll-pr-5 md:scroll-pr-20">
+      <NuxtLink
+        v-for="item in continueWatchingItems"
+        :key="`${item.anime.id}-${item.season}-${item.episode}`"
+        :to="`/watch/${item.anime.id}/${item.season}/vostfr/${item.episode}`"
+        class="snap-start shrink-0 group relative rounded-xl overflow-hidden border border-zinc-800 hover:border-zinc-600 transition-all duration-300 w-[200px] h-[320px] flex flex-col"
+      >
+        <!-- Poster image -->
+        <div class="h-[240px] relative overflow-hidden">
+          <img
+            :src="item.anime.image"
+            :alt="item.anime.title"
+            class="w-[200px] h-[240px] object-cover group-hover:scale-105 transition-transform duration-300"
+            loading="lazy"
+          />
 
-      <!-- Empty state -->
-      <div v-else-if="continueWatchingItems.length === 0" class="px-5 md:px-20">
-        <div class="text-center py-8">
-          <Icon name="heroicons:play-circle" class="w-12 h-12 mx-auto mb-4 text-zinc-500" />
-          <p class="text-zinc-400">Aucun contenu en cours</p>
-          <p class="text-sm text-zinc-500 mt-2">Commencez à regarder pour voir vos progrès ici</p>
-        </div>
-      </div>
-
-      <!-- Continue watching items -->
-      <div v-else class="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pl-5 md:pl-20 pr-5 md:pr-20 scroll-pl-5 md:scroll-pl-20 scroll-pr-5 md:scroll-pr-20">
-        <NuxtLink
-          v-for="item in continueWatchingItems"
-          :key="`${item.anime.id}-${item.season}-${item.episode}`"
-          :to="`/watch/${item.anime.id}/${item.season}/vostfr/${item.episode}`"
-          class="snap-start shrink-0 group relative rounded-xl overflow-hidden border border-zinc-800 hover:border-zinc-600 transition-all duration-300 w-[170px]"
-        >
-          <!-- Poster image -->
-          <div class="aspect-[9/12] relative overflow-hidden">
-            <img
-              :src="item.anime.image"
-              :alt="item.anime.title"
-              class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              loading="lazy"
+          <!-- Progress overlay -->
+          <div class="absolute bottom-0 left-0 right-0 h-1 bg-black/60">
+            <div
+              class="h-full transition-all duration-300"
+              :class="getProgressColor(item.progressPercent)"
+              :style="{ width: item.progressPercent + '%' }"
             />
+          </div>
 
-            <!-- Progress overlay -->
-            <div class="absolute bottom-0 left-0 right-0 h-1 bg-black/60">
-              <div
-                class="h-full transition-all duration-300"
-                :class="getProgressColor(item.progressPercent)"
-                :style="{ width: item.progressPercent + '%' }"
-              />
-            </div>
-
-            <!-- Play overlay -->
-            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
-              <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                <Icon name="heroicons:play" class="w-12 h-12 text-white drop-shadow-lg" />
-              </div>
-            </div>
-
-            <!-- Episode info overlay -->
-            <div class="absolute top-2 right-2 bg-black/80 rounded px-2 py-1 text-xs text-white font-medium">
-              {{ item.seasonDisplay }} E{{ item.episode.toString().padStart(2, '0') }}
-            </div>
-
-            <!-- Delete button overlay -->
-            <div class="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-              <button
-                @click="deleteItem(item, $event)"
-                class="bg-red-600/90 hover:bg-red-600 text-white rounded-full p-1.5 transition-colors duration-200"
-                title="Supprimer de la liste de continuation"
-              >
-                <Icon name="heroicons:trash" class="w-3 h-3" />
-              </button>
+          <!-- Play overlay -->
+          <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
+            <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+              <Icon name="heroicons:play" class="w-12 h-12 text-white drop-shadow-lg" />
             </div>
           </div>
 
-          <!-- Content info -->
-          <div class="p-3 bg-zinc-900">
+          <!-- Episode info overlay -->
+          <div class="absolute top-2 right-2 bg-black/80 rounded px-2 py-1 text-xs text-white font-medium">
+            {{ item.seasonDisplay }} E{{ item.episode.toString().padStart(2, '0') }}
+          </div>
+
+          <!-- Delete button overlay -->
+          <div class="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <button
+              @click="deleteItem(item, $event)"
+              class="bg-red-600/90 hover:bg-red-600 text-white rounded-full p-1.5 transition-colors duration-200"
+              title="Supprimer de la liste de continuation"
+            >
+              <Icon name="heroicons:trash" class="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        <!-- Content info -->
+        <div class="h-[80px] p-3 bg-zinc-900 flex flex-col justify-between">
+          <div>
             <h4 class="font-medium text-white text-sm line-clamp-2 mb-1 group-hover:text-violet-400 transition-colors">
               {{ item.anime.title }}
             </h4>
             <p class="text-xs text-zinc-400 mb-2">
               {{ formatTime(item.currentTime) }} / {{ formatTime(item.duration) }}
             </p>
-            <div class="flex items-center justify-between text-xs text-zinc-500">
-              <span>{{ Math.round(item.progressPercent) }}% vu</span>
-              <span>{{ new Date(item.lastWatchedAt).toLocaleDateString('fr-FR') }}</span>
-            </div>
           </div>
-        </NuxtLink>
-      </div>
+          <div class="flex items-center justify-between text-xs text-zinc-500">
+            <span>{{ Math.round(item.progressPercent) }}% vu</span>
+            <span>{{ new Date(item.lastWatchedAt).toLocaleDateString('fr-FR') }}</span>
+          </div>
+        </div>
+      </NuxtLink>
     </div>
-  </section>
+  </Carousel>
 </template>
 
 <style scoped>

@@ -1,117 +1,56 @@
 <template>
-    <NuxtLink
-        class="poster group relative block overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/30 aspect-[9/12] transition-all duration-200 hover:border-zinc-600 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
-        :to="to"
-        :style="{ width: cardConfig.width }"
-        :aria-label="`Watch ${title}`"
-    >
-        <NuxtImg
-            :src="src"
-            :alt="title"
-            :sizes="cardConfig.sizes"
-            class="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-            loading="lazy"
-        />
+  <NuxtLink
+    :to="to"
+    :aria-label="`Watch ${title}`"
+    class="snap-start shrink-0 group relative rounded-xl overflow-hidden border border-zinc-800 hover:border-zinc-600 transition-all duration-300 w-[200px] h-[320px] flex flex-col"
+  >
+    <!-- Poster image -->
+    <div class="h-[240px] relative overflow-hidden">
+      <NuxtImg
+        :src="src"
+        :alt="title"
+        :sizes="imageSizes"
+        class="w-[200px] h-[240px] object-cover group-hover:scale-105 transition-transform duration-300"
+        loading="lazy"
+      />
 
-        <!-- Gradient overlay -->
-        <div
-            class="absolute inset-0 z-10 bg-gradient-to-t from-zinc-950/90 via-transparent to-transparent"
-        />
-
-        <!-- Content overlay -->
-        <div class="absolute inset-x-0 bottom-0 z-20 p-3 text-white">
-            <h3
-                class="font-medium leading-tight line-clamp-2"
-                :class="titleClass"
-                :title="title"
-            >
-                {{ title }}
-            </h3>
+      <!-- Play overlay -->
+      <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
+        <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+          <Icon name="heroicons:play" class="w-12 h-12 text-white drop-shadow-lg" />
         </div>
+      </div>
+    </div>
 
-        <!-- Hover play indicator -->
-        <div
-            class="absolute inset-0 z-30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-        >
-            <div class="bg-black/70 rounded-full w-12 h-12 grid place-items-center backdrop-blur-sm">
-                <ClientOnly>
-                    <Icon name="heroicons:play" class="w-6 h-6 text-white block" />
-                </ClientOnly>
-            </div>
-        </div>
-    </NuxtLink>
+    <!-- Content info -->
+    <div class="h-[80px] p-3 bg-zinc-900 flex flex-col justify-between">
+      <div>
+        <h4 class="font-medium text-white text-sm line-clamp-2 mb-1 group-hover:text-violet-400 transition-colors">
+          {{ title }}
+        </h4>
+      </div>
+    </div>
+  </NuxtLink>
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import { useDesignSystem, type CardSize } from "~/composables/useDesignSystem";
+interface Props {
+  to: string
+  src: string
+  title: string
+}
 
-const props = defineProps<{
-    to: string;
-    src: string;
-    title: string;
-    size?: CardSize;
-    fluid?: boolean; // when true, card stretches to parent width
-}>();
+defineProps<Props>()
 
-const { getCardSize, getResponsiveSizes } = useDesignSystem();
-
-const cardConfig = computed(() => {
-    const size = props.size || "md";
-    const sizeConfig = getCardSize(size);
-    const responsiveSizes = getResponsiveSizes(size);
-
-    return {
-        width: props.fluid ? '100%' : `${sizeConfig.widthPx}px`,
-        sizes:
-            Object.entries(responsiveSizes)
-                .map(
-                    ([breakpoint, width]) =>
-                        `(min-width: ${breakpoint}) ${width}`,
-                )
-                .join(", ") + `, ${sizeConfig.widthPx}px`,
-    };
-});
-
-const titleClass = computed(() => {
-    const titleLength = props.title?.length || 0;
-
-    if (titleLength > 50) return "text-xs";
-    if (titleLength > 30) return "text-sm";
-    return "text-sm md:text-base";
-});
+const imageSizes = '200px'
 </script>
 
 <style scoped>
 .line-clamp-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.poster {
-    /* Ensure consistent aspect ratio */
-    container-type: size;
-}
-
-/* Better focus styles */
-/* Remove container scaling on focus; rely on focus ring */
-
-/* Loading state */
-.poster img[data-loading="true"] {
-    background: linear-gradient(90deg, #3f3f46 25%, #52525b 50%, #3f3f46 75%);
-    background-size: 200% 100%;
-    animation: shimmer 2s infinite;
-}
-
-@keyframes shimmer {
-    0% {
-        background-position: 200% 0;
-    }
-    100% {
-        background-position: -200% 0;
-    }
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  overflow: hidden;
 }
 </style>
