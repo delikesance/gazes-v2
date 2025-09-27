@@ -35,9 +35,20 @@ export class DatabaseService {
     console.log('📁 [DATABASE] Initializing Supabase connection...')
 
     const config = useRuntimeConfig()
+
+    // Validate required environment variables
+    const supabaseUrl = config.supabaseUrl as string
+    const supabaseAnonKey = config.supabaseAnonKey as string
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      const errorMsg = 'Missing required Supabase environment variables: SUPABASE_URL and/or SUPABASE_ANON_KEY'
+      console.error('❌ [DATABASE] ' + errorMsg)
+      throw new Error(errorMsg)
+    }
+
     this.supabase = createClient(
-      config.supabaseUrl as string,
-      config.supabaseAnonKey as string,
+      supabaseUrl,
+      supabaseAnonKey,
       {
         auth: {
           autoRefreshToken: false,
