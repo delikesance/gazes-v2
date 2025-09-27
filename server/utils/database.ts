@@ -1,5 +1,10 @@
 import Database from 'better-sqlite3'
 import path from 'path'
+import { fileURLToPath } from 'url'
+import fs from 'fs'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 export interface User {
   id: string
@@ -30,8 +35,17 @@ export class DatabaseService {
   private db: Database.Database
 
   private constructor() {
-    const dbPath = path.join(process.cwd(), 'data', 'gaze.db')
+    // Use __dirname to get the correct path relative to this file
+    const dbPath = path.join(__dirname, '..', '..', 'data', 'gaze.db')
     console.log('📁 [DATABASE] Opening database at:', dbPath)
+
+    // Ensure the data directory exists
+    const dataDir = path.dirname(dbPath)
+    const fs = require('fs')
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true })
+      console.log('📁 [DATABASE] Created data directory:', dataDir)
+    }
 
     this.db = new Database(dbPath)
     this.initDatabase()
