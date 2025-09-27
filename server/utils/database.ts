@@ -1,10 +1,6 @@
 import Database from 'better-sqlite3'
 import path from 'path'
-import { fileURLToPath } from 'url'
-import fs from 'fs'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+import fs from 'node:fs'
 
 export interface User {
   id: string
@@ -35,16 +31,35 @@ export class DatabaseService {
   private db: Database.Database
 
   private constructor() {
-    // Use __dirname to get the correct path relative to this file
-    const dbPath = path.join(__dirname, '..', '..', 'data', 'gaze.db')
+    // Get the database path - check if we're in Docker or development
+    let dbPath: string
+    const isDocker = fs.existsSync('/.dockerenv') ||
+                    process.cwd().startsWith('/app')
+
+    if (isDocker) {
+      // In Docker container, the app runs from /app
+      dbPath = '/app/data/gaze.db'
+    } else {
+      // In development, use relative path from project root
+      // If we're in .output directory, go up one level
+      const baseDir = process.cwd().includes('.output') ?
+                     path.join(process.cwd(), '..') :
+                     process.cwd()
+      dbPath = path.join(baseDir, 'data', 'gaze.db')
+    }
     console.log('📁 [DATABASE] Opening database at:', dbPath)
+    console.log('📁 [DATABASE] Detected environment:', isDocker ? 'docker' : 'development')
+    console.log('📁 [DATABASE] Current working directory:', process.cwd())
 
     // Ensure the data directory exists
     const dataDir = path.dirname(dbPath)
-    const fs = require('fs')
+    console.log('📁 [DATABASE] Data directory:', dataDir)
     if (!fs.existsSync(dataDir)) {
+      console.log('📁 [DATABASE] Creating data directory...')
       fs.mkdirSync(dataDir, { recursive: true })
       console.log('📁 [DATABASE] Created data directory:', dataDir)
+    } else {
+      console.log('📁 [DATABASE] Data directory already exists')
     }
 
     this.db = new Database(dbPath)
