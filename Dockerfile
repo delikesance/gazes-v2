@@ -1,7 +1,10 @@
 # Utilise l'image officielle Bun
-FROM oven/bun:1.1.13 as builder
+FROM oven/bun:1.1.13 AS builder
 
 WORKDIR /app
+
+# Installe Python requis pour better-sqlite3
+RUN apt-get update && apt-get install -y python3 python3-dev && rm -rf /var/lib/apt/lists/*
 
 # Copie les fichiers nécessaires
 COPY package.json bun.lock ./
@@ -14,7 +17,7 @@ RUN bun install --production
 RUN bun run build
 
 # Étape finale pour exécuter l'app
-FROM oven/bun:1.1.13 as runner
+FROM oven/bun:1.1.13 AS runner
 WORKDIR /app
 
 COPY --from=builder /app .
