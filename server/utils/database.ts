@@ -36,6 +36,12 @@ export class DatabaseService {
 
     const config = useRuntimeConfig()
 
+    // Log Supabase environment variables for debugging
+    console.log('📁 [DATABASE] Supabase URL:', config.supabaseUrl)
+    console.log('📁 [DATABASE] Supabase Anon Key set:', !!config.supabaseAnonKey)
+    console.log('📁 [DATABASE] Supabase JWT Secret set:', !!config.supabaseJwtSecret)
+    console.log('📁 [DATABASE] Supabase Service Role Key set:', !!config.supabaseServiceRoleKey)
+
     // Validate required environment variables
     const supabaseUrl = config.supabaseUrl as string
     const supabaseServiceRoleKey = config.supabaseJwtSecret as string
