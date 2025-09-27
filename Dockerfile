@@ -1,23 +1,27 @@
-# Utilise l'image officielle Bun
-FROM oven/bun:1.1.13 AS builder
+# Utilise l'image officielle Bun avec Node.js 20
+FROM oven/bun:1.1.43 AS builder
 
 WORKDIR /app
 
-# Installe Python requis pour better-sqlite3
-RUN apt-get update && apt-get install -y python3 python3-dev && rm -rf /var/lib/apt/lists/*
+# Installe Python et configure pour better-sqlite3
+RUN apt-get update && apt-get install -y python3 python3-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Configure Python pour node-gyp
+ENV PYTHON=/usr/bin/python3
 
 # Copie les fichiers nécessaires
 COPY package.json bun.lock ./
 COPY . ./
 
-# Installe les dépendances
-RUN bun install --production
+# Installe les dépendances sans exécuter les scripts postinstall
+RUN bun install --production --ignore-scripts
 
-# Build Nuxt en mode serveur
+# Build Nuxt en mode serveur avec optimisation mémoire
 RUN bun run build
 
 # Étape finale pour exécuter l'app
-FROM oven/bun:1.1.13 AS runner
+FROM oven/bun:1.1.43 AS runner
 WORKDIR /app
 
 COPY --from=builder /app .
