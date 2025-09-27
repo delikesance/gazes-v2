@@ -1,0 +1,26 @@
+# JWT Configuration
+JWT_SECRET=your-super-secret-jwt-key-change-this-in-production-minimum-32-characters
+JWT_REFRESH_SECRET=your-super-secret-refresh-key-change-this-in-production-minimum-32-characters
+JWT_EXPIRES_IN=7d
+JWT_REFRESH_EXPIRES_IN=30d
+
+# Supabase Configuration
+SUPABASE_URL=https://znkrphjulitfwklweywv.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpua3JwaGp1bGl0ZndrbHdleXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkwMDM4NjYsImV4cCI6MjA3NDU3OTg2Nn0.sSIH1CJJZkwr2fHjIBQr9mXzUg-NhzuwBf7KfE2F1FM
+SUPABASE_JWT_SECRET=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpua3JwaGp1bGl0ZndrbHdleXd2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1OTAwMzg2NiwiZXhwIjoyMDc0NTc5ODY2fQ.UnEX376pyQx9QPCcV7gANSw3UDiu_01Jop8UVf9y3iU
+
+# PostgreSQL Configuration
+POSTGRES_URL=postgres://postgres.znkrphjulitfwklweywv:GMOP1RLWbupu9mvA@aws-1-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require&supa=base-pooler.x
+POSTGRES_PRISMA_URL=postgres://postgres.znkrphjulitfwklweywv:GMOP1RLWbupu9mvA@aws-1-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true
+POSTGRES_URL_NON_POOLING=postgres://postgres.znkrphjulitfwklweywv:GMOP1RLWbupu9mvA@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require
+POSTGRES_USER=postgres
+POSTGRES_HOST=db.znkrphjulitfwklweywv.supabase.co
+POSTGRES_PASSWORD=GMOP1RLWbupu9mvA
+POSTGRES_DATABASE=postgres
+
+# Public Supabase vars (for client-side)
+NEXT_PUBLIC_SUPABASE_URL=https://znkrphjulitfwklweywv.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpua3JwaGp1bGl0ZndrbHdleXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkwMDM4NjYsImV4cCI6MjA3NDU3OTg2Nn0.sSIH1CJJZkwr2fHjIBQr9mXzUg-NhzuwBf7KfE2F1FM
+
+# Node Environment
+NODE_ENV=development

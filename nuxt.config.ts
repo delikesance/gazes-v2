@@ -4,7 +4,7 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   modules: ['@nuxt/icon', '@nuxt/image', '@nuxtjs/tailwindcss'],
   css: ['~/assets/css/main.css'],
-   // Runtime configuration for environment variables
+    // Runtime configuration for environment variables
     runtimeConfig: {
       // Server-side configuration (private keys) - these will be overridden by env vars
       searchApiUrl: "https://anime-sama.fr/template-php/defaut/fetch.php",
@@ -15,18 +15,23 @@ export default defineNuxtConfig({
       jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
       jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
       // Supabase configuration
-      supabaseUrl: process.env.SUPABASE_URL,
-      supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
-      supabaseJwtSecret: process.env.SUPABASE_JWT_SECRET,
+      supabaseUrl: process.env.gazes_SUPABASE_URL,
+      supabaseAnonKey: process.env.gazes_SUPABASE_ANON_KEY,
+      supabaseJwtSecret: process.env.gazes_SUPABASE_JWT_SECRET,
+      supabaseServiceRoleKey: process.env.gazes_SUPABASE_SERVICE_ROLE_KEY,
       // Database configuration (for compatibility)
-      postgresUrl: process.env.POSTGRES_URL,
-      postgresPrismaUrl: process.env.POSTGRES_PRISMA_URL,
-      postgresUrlNoSsl: process.env.POSTGRES_URL_NO_SSL,
-      postgresUrlNonPooling: process.env.POSTGRES_URL_NON_POOLING,
-      postgresUser: process.env.POSTGRES_USER,
-      postgresHost: process.env.POSTGRES_HOST,
-      postgresPassword: process.env.POSTGRES_PASSWORD,
-      postgresDatabase: process.env.POSTGRES_DATABASE,
+      postgresUrl: process.env.gazes_POSTGRES_URL,
+      postgresPrismaUrl: process.env.gazes_POSTGRES_PRISMA_URL,
+      postgresUrlNonPooling: process.env.gazes_POSTGRES_URL_NON_POOLING,
+      postgresUser: process.env.gazes_POSTGRES_USER,
+      postgresHost: process.env.gazes_POSTGRES_HOST,
+      postgresPassword: process.env.gazes_POSTGRES_PASSWORD,
+      postgresDatabase: process.env.gazes_POSTGRES_DATABASE,
+      // Public configuration (exposed to client-side)
+      public: {
+        supabaseUrl: process.env.gazes_NEXT_PUBLIC_SUPABASE_URL,
+        supabaseAnonKey: process.env.gazes_NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      }
     },
   // Ensure a single Vue runtime instance in the client bundle to avoid hydration issues
   vite: {

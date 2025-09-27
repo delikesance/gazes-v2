@@ -293,7 +293,12 @@ export class DatabaseService {
       .select('*', { count: 'exact', head: true })
 
     if (error) {
-      console.error('📁 [DATABASE] Error getting user count:', error)
+      console.error('📁 [DATABASE] Error getting user count:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      })
       throw error
     }
 

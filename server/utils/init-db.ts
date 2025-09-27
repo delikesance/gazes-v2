@@ -13,8 +13,14 @@ export async function initializeDatabase() {
 
     console.log('✅ [INIT] Database initialization completed successfully')
     return true
-  } catch (error) {
-    console.error('❌ [INIT] Database initialization failed:', error)
+  } catch (error: any) {
+    console.error('❌ [INIT] Database initialization failed:', {
+      message: error?.message || error?.toString() || 'Unknown error',
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      stack: error?.stack
+    })
     return false
   }
 }
