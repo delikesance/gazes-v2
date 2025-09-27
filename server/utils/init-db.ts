@@ -1,13 +1,13 @@
 import { DatabaseService } from './database'
 
-export function initializeDatabase() {
-  console.log('🚀 [INIT] Initializing database...')
+export async function initializeDatabase() {
+  console.log('🚀 [INIT] Initializing Supabase database...')
 
   try {
     const db = DatabaseService.getInstance()
 
     // Test the database connection
-    const userCount = db.getUserCount()
+    const userCount = await db.getUserCount()
     console.log('🚀 [INIT] Database connection successful')
     console.log('🚀 [INIT] Current user count:', userCount)
 

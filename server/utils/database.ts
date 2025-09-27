@@ -1,6 +1,5 @@
-import Database from 'better-sqlite3'
-import path from 'path'
-import fs from 'node:fs'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { useRuntimeConfig } from '#imports'
 
 export interface User {
   id: string
@@ -12,6 +11,8 @@ export interface User {
 
 export interface UserWithPassword extends User {
   password: string
+  created_at: string
+  updated_at: string
 }
 
 export interface WatchingProgress {
@@ -28,41 +29,23 @@ export interface WatchingProgress {
 
 export class DatabaseService {
   private static instance: DatabaseService
-  private db: Database.Database
+  private supabase: SupabaseClient
 
   private constructor() {
-    // Get the database path - check if we're in Docker or development
-    let dbPath: string
-    const isDocker = fs.existsSync('/.dockerenv') ||
-                    process.cwd().startsWith('/app')
+    console.log('📁 [DATABASE] Initializing Supabase connection...')
 
-    if (isDocker) {
-      // In Docker container, the app runs from /app
-      dbPath = '/app/data/gaze.db'
-    } else {
-      // In development, use relative path from project root
-      // If we're in .output directory, go up one level
-      const baseDir = process.cwd().includes('.output') ?
-                     path.join(process.cwd(), '..') :
-                     process.cwd()
-      dbPath = path.join(baseDir, 'data', 'gaze.db')
-    }
-    console.log('📁 [DATABASE] Opening database at:', dbPath)
-    console.log('📁 [DATABASE] Detected environment:', isDocker ? 'docker' : 'development')
-    console.log('📁 [DATABASE] Current working directory:', process.cwd())
+    const config = useRuntimeConfig()
+    this.supabase = createClient(
+      config.supabaseUrl as string,
+      config.supabaseAnonKey as string,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
 
-    // Ensure the data directory exists
-    const dataDir = path.dirname(dbPath)
-    console.log('📁 [DATABASE] Data directory:', dataDir)
-    if (!fs.existsSync(dataDir)) {
-      console.log('📁 [DATABASE] Creating data directory...')
-      fs.mkdirSync(dataDir, { recursive: true })
-      console.log('📁 [DATABASE] Created data directory:', dataDir)
-    } else {
-      console.log('📁 [DATABASE] Data directory already exists')
-    }
-
-    this.db = new Database(dbPath)
     this.initDatabase()
   }
 
@@ -73,85 +56,55 @@ export class DatabaseService {
     return DatabaseService.instance
   }
 
-  private initDatabase() {
+  private async initDatabase() {
     console.log('📁 [DATABASE] Initializing database schema...')
 
-    // Create users table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        email TEXT UNIQUE NOT NULL,
-        username TEXT NOT NULL,
-        password TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `)
+    // Note: Tables should be created via Supabase migrations (see database/migrations/)
+    // This method no longer creates tables programmatically
 
-    // Create index on email for faster lookups
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_users_email
-      ON users(email)
-    `)
-
-    // Create watching progress table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS watching_progress (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        anime_id TEXT NOT NULL,
-        season TEXT NOT NULL,
-        episode INTEGER NOT NULL,
-        current_time REAL NOT NULL DEFAULT 0,
-        duration REAL NOT NULL DEFAULT 0,
-        last_watched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        completed BOOLEAN DEFAULT FALSE,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        UNIQUE(user_id, anime_id, season, episode)
-      )
-    `)
-
-    // Create index on user_id for faster queries
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_watching_progress_user_id
-      ON watching_progress(user_id)
-    `)
-
-    // Create index on last_watched_at for sorting recent progress
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_watching_progress_last_watched
-      ON watching_progress(last_watched_at DESC)
-    `)
+    console.log('✅ [DATABASE] Database schema initialization completed')
   }
 
   // User operations
   async createUser(email: string, username: string, hashedPassword: string): Promise<User> {
     console.log('📁 [DATABASE] Creating user:', username, 'with email:', email)
 
-    const stmt = this.db.prepare(`
-      INSERT INTO users (id, email, username, password)
-      VALUES (?, ?, ?, ?)
-    `)
-
     const id = crypto.randomUUID()
-    const now = new Date().toISOString()
+    const now = new Date()
 
     try {
-      stmt.run(id, email, username, hashedPassword)
+      const { data, error } = await this.supabase
+        .from('users')
+        .insert({
+          id,
+          email,
+          username,
+          password: hashedPassword,
+          created_at: now.toISOString(),
+          updated_at: now.toISOString()
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('📁 [DATABASE] Error creating user:', error)
+        if (error.code === '23505') { // unique constraint violation
+          throw new Error('User with this email already exists')
+        }
+        throw error
+      }
+
       console.log('📁 [DATABASE] User created successfully with ID:', id)
 
       return {
-        id,
-        email,
-        username,
-        createdAt: new Date(now),
-        updatedAt: new Date(now)
+        id: data.id,
+        email: data.email,
+        username: data.username,
+        createdAt: new Date(data.created_at),
+        updatedAt: new Date(data.updated_at)
       }
     } catch (error: any) {
       console.error('📁 [DATABASE] Error creating user:', error)
-      if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-        throw new Error('User with this email already exists')
-      }
       throw error
     }
   }
@@ -159,121 +112,181 @@ export class DatabaseService {
   async findUserByEmail(email: string): Promise<UserWithPassword | null> {
     console.log('📁 [DATABASE] Looking for user by email:', email)
 
-    const stmt = this.db.prepare('SELECT * FROM users WHERE email = ?')
-    const user = stmt.get(email) as UserWithPassword | undefined
+    const { data, error } = await this.supabase
+      .from('users')
+      .select('id, email, username, password, created_at, updated_at')
+      .eq('email', email)
+      .single()
 
-    if (user) {
-      console.log('📁 [DATABASE] User found:', user.username)
-    } else {
-      console.log('📁 [DATABASE] User not found:', email)
+    if (error) {
+      if (error.code === 'PGRST116') { // no rows returned
+        console.log('📁 [DATABASE] User not found:', email)
+        return null
+      }
+      console.error('📁 [DATABASE] Error finding user:', error)
+      throw error
     }
 
-    return user || null
+    console.log('📁 [DATABASE] User found:', data.username)
+    return {
+      ...data,
+      createdAt: new Date(data.created_at),
+      updatedAt: new Date(data.updated_at)
+    }
   }
 
   async findUserById(id: string): Promise<User | null> {
     console.log('📁 [DATABASE] Looking for user by ID:', id)
 
-    const stmt = this.db.prepare('SELECT id, email, username, created_at, updated_at FROM users WHERE id = ?')
-    const user = stmt.get(id) as User | undefined
+    const { data, error } = await this.supabase
+      .from('users')
+      .select('id, email, username, created_at, updated_at')
+      .eq('id', id)
+      .single()
 
-    if (user) {
-      console.log('📁 [DATABASE] User found:', user.username)
-    } else {
-      console.log('📁 [DATABASE] User not found:', id)
+    if (error) {
+      if (error.code === 'PGRST116') { // no rows returned
+        console.log('📁 [DATABASE] User not found:', id)
+        return null
+      }
+      console.error('📁 [DATABASE] Error finding user:', error)
+      throw error
     }
 
-    return user || null
+    console.log('📁 [DATABASE] User found:', data.username)
+    return {
+      id: data.id,
+      email: data.email,
+      username: data.username,
+      createdAt: new Date(data.created_at),
+      updatedAt: new Date(data.updated_at)
+    }
   }
 
   async findUserByUsername(username: string): Promise<UserWithPassword | null> {
     console.log('📁 [DATABASE] Looking for user by username:', username)
 
-    const stmt = this.db.prepare('SELECT * FROM users WHERE username = ?')
-    const user = stmt.get(username) as UserWithPassword | undefined
+    const { data, error } = await this.supabase
+      .from('users')
+      .select('id, email, username, password, created_at, updated_at')
+      .eq('username', username)
+      .single()
 
-    if (user) {
-      console.log('📁 [DATABASE] User found:', user.username)
-    } else {
-      console.log('📁 [DATABASE] User not found:', username)
+    if (error) {
+      if (error.code === 'PGRST116') { // no rows returned
+        console.log('📁 [DATABASE] User not found:', username)
+        return null
+      }
+      console.error('📁 [DATABASE] Error finding user:', error)
+      throw error
     }
 
-    return user || null
+    console.log('📁 [DATABASE] User found:', data.username)
+    return {
+      ...data,
+      createdAt: new Date(data.created_at),
+      updatedAt: new Date(data.updated_at)
+    }
   }
 
   async updateUser(id: string, updates: Partial<User & { password?: string }>): Promise<User> {
     console.log('📁 [DATABASE] Updating user:', id)
 
-    const updateFields: string[] = []
-    const values: any[] = []
+    const updateData: any = {
+      updated_at: new Date().toISOString()
+    }
 
     if (updates.email !== undefined) {
-      updateFields.push('email = ?')
-      values.push(updates.email)
+      updateData.email = updates.email
     }
 
     if (updates.username !== undefined) {
-      updateFields.push('username = ?')
-      values.push(updates.username)
+      updateData.username = updates.username
     }
 
     if (updates.password !== undefined) {
-      updateFields.push('password = ?')
-      values.push(updates.password)
+      updateData.password = updates.password
     }
 
-    if (updateFields.length > 0) {
-      updateFields.push('updated_at = ?')
-      values.push(new Date().toISOString())
-      values.push(id)
+    const { data, error } = await this.supabase
+      .from('users')
+      .update(updateData)
+      .eq('id', id)
+      .select('id, email, username, created_at, updated_at')
+      .single()
 
-      const stmt = this.db.prepare(`
-        UPDATE users
-        SET ${updateFields.join(', ')}
-        WHERE id = ?
-      `)
-
-      stmt.run(...values)
-      console.log('📁 [DATABASE] User updated successfully')
+    if (error) {
+      console.error('📁 [DATABASE] Error updating user:', error)
+      throw error
     }
 
-    const updatedUser = await this.findUserById(id)
-    if (!updatedUser) {
-      throw new Error(`User with ID ${id} not found after update`)
+    console.log('📁 [DATABASE] User updated successfully')
+
+    return {
+      id: data.id,
+      email: data.email,
+      username: data.username,
+      createdAt: new Date(data.created_at),
+      updatedAt: new Date(data.updated_at)
     }
-    return updatedUser
   }
 
   async deleteUser(id: string): Promise<boolean> {
     console.log('📁 [DATABASE] Deleting user:', id)
 
-    const stmt = this.db.prepare('DELETE FROM users WHERE id = ?')
-    const result = stmt.run(id)
+    const { error } = await this.supabase
+      .from('users')
+      .delete()
+      .eq('id', id)
 
-    const success = result.changes > 0
-    console.log('📁 [DATABASE] User deleted:', success ? 'YES' : 'NO')
+    if (error) {
+      console.error('📁 [DATABASE] Error deleting user:', error)
+      return false
+    }
 
-    return success
+    console.log('📁 [DATABASE] User deleted successfully')
+    return true
   }
 
-  getAllUsers(): User[] {
+  async getAllUsers(): Promise<User[]> {
     console.log('📁 [DATABASE] Getting all users')
 
-    const stmt = this.db.prepare('SELECT id, email, username, created_at, updated_at FROM users ORDER BY created_at DESC')
-    const users = stmt.all() as User[]
+    const { data, error } = await this.supabase
+      .from('users')
+      .select('id, email, username, created_at, updated_at')
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('📁 [DATABASE] Error getting all users:', error)
+      throw error
+    }
+
+    const users = data.map(row => ({
+      id: row.id,
+      email: row.email,
+      username: row.username,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
+    }))
 
     console.log('📁 [DATABASE] Found', users.length, 'users')
     return users
   }
 
-  getUserCount(): number {
+  async getUserCount(): Promise<number> {
     console.log('📁 [DATABASE] Getting user count')
 
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM users')
-    const result = stmt.get() as { count: number }
+    const { count, error } = await this.supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true })
 
-    console.log('📁 [DATABASE] User count:', result.count)
-    return result.count
+    if (error) {
+      console.error('📁 [DATABASE] Error getting user count:', error)
+      throw error
+    }
+
+    console.log('📁 [DATABASE] User count:', count)
+    return count || 0
   }
 
   // Watching progress operations
@@ -281,75 +294,99 @@ export class DatabaseService {
     console.log('📁 [DATABASE] Saving watching progress:', { userId, animeId, season, episode, currentTime, duration })
 
     const completed = duration > 0 && currentTime >= duration * 0.9 // Consider completed if watched 90%
-    const now = new Date().toISOString()
-
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO watching_progress
-      (id, user_id, anime_id, season, episode, current_time, duration, last_watched_at, completed)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
+    const now = new Date()
     const id = crypto.randomUUID()
 
-    stmt.run(id, userId, animeId, season, episode, currentTime, duration, now, completed ? 1 : 0)
+    const { data, error } = await this.supabase
+      .from('watching_progress')
+      .upsert({
+        id,
+        user_id: userId,
+        anime_id: animeId,
+        season,
+        episode,
+        current_time: currentTime,
+        duration,
+        last_watched_at: now.toISOString(),
+        completed
+      }, {
+        onConflict: 'user_id,anime_id,season,episode'
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('📁 [DATABASE] Error saving watching progress:', error)
+      throw error
+    }
 
     console.log('📁 [DATABASE] Watching progress saved successfully')
 
     return {
-      id,
-      userId,
-      animeId,
-      season,
-      episode,
-      currentTime,
-      duration,
-      lastWatchedAt: new Date(now),
-      completed
+      id: data.id,
+      userId: data.user_id,
+      animeId: data.anime_id,
+      season: data.season,
+      episode: data.episode,
+      currentTime: data.current_time,
+      duration: data.duration,
+      lastWatchedAt: new Date(data.last_watched_at),
+      completed: data.completed
     }
   }
 
   async getWatchingProgress(userId: string, animeId: string, season: string, episode: number): Promise<WatchingProgress | null> {
     console.log('📁 [DATABASE] Getting watching progress:', { userId, animeId, season, episode })
 
-    const stmt = this.db.prepare(`
-      SELECT * FROM watching_progress
-      WHERE user_id = ? AND anime_id = ? AND season = ? AND episode = ?
-    `)
+    const { data, error } = await this.supabase
+      .from('watching_progress')
+      .select('id, user_id, anime_id, season, episode, current_time, duration, last_watched_at, completed')
+      .eq('user_id', userId)
+      .eq('anime_id', animeId)
+      .eq('season', season)
+      .eq('episode', episode)
+      .single()
 
-    const row = stmt.get(userId, animeId, season, episode) as any
-
-    if (row) {
-      console.log('📁 [DATABASE] Found watching progress:', row.current_time, '/', row.duration)
-      return {
-        id: row.id,
-        userId: row.user_id,
-        animeId: row.anime_id,
-        season: row.season,
-        episode: row.episode,
-        currentTime: row.current_time,
-        duration: row.duration,
-        lastWatchedAt: new Date(row.last_watched_at),
-        completed: Boolean(row.completed)
+    if (error) {
+      if (error.code === 'PGRST116') { // no rows returned
+        console.log('📁 [DATABASE] No watching progress found')
+        return null
       }
+      console.error('📁 [DATABASE] Error getting watching progress:', error)
+      throw error
     }
 
-    console.log('📁 [DATABASE] No watching progress found')
-    return null
+    console.log('📁 [DATABASE] Found watching progress:', data.current_time, '/', data.duration)
+    return {
+      id: data.id,
+      userId: data.user_id,
+      animeId: data.anime_id,
+      season: data.season,
+      episode: data.episode,
+      currentTime: data.current_time,
+      duration: data.duration,
+      lastWatchedAt: new Date(data.last_watched_at),
+      completed: data.completed
+    }
   }
 
   async getUserContinueWatching(userId: string, limit: number = 20): Promise<WatchingProgress[]> {
     console.log('📁 [DATABASE] Getting continue watching for user:', userId)
 
-    const stmt = this.db.prepare(`
-      SELECT * FROM watching_progress
-      WHERE user_id = ? AND completed = FALSE
-      ORDER BY last_watched_at DESC
-      LIMIT ?
-    `)
+    const { data, error } = await this.supabase
+      .from('watching_progress')
+      .select('id, user_id, anime_id, season, episode, current_time, duration, last_watched_at, completed')
+      .eq('user_id', userId)
+      .eq('completed', false)
+      .order('last_watched_at', { ascending: false })
+      .limit(limit)
 
-    const rows = stmt.all(userId, limit) as any[]
+    if (error) {
+      console.error('📁 [DATABASE] Error getting continue watching:', error)
+      throw error
+    }
 
-    const progress = rows.map(row => ({
+    const progress = data.map(row => ({
       id: row.id,
       userId: row.user_id,
       animeId: row.anime_id,
@@ -358,7 +395,7 @@ export class DatabaseService {
       currentTime: row.current_time,
       duration: row.duration,
       lastWatchedAt: new Date(row.last_watched_at),
-      completed: Boolean(row.completed)
+      completed: row.completed
     }))
 
     console.log('📁 [DATABASE] Found', progress.length, 'continue watching items')
@@ -368,41 +405,43 @@ export class DatabaseService {
   async deleteWatchingProgress(userId: string, animeId: string, season: string, episode: number): Promise<boolean> {
     console.log('📁 [DATABASE] Deleting watching progress:', { userId, animeId, season, episode })
 
-    const stmt = this.db.prepare(`
-      DELETE FROM watching_progress
-      WHERE user_id = ? AND anime_id = ? AND season = ? AND episode = ?
-    `)
+    const { error } = await this.supabase
+      .from('watching_progress')
+      .delete()
+      .eq('user_id', userId)
+      .eq('anime_id', animeId)
+      .eq('season', season)
+      .eq('episode', episode)
 
-    const result = stmt.run(userId, animeId, season, episode)
-    const deleted = result.changes > 0
+    if (error) {
+      console.error('📁 [DATABASE] Error deleting watching progress:', error)
+      return false
+    }
 
-    console.log('📁 [DATABASE] Watching progress deleted:', deleted)
-    return deleted
+    console.log('📁 [DATABASE] Watching progress deleted successfully')
+    return true
   }
 
   async markAsCompleted(userId: string, animeId: string, season: string, episode: number): Promise<boolean> {
     console.log('📁 [DATABASE] Marking episode as completed:', { userId, animeId, season, episode })
 
-    const stmt = this.db.prepare(`
-      UPDATE watching_progress
-      SET completed = TRUE, last_watched_at = ?
-      WHERE user_id = ? AND anime_id = ? AND season = ? AND episode = ?
-    `)
+    const { error } = await this.supabase
+      .from('watching_progress')
+      .update({
+        completed: true,
+        last_watched_at: new Date().toISOString()
+      })
+      .eq('user_id', userId)
+      .eq('anime_id', animeId)
+      .eq('season', season)
+      .eq('episode', episode)
 
-    const result = stmt.run(new Date().toISOString(), userId, animeId, season, episode)
-    const updated = result.changes > 0
+    if (error) {
+      console.error('📁 [DATABASE] Error marking episode as completed:', error)
+      return false
+    }
 
-    console.log('📁 [DATABASE] Episode marked as completed:', updated)
-    return updated
-  }
-
-  close(): void {
-    console.log('📁 [DATABASE] Closing database connection')
-    this.db.close()
-  }
-
-  // Get database instance for advanced operations
-  getDatabase(): Database.Database {
-    return this.db
+    console.log('📁 [DATABASE] Episode marked as completed successfully')
+    return true
   }
 }
