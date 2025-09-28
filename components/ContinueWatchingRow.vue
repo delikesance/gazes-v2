@@ -19,9 +19,23 @@
       <div
         v-for="item in items"
         :key="`${item.animeId}-${item.season}-${item.episode}`"
-        class="snap-start shrink-0 group relative rounded-xl overflow-hidden border border-zinc-800 hover:border-zinc-600 transition-all duration-300 w-[200px] min-h-[320px] flex flex-col cursor-pointer"
+        class="snap-start shrink-0 group relative rounded-xl overflow-hidden border border-zinc-800 hover:border-zinc-600 transition-all duration-300 w-[200px] h-[320px] flex flex-col cursor-pointer"
         @click="handleItemClick(item)"
       >
+        <!-- Remove button -->
+        <button
+          @click.stop="removeItem(item)"
+          class="absolute top-2 left-2 bg-red-500/90 hover:bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          title="Remove from continue watching"
+        >
+          <Icon name="heroicons:x-mark" class="w-4 h-4" />
+        </button>
+
+        <!-- Percentage viewed badge -->
+        <div class="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded z-10">
+          {{ Math.round(item.progressPercent) }}% vu
+        </div>
+
         <!-- Poster image -->
         <div class="h-[240px] relative overflow-hidden">
           <img
@@ -48,17 +62,14 @@
         </div>
 
         <!-- Content info -->
-        <div class="min-h-[80px] p-3 bg-zinc-900 flex flex-col justify-between">
+        <div class="flex-1 p-3 bg-zinc-900 flex flex-col justify-between">
           <div>
-            <h4 class="font-medium text-white text-sm mb-1 group-hover:text-violet-400 transition-colors">
-              {{ item.title || item.animeId }}
-            </h4>
             <p class="text-zinc-400 text-xs mb-1">
               {{ formatSeason(item.season) }} • Épisode {{ item.episode }}
             </p>
-            <p class="text-zinc-500 text-xs">
-              {{ Math.round(item.progressPercent) }}% vu
-            </p>
+            <h4 class="font-medium text-white text-sm group-hover:text-violet-400 transition-colors line-clamp-3">
+              {{ item.title || item.animeId }}
+            </h4>
           </div>
         </div>
       </div>
@@ -166,6 +177,23 @@ const handleItemClick = (item: WatchingProgress) => {
   // Add a query parameter to indicate this is a continue watching action
   const lang = item.defaultLang || 'vostfr'
   navigateTo(`/watch/${item.animeId}/${item.season}/${lang}/${item.episode}?continue=true`)
+}
+
+const removeItem = async (item: WatchingProgress) => {
+  try {
+    await $fetch(`/api/watch/progress/${item.animeId}`, {
+      method: 'DELETE',
+      body: { season: item.season, episode: item.episode }
+    })
+    // Remove from local items
+    const index = items.value.findIndex(i => i.id === item.id)
+    if (index > -1) {
+      items.value.splice(index, 1)
+    }
+  } catch (error) {
+    console.error('Failed to remove item:', error)
+    // TODO: Show error message to user
+  }
 }
 
 onMounted(() => {

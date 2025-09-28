@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount, computed, nextTick } from "vue";
-import CardPoster from "~/components/CardPoster.vue";
 import { useSearch } from "~/composables/useSearch";
 import GenreFilter from "~/components/GenreFilter.vue";
 import { SORTED_GENRES } from "~/shared/utils/genres";
@@ -412,8 +411,37 @@ onBeforeUnmount(() => {
                     <!-- Search Results -->
                     <div v-else class="poster-grid">
                         <div class="poster-item" v-for="item in searchState.results.value" :key="item.id">
-                            <CardPoster :to="`/anime/${item.id}`" :src="item.image" :title="item.title" size="sm"
-                                fluid />
+                            <div class="relative shrink-0">
+                              <NuxtLink
+                                :to="`/anime/${item.id}`"
+                                class="group block w-[200px] h-[320px] flex-none shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                                :aria-label="item.title"
+                              >
+                                <article class="relative w-full h-full rounded-2xl overflow-hidden shadow-lg transition-transform duration-200 will-change-transform hover:-translate-y-1 hover:shadow-2xl motion-reduce:transition-none">
+
+                                  <!-- Image area -->
+                                  <div class="relative h-[240px] bg-black">
+                                    <img :src="item.image" :alt="item.title" class="h-full w-full object-cover" loading="lazy" decoding="async" fetchpriority="low" />
+
+                                    <!-- subtle overlay for text legibility -->
+                                    <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent pointer-events-none"></div>
+
+                                    <!-- play affordance (decorative) -->
+                                    <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-200 motion-reduce:transition-none" aria-hidden="true">
+                                      <div class="rounded-full bg-white/6 p-3 transition-transform duration-200 group-hover:scale-105">
+                                        <Icon name="heroicons:play" class="w-6 h-6 fill-white" />
+                                      </div>
+                                    </div>
+
+                                  </div>
+
+                                  <!-- Title + subtitle area -->
+                                  <div class="p-3 bg-black">
+                                    <h3 class="m-0 text-sm font-semibold text-white line-clamp-2">{{ item.title }}</h3>
+                                  </div>
+                                </article>
+                              </NuxtLink>
+                            </div>
                         </div>
                         <!-- Fillers to complete row: 5-col on lg, 6-col on xl+ -->
                         <template v-if="searchState.results.value?.length">
@@ -487,8 +515,37 @@ onBeforeUnmount(() => {
                     <template v-else>
                         <div class="poster-grid">
                             <div class="poster-item" v-for="item in items" :key="item.id">
-                                <CardPoster :to="`/anime/${item.id}`" :src="item.image" :title="item.title" size="sm"
-                                    fluid />
+                                <div class="relative shrink-0">
+                                  <NuxtLink
+                                    :to="`/anime/${item.id}`"
+                                    class="group block w-[200px] h-[320px] flex-none shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                                    :aria-label="item.title"
+                                  >
+                                    <article class="relative w-full h-full rounded-2xl overflow-hidden shadow-lg transition-transform duration-200 will-change-transform hover:-translate-y-1 hover:shadow-2xl motion-reduce:transition-none">
+
+                                      <!-- Image area -->
+                                      <div class="relative h-[240px] bg-black">
+                                        <img :src="item.image" :alt="item.title" class="h-full w-full object-cover" loading="lazy" decoding="async" fetchpriority="low" />
+
+                                        <!-- subtle overlay for text legibility -->
+                                        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent pointer-events-none"></div>
+
+                                        <!-- play affordance (decorative) -->
+                                        <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-200 motion-reduce:transition-none" aria-hidden="true">
+                                          <div class="rounded-full bg-white/6 p-3 transition-transform duration-200 group-hover:scale-105">
+                                            <Icon name="heroicons:play" class="w-6 h-6 fill-white" />
+                                          </div>
+                                        </div>
+
+                                      </div>
+
+                                      <!-- Title + subtitle area -->
+                                      <div class="p-3 bg-black">
+                                        <h3 class="m-0 text-sm font-semibold text-white line-clamp-2">{{ item.title }}</h3>
+                                      </div>
+                                    </article>
+                                  </NuxtLink>
+                                </div>
                             </div>
                             <!-- Fillers to complete row: 5-col on lg, 6-col on xl+ -->
                             <template v-if="items?.length">
@@ -569,4 +626,5 @@ onBeforeUnmount(() => {
     outline: 2px solid rgb(139 92 246 / 0.5);
     outline-offset: 2px;
 }
+.object-cover { image-rendering: -webkit-optimize-contrast; }
 </style>

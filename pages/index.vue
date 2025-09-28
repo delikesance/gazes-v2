@@ -268,14 +268,37 @@ const handleRetrySearch = () => {
                     v-else
                     class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
                 >
-                    <CardPoster
-                        v-for="item in search.results.value"
-                        :key="item.id"
+                    <div v-for="item in search.results.value" :key="item.id" class="relative shrink-0">
+                      <NuxtLink
                         :to="`/anime/${item.id}`"
-                        :src="item.image"
-                        :title="item.title"
-                        size="sm"
-                    />
+                        class="group block w-[200px] h-[320px] flex-none shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                        :aria-label="item.title"
+                      >
+                        <article class="relative w-full h-full rounded-2xl overflow-hidden shadow-lg transition-transform duration-200 will-change-transform hover:-translate-y-1 hover:shadow-2xl motion-reduce:transition-none">
+
+                          <!-- Image area -->
+                          <div class="relative h-[240px] bg-black">
+                            <img :src="item.image" :alt="item.title" class="h-full w-full object-cover" loading="lazy" decoding="async" fetchpriority="low" />
+
+                            <!-- subtle overlay for text legibility -->
+                            <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent pointer-events-none"></div>
+
+                            <!-- play affordance (decorative) -->
+                            <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-200 motion-reduce:transition-none" aria-hidden="true">
+                              <div class="rounded-full bg-white/6 p-3 transition-transform duration-200 group-hover:scale-105">
+                                <Icon name="heroicons:play" class="w-6 h-6 fill-white" />
+                              </div>
+                            </div>
+
+                          </div>
+
+                          <!-- Title + subtitle area -->
+                          <div class="p-3 bg-black">
+                            <h3 class="m-0 text-sm font-semibold text-white line-clamp-2">{{ item.title }}</h3>
+                          </div>
+                        </article>
+                      </NuxtLink>
+                    </div>
                 </div>
             </div>
         </section>
@@ -433,4 +456,5 @@ const handleRetrySearch = () => {
 .fade-leave-to {
     opacity: 0;
 }
+.object-cover { image-rendering: -webkit-optimize-contrast; }
 </style>

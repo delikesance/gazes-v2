@@ -84,10 +84,52 @@ export default defineEventHandler(async (event) => {
       console.error('❌ [SAVE_PROGRESS] Error occurred:', error)
       throw error
     }
-  } else {
-    throw createError({
-      statusCode: 405,
-      statusMessage: 'Méthode non autorisée'
-    })
-  }
+   } else if (method === 'DELETE') {
+     // DELETE: Remove progress for a specific anime episode
+     console.log('🗑️ [DELETE_PROGRESS] DELETE request received')
+
+     try {
+       // Get authenticated user
+       const user = await AuthService.getUserFromRequest(event)
+       if (!user) {
+         console.log('❌ [DELETE_PROGRESS] No authenticated user')
+         throw createError({
+           statusCode: 401,
+           statusMessage: 'Non authentifié'
+         })
+       }
+
+       const animeId = getRouterParam(event, 'animeId')
+       const body = await readBody(event)
+       const { season, episode } = body
+
+       console.log('🗑️ [DELETE_PROGRESS] Deleting progress:', { userId: user.id, animeId, season, episode })
+
+       // Validate input
+       if (!animeId || season === undefined || episode === undefined) {
+         console.log('❌ [DELETE_PROGRESS] Missing required fields')
+         throw createError({
+           statusCode: 400,
+           statusMessage: 'Champs requis manquants'
+         })
+       }
+
+       // Delete progress
+       const db = DatabaseService.getInstance()
+       await db.deleteWatchingProgress(user.id, animeId, season, episode)
+
+       console.log('✅ [DELETE_PROGRESS] Progress deleted successfully for user:', user.username)
+       return {
+         success: true
+       }
+     } catch (error) {
+       console.error('❌ [DELETE_PROGRESS] Error occurred:', error)
+       throw error
+     }
+   } else {
+     throw createError({
+       statusCode: 405,
+       statusMessage: 'Méthode non autorisée'
+     })
+   }
 })
