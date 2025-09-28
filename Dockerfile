@@ -21,18 +21,11 @@ COPY package.json .
 
 # Installer les dépendances avec scripts ignorés
 RUN PNPM_IGNORE_SCRIPTS=true pnpm install
-
-# Approuver les scripts de build natifs
-RUN pnpm exec pnpm approve-builds
-
-# Réinstaller avec scripts activés pour compiler les dépendances natives
-RUN PNPM_IGNORE_SCRIPTS=false pnpm install
-
 # Copier le reste du projet
 COPY . .
 
 # Build Nuxt pour server/export
-RUN pnpm run build
+RUN --mount=type=cache,target=/app/.nuxt pnpm run build
 
 EXPOSE 3000
 
