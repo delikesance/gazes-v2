@@ -56,7 +56,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          platforms: linux/amd64
+          platforms: linux/arm64
           tags: |
             ghcr.io/${{ github.repository_owner }}/gazes-v2:${{ steps.meta.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/gazes-v2:latest
@@ -69,13 +69,13 @@ jobs:
     if: needs.build.result == 'success'
 
     steps:
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v0.1.10
+      - name: Deploy to VPS via Cloudflare Tunnel
+        uses: dev-drprasad/cloudflared-ssh-run-remote-commands@v1
         with:
-          host: ${{ secrets.SHH_IP }}
+          host: ${{ secrets.CLOUDFLARE_TUNNEL_HOST }}
           username: ${{ secrets.SHH_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
-          script: |
+          commands: |
             docker pull ghcr.io/${{ github.repository_owner }}/gazes-v2:latest
             docker stop gazes || true
             docker rm gazes || true
