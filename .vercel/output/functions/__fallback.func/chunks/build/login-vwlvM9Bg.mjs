@@ -5,7 +5,6 @@ import { u as u$1 } from './cookie-DCPdh00r.mjs';
 import { b as Ct, n as Oe } from './server.mjs';
 import './useAuth-Cw79LLZm.mjs';
 import '../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

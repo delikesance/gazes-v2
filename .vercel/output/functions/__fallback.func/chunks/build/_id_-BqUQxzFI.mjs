@@ -4,7 +4,6 @@ import { ssrRenderAttrs, ssrRenderAttr, ssrInterpolate, ssrRenderList, ssrRender
 import $ from 'hls.js';
 import { u } from './fetch-B1uUfs--.mjs';
 import '../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

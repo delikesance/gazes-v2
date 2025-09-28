@@ -4,7 +4,6 @@ import { defineComponent, computed, mergeProps, withCtx, createVNode, createText
 import { ssrRenderAttrs, ssrRenderComponent, ssrRenderSlot } from 'vue/server-renderer';
 import { a } from './useAuth-Cw79LLZm.mjs';
 import '../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

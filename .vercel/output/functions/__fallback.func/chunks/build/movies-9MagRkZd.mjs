@@ -5,7 +5,6 @@ import { O, T } from './HeroBanner-DB7RgRuh.mjs';
 import { u as S } from './index-BZnvd90h.mjs';
 import { u } from './fetch-B1uUfs--.mjs';
 import '../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

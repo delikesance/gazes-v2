@@ -3,7 +3,6 @@ import { g as qe, n as Oe } from './server.mjs';
 import { u } from './cookie-DCPdh00r.mjs';
 import 'vue';
 import '../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

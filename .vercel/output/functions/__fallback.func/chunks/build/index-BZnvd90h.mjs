@@ -5,7 +5,6 @@ import { d as ke, i as rt, e as je } from './server.mjs';
 import { f } from './asyncData-BOLdWyFS.mjs';
 import { u as useSeoMeta, a as useHead, h as headSymbol } from '../routes/renderer.mjs';
 import '../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

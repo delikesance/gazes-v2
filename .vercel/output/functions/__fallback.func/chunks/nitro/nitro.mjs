@@ -1,5 +1,4 @@
-import process from 'node:process';globalThis._importMeta_=globalThis._importMeta_||{url:"file:///_entry.js",env:process.env};import * as cheerio from 'cheerio';
-import jwt from 'jsonwebtoken';
+import process from 'node:process';globalThis._importMeta_=globalThis._importMeta_||{url:"file:///_entry.js",env:process.env};import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import http from 'node:http';
 import https from 'node:https';
@@ -4541,7 +4540,7 @@ function _expandFromEnv(value) {
 const _inlineRuntimeConfig = {
   "app": {
     "baseURL": "/",
-    "buildId": "a8d2b24d-3818-42da-a4cb-0c0281871d39",
+    "buildId": "87c1d473-0cb6-4a51-9b32-c3996ed66b27",
     "buildAssetsDir": "/_nuxt/",
     "cdnURL": ""
   },
@@ -4582,8 +4581,7 @@ const _inlineRuntimeConfig = {
           "cache-control": "public, max-age=2592000, immutable"
         },
         "cache": {
-          "maxAge": 2592000,
-          "immutable": true
+          "maxAge": 2592000
         }
       },
       "/_nuxt/builds/meta/**": {
@@ -5720,86 +5718,56 @@ function preferNonBlacklisted(urls) {
 }
 
 function parseAnimePage(html) {
-  const $ = cheerio.load(html);
-  const title = $("#titreOeuvre").text().trim();
-  const altTitle = $("#titreAlter").text().trim() || void 0;
-  const coverFromDom = $("#coverOeuvre").attr("src") || "";
-  const ogImage = $('meta[property="og:image"]').attr("content") || void 0;
-  let cover = coverFromDom || ogImage || "";
-  let banner = ogImage;
-  if (banner && cover && banner.trim() === cover.trim()) banner = void 0;
-  const synopsis = $('h2:contains("Synopsis")').next("p").text().trim();
-  const genresText = $('h2:contains("Genres")').next("a").text().trim();
-  const genres = genresText.split(",").map((g) => g.trim()).filter(Boolean);
+  var _a, _b, _c, _d;
+  const titleMatch = html.match(/id="titreOeuvre"[^>]*>([^<]+)</i);
+  const title = titleMatch ? ((_a = titleMatch[1]) == null ? void 0 : _a.trim()) || "Unknown Title" : "Unknown Title";
+  const altTitleMatch = html.match(/id="titreAlter"[^>]*>([^<]+)</i);
+  const altTitle = altTitleMatch && ((_b = altTitleMatch[1]) == null ? void 0 : _b.trim()) ? (_c = altTitleMatch[1]) == null ? void 0 : _c.trim() : void 0;
+  const coverMatch = html.match(/id="coverOeuvre"[^>]*src="([^"]+)"/i);
+  const ogImageMatch = html.match(/property="og:image"[^>]*content="([^"]+)"/i);
+  let cover = (coverMatch == null ? void 0 : coverMatch[1]) || (ogImageMatch == null ? void 0 : ogImageMatch[1]) || "";
+  let banner = (ogImageMatch == null ? void 0 : ogImageMatch[1]) || void 0;
+  if (banner && cover && banner === cover) banner = void 0;
+  const synopsisMatch = html.match(/<h2[^>]*>Synopsis<\/h2>\s*<p[^>]*>([^<]+)<\/p>/i);
+  const synopsis = synopsisMatch ? ((_d = synopsisMatch[1]) == null ? void 0 : _d.trim()) || "" : "";
+  const genresMatch = html.match(/<h2[^>]*>Genres<\/h2>\s*<a[^>]*>([^<]+)<\/a>/i);
+  const genres = genresMatch ? (genresMatch[1] || "").split(",").map((g) => g.trim()).filter(Boolean) : [];
   const seasons = [];
   const manga = [];
-  const canonicalHref = $('link[rel="canonical"]').attr("href") || "";
-  const basePath = canonicalHref.endsWith("/") ? canonicalHref : canonicalHref ? canonicalHref + "/" : "/";
-  const resolveUrl = (u) => {
-    if (!u) return u;
-    if (/^https?:\/\//i.test(u)) return u;
-    if (u.startsWith("/")) return u;
-    return basePath + u.replace(/^\//, "");
-  };
-  const formatUrl = (u) => {
-    const resolved = resolveUrl(u);
-    if (!resolved) return resolved;
-    if (/^https?:\/\//i.test(resolved)) return resolved;
-    return resolved.replace(/^\/catalogue\//, "/");
-  };
-  const collectFromAnchors = ($container, type) => {
-    $container.find("a").each((_, a) => {
-      const name = $(a).find("div").text().trim();
-      const url = formatUrl($(a).attr("href") || "");
-      if (!name || !url) return;
-      if (type === "Manga") manga.push({ name, url });
-      else seasons.push({ name, url, type });
-    });
-  };
-  const collectFromScripts = ($container, type) => {
-    let scriptText = $container.find("script").map((_, s) => $(s).text()).get().join("\n");
-    if (!scriptText) return;
-    scriptText = scriptText.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\n)\s*\/\/.*$/gm, "");
-    const re = type === "Manga" ? /panneauScan\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g : /panneauAnime\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g;
-    let m;
-    while ((m = re.exec(scriptText)) !== null) {
-      const name = (m[1] || "").trim();
-      const url = formatUrl((m[2] || "").trim());
-      if (!name || !url || name.toLowerCase() === "nom" || url === "/catalogue/naruto/url")
-        continue;
-      if (type === "Manga") manga.push({ name, url });
-      else seasons.push({ name, url, type });
+  const panneauAnimeRegex = /panneauAnime\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g;
+  let match;
+  while ((match = panneauAnimeRegex.exec(html)) !== null) {
+    const name = (match[1] || "").trim();
+    const url = (match[2] || "").trim();
+    if (name && url && name.toLowerCase() !== "nom" && !url.includes("/catalogue/naruto/url")) {
+      let type = "Anime";
+      if (html.includes("Anime Version Kai") && html.indexOf("Anime Version Kai") < match.index) {
+        type = "Kai";
+      }
+      seasons.push({ name, url, type });
     }
-  };
-  $("h2").each((_, el) => {
-    const header = $(el).text().trim();
-    let type = null;
-    if (header === "Anime" || header === "Serie") type = "Anime";
-    else if (header === "Anime Version Kai") type = "Kai";
-    else if (header === "Manga") type = "Manga";
-    if (!type) return;
-    const $panel = $(el).nextAll(".flex.flex-wrap").first();
-    if (!$panel || $panel.length === 0) return;
-    collectFromAnchors($panel, type);
-    if (type === "Manga" && manga.length === 0 || type !== "Manga" && seasons.filter((s) => s.type === type).length === 0) {
-      collectFromScripts($panel, type);
+  }
+  const panneauScanRegex = /panneauScan\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g;
+  while ((match = panneauScanRegex.exec(html)) !== null) {
+    const name = (match[1] || "").trim();
+    const url = (match[2] || "").trim();
+    if (name && url) {
+      manga.push({ name, url });
     }
-  });
+  }
   const seenSeason = /* @__PURE__ */ new Set();
-  const uniqueSeasons = [];
-  for (const s of seasons) {
+  const uniqueSeasons = seasons.filter((s) => {
     const key = `${s.type}|${s.url}`;
-    if (seenSeason.has(key)) continue;
+    if (seenSeason.has(key)) return false;
     seenSeason.add(key);
-    uniqueSeasons.push(s);
-  }
+    return true;
+  });
   const seenManga = /* @__PURE__ */ new Set();
-  const uniqueManga = [];
-  for (const m of manga) {
-    if (seenManga.has(m.url)) continue;
+  const uniqueManga = manga.filter((m) => {
+    if (seenManga.has(m.url)) return false;
     seenManga.add(m.url);
-    uniqueManga.push(m);
-  }
+    return true;
+  });
   return {
     title,
     altTitle,
@@ -5846,59 +5814,28 @@ function parseAnimeResults(html) {
   return results;
 }
 function parseCataloguePage(html) {
-  const $ = cheerio.load(html);
+  var _a;
   const items = [];
-  $('a[href*="/catalogue/"]').each((_, a) => {
-    var _a, _b;
-    const href = $(a).attr("href") || "";
-    const u = (() => {
-      try {
-        return new URL(href, "https://anime-sama.fr");
-      } catch {
-        return null;
-      }
-    })();
-    if (!u) return;
-    const parts = u.pathname.split("/").filter(Boolean);
-    const idx = parts.indexOf("catalogue");
-    const slug = idx !== -1 ? parts[idx + 1] : "";
-    if (!slug) return;
-    let title = $(a).find("h1, h2, h3, h4").first().text().trim();
-    if (!title)
-      title = $(a).find('[class*="title" i], [class*="name" i]').first().text().trim();
-    if (!title) title = ((_a = $(a).find("img").attr("alt")) == null ? void 0 : _a.trim()) || "";
-    if (!title) title = $(a).text().replace(/\s+/g, " ").trim();
-    if (!title) return;
-    const fullText = $(a).text().replace(/\s+/g, " ").trim();
-    const infoText = $(a).find(".infoCarteHorizontale").text().replace(/\s+/g, " ").trim();
-    let type = "Unknown";
-    if (fullText.includes(" Scans") || infoText.includes(" Scans")) {
-      type = "Scans";
-    } else if (fullText.includes(" VOSTFR") || fullText.includes(" VF") || infoText.includes("VOSTFR") || infoText.includes("VF")) {
-      type = "Anime";
-    } else if (fullText.includes(" Film ") || infoText.includes(" Film ")) {
-      type = "Film";
-    } else {
-      type = "Anime";
+  const itemRegex = /<a[^>]*href="\/catalogue\/([^"]*)"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([^<]*)<\/h3>/gi;
+  let match;
+  while ((match = itemRegex.exec(html)) !== null) {
+    const slug = match[1];
+    const image = match[2];
+    const title = ((_a = match[3]) == null ? void 0 : _a.trim()) || "";
+    if (slug && image && title) {
+      let type = "Anime";
+      const anchorText = match[0];
+      if (anchorText.includes(" Scans")) type = "Scans";
+      else if (anchorText.includes(" Film ")) type = "Film";
+      items.push({ id: slug, title, image, type });
     }
-    const $img = $(a).find("img").first();
-    let image = $img.attr("src") || "";
-    if (!image)
-      image = $img.attr("data-src") || $img.attr("data-lazy-src") || "";
-    if (!image) {
-      const srcset = $img.attr("srcset") || "";
-      if (srcset) {
-        const first = (_b = srcset.split(",")[0]) == null ? void 0 : _b.trim().split(" ")[0];
-        if (first) image = first;
-      }
-    }
-    if (!image) return;
-    items.push({ id: slug, title, image, type });
-  });
+  }
   const seen = /* @__PURE__ */ new Set();
-  return items.filter(
-    (it) => seen.has(it.id) ? false : (seen.add(it.id), true)
-  );
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
 }
 
 function formatSeasonDisplay(seasonSlug) {

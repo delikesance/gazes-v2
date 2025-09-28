@@ -2,7 +2,6 @@ import { ssrRenderAttrs, ssrRenderSlot } from 'vue/server-renderer';
 import { useSSRContext } from 'vue';
 import { b as Ct } from './server.mjs';
 import '../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

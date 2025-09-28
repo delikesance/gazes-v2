@@ -1,5 +1,4 @@
 import { d as defineEventHandler, g as getQuery, u as useRuntimeConfig, a as parseAnimeResults, j as parseCataloguePage } from '../../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';
@@ -57,7 +56,7 @@ const catalogue = defineEventHandler(async (event) => {
           id: item.id,
           title: item.title,
           image: item.image,
-          type: item.type || "Anime"
+          type: "Anime"
           // Search results are typically anime
         })).filter((item) => item.type !== "Scans");
         return { items, count: items.length, status: searchResponse.status };

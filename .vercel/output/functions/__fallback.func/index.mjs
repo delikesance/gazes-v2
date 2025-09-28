@@ -1,5 +1,4 @@
 import process from 'node:process';globalThis._importMeta_={url:import.meta.url,env:process.env};export { a9 as default } from './chunks/nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

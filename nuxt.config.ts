@@ -95,27 +95,27 @@ export default defineNuxtConfig({
     pages: 'pages'
   },
 
-  nitro: {
-    preset: 'vercel',
-    compressPublicAssets: true,
-    prerender: {
-      routes: ['/']
-    },
-    routeRules: {
-      '/api/**': {
-        cors: true,
-        headers: {
-          'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
-          'access-control-allow-headers': 'Content-Type,Authorization',
-          'access-control-allow-credentials': 'true'
-        }
-      },
-      '/favicon.ico': { cache: { maxAge: 86400 * 30 } },
-      '/robots.txt': { cache: { maxAge: 86400 * 7 } },
-      '/sw.js': { cache: { maxAge: 0 } },
-      '/_nuxt/**': { cache: { maxAge: 86400 * 30 } }
-    }
-  },
+   nitro: {
+     preset: 'vercel',
+     compressPublicAssets: true,
+     prerender: {
+       routes: ['/']
+     },
+     routeRules: {
+       '/api/**': {
+         cors: true,
+         headers: {
+           'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+           'access-control-allow-headers': 'Content-Type,Authorization',
+           'access-control-allow-credentials': 'true'
+         }
+       },
+       '/favicon.ico': { cache: { maxAge: 86400 * 30 } },
+       '/robots.txt': { cache: { maxAge: 86400 * 7 } },
+       '/sw.js': { cache: { maxAge: 0 } },
+       '/_nuxt/**': { cache: { maxAge: 86400 * 30 } }
+     }
+   },
 
   ssr: true,
 

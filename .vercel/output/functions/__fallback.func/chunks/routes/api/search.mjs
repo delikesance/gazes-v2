@@ -1,5 +1,4 @@
 import { d as defineEventHandler, g as getQuery, c as createError, a as parseAnimeResults } from '../../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

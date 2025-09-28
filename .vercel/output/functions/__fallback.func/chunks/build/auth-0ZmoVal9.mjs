@@ -4,7 +4,6 @@ import { createClient } from '@supabase/supabase-js';
 import { h as He, e as je } from './server.mjs';
 import 'vue';
 import '../nitro/nitro.mjs';
-import 'cheerio';
 import 'node:http';
 import 'node:https';
 import 'node:events';

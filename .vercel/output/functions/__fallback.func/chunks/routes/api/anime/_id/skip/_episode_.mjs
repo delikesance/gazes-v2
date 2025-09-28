@@ -1,5 +1,4 @@
-import { d as defineEventHandler, e as getRouterParams, g as getQuery, c as createError, a as parseAnimeResults, p as parseAnimePage } from '../../../../../nitro/nitro.mjs';
-import 'cheerio';
+import { d as defineEventHandler, e as getRouterParams, c as createError, g as getQuery, a as parseAnimeResults, p as parseAnimePage } from '../../../../../nitro/nitro.mjs';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';
@@ -103,6 +102,9 @@ async function fetchSkipTimes(malId, episodeNumber, episodeLength) {
 const _episode_ = defineEventHandler(async (event) => {
   try {
     const { id: animeId, episode: episodeNumber } = getRouterParams(event);
+    if (!animeId || !episodeNumber) {
+      throw createError({ statusCode: 400, statusMessage: "Missing anime ID or episode number" });
+    }
     const query = getQuery(event);
     const episodeLength = query.episodeLength ? parseFloat(query.episodeLength) : void 0;
     console.log(`\u23ED\uFE0F [API] Skip request received - Anime ID: ${animeId}, Episode: ${episodeNumber}, Length: ${episodeLength}`);

@@ -1,5 +1,4 @@
 import { d as defineEventHandler, k as getMethod, s as setResponseHeader, l as setResponseStatus, g as getQuery, t as getHeader } from '../../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

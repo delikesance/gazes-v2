@@ -1,5 +1,4 @@
 import { d as defineEventHandler, g as getQuery, V as VERIFIED_PROVIDERS, n as sortUrlsByProviderReliability, o as categorizeUrlsByReliability, q as getProviderStats } from '../../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

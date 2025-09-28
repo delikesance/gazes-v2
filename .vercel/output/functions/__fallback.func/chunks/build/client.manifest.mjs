@@ -224,7 +224,7 @@ const client_manifest = {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "DkSzvy4v.js",
+    "file": "D47BdLYN.js",
     "name": "entry",
     "src": "node_modules/nuxt/dist/app/entry.js",
     "isEntry": true,
@@ -308,7 +308,7 @@ const client_manifest = {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "BG9Ws6pi.js",
+    "file": "BW7VSCAM.js",
     "name": "index",
     "src": "pages/index.vue",
     "isDynamicEntry": true,
@@ -413,7 +413,7 @@ const client_manifest = {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "C-zFvEcy.js",
+    "file": "wPR_g_KO.js",
     "name": "_episode_",
     "src": "pages/watch/[id]/[season]/[lang]/[episode].vue",
     "isDynamicEntry": true,
@@ -426,8 +426,8 @@ const client_manifest = {
     ],
     "css": []
   },
-  "_episode_.3uH0qWDH.css": {
-    "file": "_episode_.3uH0qWDH.css",
+  "_episode_.CSNvM4gV.css": {
+    "file": "_episode_.CSNvM4gV.css",
     "resourceType": "style",
     "prefetch": true,
     "preload": true

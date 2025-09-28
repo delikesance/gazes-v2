@@ -12,7 +12,6 @@ import 'perfect-debounce';
 import '../routes/renderer.mjs';
 import 'vue-bundle-renderer/runtime';
 import '../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

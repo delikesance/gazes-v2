@@ -1,5 +1,4 @@
 import { d as defineEventHandler, g as getQuery, c as createError, i as isBlacklisted, h as hostnameOf, b as preferNonBlacklisted } from '../../../../../../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

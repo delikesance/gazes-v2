@@ -1,5 +1,4 @@
 import { d as defineEventHandler, r as readBody, c as createError, A as AuthService } from '../../../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';

@@ -1,5 +1,4 @@
 import { d as defineEventHandler, g as getQuery } from '../../nitro/nitro.mjs';
-import 'cheerio';
 import 'jsonwebtoken';
 import 'bcryptjs';
 import 'node:http';
