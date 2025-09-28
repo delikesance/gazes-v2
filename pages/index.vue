@@ -87,10 +87,9 @@ const fetchHeroContent = async () => {
 
     loadingHero.value = true;
     try {
+        // Use general catalogue without genre filter since genre filtering doesn't work
         const response = await $fetch<{ items: Item[] }>("/api/catalogue", {
             params: {
-                genre: genres[0],
-                random: "1",
                 limit: 1,
             },
         });
@@ -100,22 +99,12 @@ const fetchHeroContent = async () => {
             hero.value = heroItem;
             await fetchHeroDetails(heroItem.id);
         } else {
-            // If no content found, try with a different genre
-            for (const genre of genres.slice(1, 3)) {
-                const fallbackResponse = await $fetch<{ items: Item[] }>("/api/catalogue", {
-                    params: {
-                        genre,
-                        random: "1",
-                        limit: 1,
-                    },
-                });
-                const fallbackItem = fallbackResponse?.items?.[0];
-                if (fallbackItem) {
-                    hero.value = fallbackItem;
-                    await fetchHeroDetails(fallbackItem.id);
-                    break;
-                }
-            }
+            // Set a minimal hero to stop loading state
+            hero.value = { id: "error", title: "Gazes", image: "" };
+            heroDetails.value = {
+                synopsis: "Découvrez le meilleur de l'animation japonaise et mondiale",
+                genres: ["Animation"]
+            };
         }
     } catch (error) {
         console.error("Failed to fetch hero content:", error);

@@ -264,20 +264,21 @@ export function parseCataloguePage(html: string): CatalogueItem[] {
     if (!title) title = $(a).text().replace(/\s+/g, " ").trim();
     if (!title) return;
 
-    // Extract type from the full anchor text
+    // Extract type from the full anchor text and content
     const fullText = $(a).text().replace(/\s+/g, " ").trim();
+    const infoText = $(a).find('.infoCarteHorizontale').text().replace(/\s+/g, " ").trim();
     let type = 'Unknown';
     
     // Prioritize detection in this order
-    if (fullText.includes(' Scans')) {
+    if (fullText.includes(' Scans') || infoText.includes(' Scans')) {
       type = 'Scans';
-    } else if (fullText.includes(' Anime ') || fullText.includes(' VOSTFR') || fullText.includes(' VF')) {
+    } else if (fullText.includes(' VOSTFR') || fullText.includes(' VF') || infoText.includes('VOSTFR') || infoText.includes('VF')) {
       type = 'Anime';
-    } else if (fullText.includes(' Film ')) {
+    } else if (fullText.includes(' Film ') || infoText.includes(' Film ')) {
       type = 'Film';
     } else {
-      // If it's not explicitly anime, film, or scans, skip it (like Kai, etc.)
-      return;
+      // Default to Anime for most catalogue items
+      type = 'Anime';
     }
 
     // Image: handle lazy-loaded images and srcset
