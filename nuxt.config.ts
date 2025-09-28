@@ -39,7 +39,26 @@ export default defineNuxtConfig({
   // Advanced Vite optimizations
   vite: {
     resolve: {
-      dedupe: ['vue', 'vue-router', '@vue/runtime-core', '@vue/runtime-dom']
+      dedupe: ['vue', 'vue-router', '@vue/runtime-core', '@vue/runtime-dom'],
+      alias: {
+        // Node.js polyfills for browser compatibility
+        util: 'util',
+        stream: 'stream-browserify',
+        buffer: 'buffer',
+        process: 'process/browser',
+        events: 'events',
+        crypto: 'crypto-browserify',
+        path: 'path-browserify',
+        os: 'os-browserify/browser',
+        fs: false,
+        net: false,
+        tls: false
+      }
+    },
+    define: {
+      // Define global variables for Node.js compatibility
+      global: 'globalThis',
+      'process.env': {}
     },
     build: {
       rollupOptions: {
@@ -90,7 +109,16 @@ export default defineNuxtConfig({
         'hls.js',
         '@videojs/http-streaming',
         'vue',
-        'vue-router'
+        'vue-router',
+        // Include Node.js polyfills
+        'util',
+        'stream-browserify',
+        'buffer',
+        'process/browser',
+        'events',
+        'crypto-browserify',
+        'path-browserify',
+        'os-browserify/browser'
       ],
       exclude: ['@nuxt/devtools'] // Exclude dev tools from optimization
     },
