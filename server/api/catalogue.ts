@@ -39,7 +39,7 @@
             "Accept-Language": "en-US,en;q=0.9",
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Priority": "u=3, i",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "X-Requested-With": "XMLHttpRequest"
           },
           body: "query=" + encodeURIComponent(search),
@@ -130,69 +130,123 @@
     return u
   }
 
-  // Per requirement, request must be: https://anime-sama.fr/catalogue/?genre[]=Action&search=
-  const candidates = [
-    { base: 'https://anime-sama.fr/catalogue/', genreKey: paramKeys.genreKey, categorieKey: paramKeys.categorieKey, referer: 'https://anime-sama.fr/catalogue/' },
-  ]
+   // Read configuration from runtime config with sensible defaults
+   const config = useRuntimeConfig()
+   const catalogueTimeoutMs = parseInt(config.catalogueTimeoutMs || "15000", 10)
 
-  const tried: Array<{ url: string; status: number; count: number }> = []
+   // Per requirement, request must be: https://anime-sama.fr/catalogue/?genre[]=Action&search=
+   const candidates = [
+     { base: 'https://anime-sama.fr/catalogue/', genreKey: paramKeys.genreKey, categorieKey: paramKeys.categorieKey, referer: 'https://anime-sama.fr/catalogue/' },
+   ]
 
-  for (const c of candidates) {
-    const url = buildUrl(c.base, c.genreKey, c.categorieKey)
-    try {
-      const res = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15',
-          'Referer': c.referer,
-          'Upgrade-Insecure-Requests': '1'
-        },
-        redirect: 'follow'
-      })
-      const html = await res.text()
-      const items = parseCataloguePage(html)
-      // Filter out mangas (Scans) after parsing
-      const filteredItems = items.filter(item => item.type !== 'Scans')
-      tried.push({ url: url.toString(), status: res.status, count: filteredItems.length })
-      // If we found items or no genre filter was requested, return immediately
-      if (filteredItems.length > 0 || genres.length === 0) {
-        const base = { items: filteredItems, count: filteredItems.length, status: res.status }
-        return debug ? { ...base, _debug: { tried } } : base
-      }
+   const tried: Array<{ url: string; status: number; count: number }> = []
 
-      // Fallback: if a genre was requested but yielded 0 items, try using search=<genre>
-      if (genres.length > 0 && genres[0]) {
-        const searchUrl = new URL(c.base)
-        searchUrl.searchParams.set('search', genres[0])
-        for (const cat of categories) searchUrl.searchParams.append(paramKeys.categorieKey, cat)
-        if (page) searchUrl.searchParams.set('page', page)
-        const res2 = await fetch(searchUrl.toString(), {
-          method: 'GET',
-          headers: {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15',
-            'Referer': c.referer,
-            'Upgrade-Insecure-Requests': '1'
-          },
-          redirect: 'follow'
-        })
-        const html2 = await res2.text()
-        const items2 = parseCataloguePage(html2)
-        const filteredItems2 = items2.filter(item => item.type !== 'Scans')
-        tried.push({ url: searchUrl.toString(), status: res2.status, count: filteredItems2.length })
-        if (filteredItems2.length > 0) {
-          const base = { items: filteredItems2, count: filteredItems2.length, status: res2.status }
-          return debug ? { ...base, _debug: { tried } } : base
-        }
-      }
-    } catch {
-      tried.push({ url: url.toString(), status: 0, count: 0 })
-      // try next candidate
-    }
-  }
+   for (const c of candidates) {
+     const url = buildUrl(c.base, c.genreKey, c.categorieKey)
+     try {
+       // Create AbortController for timeout
+       const controller = new AbortController()
+       const timeoutId = setTimeout(() => {
+         controller.abort()
+       }, catalogueTimeoutMs)
+
+       try {
+         const res = await fetch(url.toString(), {
+           method: 'GET',
+           headers: {
+             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+             'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+             'Referer': c.referer,
+             'Upgrade-Insecure-Requests': '1'
+           },
+           redirect: 'follow',
+           signal: controller.signal
+         })
+
+         // Clear timeout on successful response
+         clearTimeout(timeoutId)
+
+         const html = await res.text()
+         const items = parseCataloguePage(html)
+         // Filter out mangas (Scans) after parsing
+         const filteredItems = items.filter(item => item.type !== 'Scans')
+         tried.push({ url: url.toString(), status: res.status, count: filteredItems.length })
+         // If we found items or no genre filter was requested, return immediately
+         if (filteredItems.length > 0 || genres.length === 0) {
+           const base = { items: filteredItems, count: filteredItems.length, status: res.status }
+           return debug ? { ...base, _debug: { tried } } : base
+         }
+
+         // Fallback: if a genre was requested but yielded 0 items, try using search=<genre>
+         if (genres.length > 0 && genres[0]) {
+           const searchUrl = new URL(c.base)
+           searchUrl.searchParams.set('search', genres[0])
+           for (const cat of categories) searchUrl.searchParams.append(paramKeys.categorieKey, cat)
+           if (page) searchUrl.searchParams.set('page', page)
+
+           // Create AbortController for timeout on fallback
+           const controller2 = new AbortController()
+           const timeoutId2 = setTimeout(() => {
+             controller2.abort()
+           }, catalogueTimeoutMs)
+
+           try {
+             const res2 = await fetch(searchUrl.toString(), {
+               method: 'GET',
+               headers: {
+                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                 'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                 'Referer': c.referer,
+                 'Upgrade-Insecure-Requests': '1'
+               },
+               redirect: 'follow',
+               signal: controller2.signal
+             })
+
+             // Clear timeout on successful response
+             clearTimeout(timeoutId2)
+
+             const html2 = await res2.text()
+             const items2 = parseCataloguePage(html2)
+             const filteredItems2 = items2.filter(item => item.type !== 'Scans')
+             tried.push({ url: searchUrl.toString(), status: res2.status, count: filteredItems2.length })
+             if (filteredItems2.length > 0) {
+               const base = { items: filteredItems2, count: filteredItems2.length, status: res2.status }
+               return debug ? { ...base, _debug: { tried } } : base
+             }
+           } catch (fetchError2: any) {
+             // Clear timeout on error
+             clearTimeout(timeoutId2)
+
+             // Handle different types of errors
+             if (fetchError2.name === 'AbortError') {
+               console.warn(`Catalogue fallback fetch request timed out after ${catalogueTimeoutMs}ms`)
+             } else {
+               console.warn('Catalogue fallback fetch failed:', fetchError2.message)
+             }
+             // Continue to next candidate
+           }
+         }
+       } catch (fetchError: any) {
+         // Clear timeout on error
+         clearTimeout(timeoutId)
+
+         // Handle different types of errors
+         if (fetchError.name === 'AbortError') {
+           console.warn(`Catalogue fetch request timed out after ${catalogueTimeoutMs}ms, trying next candidate`)
+           throw new Error(`Catalogue fetch timeout after ${catalogueTimeoutMs}ms`)
+         } else {
+           console.warn('Catalogue fetch failed:', fetchError.message)
+           throw fetchError
+         }
+       }
+     } catch {
+       tried.push({ url: url.toString(), status: 0, count: 0 })
+       // try next candidate
+     }
+   }
 
   // If all attempts failed, return empty with debug info
   const fallback = { items: [] as ReturnType<typeof parseCataloguePage>, count: 0, status: 0 }

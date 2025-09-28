@@ -90,7 +90,7 @@ export default defineEventHandler(async (event) => {
   // Optional spoofed headers for hosts that require them
   let referer = typeof query.referer === 'string' ? query.referer : undefined
   const origin = typeof query.origin === 'string' ? query.origin : undefined
-  const ua = typeof query.ua === 'string' ? query.ua : 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+  const ua = typeof query.ua === 'string' ? query.ua : getHeader(event, 'user-agent') || 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
   const rewrite = query.rewrite !== '0'
 
   // Forward range requests for streaming
