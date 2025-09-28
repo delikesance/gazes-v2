@@ -1,4 +1,4 @@
-import * as cheerio from "cheerio";
+
 
 export interface AnimeSeason {
   name: string;
@@ -18,145 +18,76 @@ export interface AnimeInfo {
 }
 
 export function parseAnimePage(html: string): AnimeInfo {
-  const $ = cheerio.load(html);
+  // Extract title
+  const titleMatch = html.match(/id="titreOeuvre"[^>]*>([^<]+)</i);
+  const title = titleMatch ? (titleMatch[1]?.trim() || "Unknown Title") : "Unknown Title";
 
-  // Title
-  const title = $("#titreOeuvre").text().trim();
+  // Extract alt title
+  const altTitleMatch = html.match(/id="titreAlter"[^>]*>([^<]+)</i);
+  const altTitle = altTitleMatch && altTitleMatch[1]?.trim() ? altTitleMatch[1]?.trim() : undefined;
 
-  // Alternate title
-  const altTitle = $("#titreAlter").text().trim() || undefined;
+  // Extract cover
+  const coverMatch = html.match(/id="coverOeuvre"[^>]*src="([^"]+)"/i);
+  const ogImageMatch = html.match(/property="og:image"[^>]*content="([^"]+)"/i);
+  let cover = coverMatch?.[1] || ogImageMatch?.[1] || "";
+  let banner = ogImageMatch?.[1] || undefined;
+  if (banner && cover && banner === cover) banner = undefined;
 
-  // Cover image and banner (OG image)
-  const coverFromDom = $("#coverOeuvre").attr("src") || "";
-  const ogImage = $('meta[property="og:image"]').attr("content") || undefined;
-  // Prefer explicit cover, fallback to og:image
-  let cover = coverFromDom || ogImage || "";
-  let banner: string | undefined = ogImage;
-  // If banner equals cover, omit banner to avoid duplication
-  if (banner && cover && banner.trim() === cover.trim()) banner = undefined;
+  // Extract synopsis
+  const synopsisMatch = html.match(/<h2[^>]*>Synopsis<\/h2>\s*<p[^>]*>([^<]+)<\/p>/i);
+  const synopsis = synopsisMatch ? (synopsisMatch[1]?.trim() || "") : "";
 
-  // Synopsis
-  const synopsis = $('h2:contains("Synopsis")').next("p").text().trim();
+  // Extract genres
+  const genresMatch = html.match(/<h2[^>]*>Genres<\/h2>\s*<a[^>]*>([^<]+)<\/a>/i);
+  const genres = genresMatch ? (genresMatch[1] || "").split(",").map(g => g.trim()).filter(Boolean) : [];
 
-  // Genres
-  const genresText = $('h2:contains("Genres")').next("a").text().trim();
-  const genres = genresText
-    .split(",")
-    .map((g: string) => g.trim())
-    .filter(Boolean);
-
-  // We'll build seasons and manga per section, then derive animeVersions from seasons
+  // For seasons and manga, use regex to find panneauAnime and panneauScan calls
   const seasons: AnimeSeason[] = [];
   const manga: { name: string; url: string }[] = [];
 
-  // Resolve URLs against canonical base when relative
-  const canonicalHref = $('link[rel="canonical"]').attr("href") || "";
-  const basePath = canonicalHref.endsWith("/")
-    ? canonicalHref
-    : canonicalHref
-      ? canonicalHref + "/"
-      : "/";
-  const resolveUrl = (u: string): string => {
-    if (!u) return u;
-    if (/^https?:\/\//i.test(u)) return u;
-    if (u.startsWith("/")) return u;
-    return basePath + u.replace(/^\//, "");
-  };
-
-  // Normalize internal URLs to drop '/catalogue' prefix so we return '/<slug>/...'
-  const formatUrl = (u: string): string => {
-    const resolved = resolveUrl(u);
-    if (!resolved) return resolved;
-    if (/^https?:\/\//i.test(resolved)) return resolved; // keep absolute as-is
-    return resolved.replace(/^\/catalogue\//, "/");
-  };
-
-  // Helper: parse panels from anchors within a container
-  const collectFromAnchors = ($container: any, type: string) => {
-    $container.find("a").each((_: number, a: any) => {
-      const name = $(a).find("div").text().trim();
-      const url = formatUrl($(a).attr("href") || "");
-      if (!name || !url) return;
-      if (type === "Manga") manga.push({ name, url });
-      else seasons.push({ name, url, type });
-    });
-  };
-
-  // Helper: parse panels from script calls like panneauAnime("name", "url") or panneauScan(...)
-  const collectFromScripts = ($container: any, type: string) => {
-    let scriptText = $container
-      .find("script")
-      .map((_: number, s: any) => $(s).text())
-      .get()
-      .join("\n");
-    if (!scriptText) return;
-    // Strip single-line and block comments to avoid picking placeholder examples
-    scriptText = scriptText
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/(^|\n)\s*\/\/.*$/gm, "");
-    const re =
-      type === "Manga"
-        ? /panneauScan\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g
-        : /panneauAnime\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(scriptText)) !== null) {
-      const name = (m[1] || "").trim();
-      const url = formatUrl((m[2] || "").trim());
-      // Skip placeholders
-      if (
-        !name ||
-        !url ||
-        name.toLowerCase() === "nom" ||
-        url === "/catalogue/naruto/url"
-      )
-        continue;
-      if (type === "Manga") manga.push({ name, url });
-      else seasons.push({ name, url, type });
+  // Find all panneauAnime calls
+  const panneauAnimeRegex = /panneauAnime\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g;
+  let match;
+  while ((match = panneauAnimeRegex.exec(html)) !== null) {
+    const name = (match[1] || "").trim();
+    const url = (match[2] || "").trim();
+    if (name && url && name.toLowerCase() !== "nom" && !url.includes("/catalogue/naruto/url")) {
+      // Determine type from context or default to Anime
+      // For simplicity, assume Anime unless Kai
+      let type = "Anime";
+      if (html.includes("Anime Version Kai") && html.indexOf("Anime Version Kai") < match.index) {
+        type = "Kai";
+      }
+      seasons.push({ name, url, type });
     }
-  };
+  }
 
-  // Parse sections by headers
-  $("h2").each((_: number, el: any) => {
-    const header = $(el).text().trim();
-    let type: string | null = null;
-    if (header === "Anime" || header === "Serie") type = "Anime";
-    else if (header === "Anime Version Kai") type = "Kai";
-    else if (header === "Manga") type = "Manga";
-    if (!type) return;
-
-    // Panel container is the next flex-wrap block, regardless of extra classes
-    const $panel = $(el).nextAll(".flex.flex-wrap").first();
-    if (!$panel || $panel.length === 0) return;
-
-    // First try anchors if present
-    collectFromAnchors($panel, type);
-    // Then try parsing the inline scripts (document.write templates) as fallback
-    if (
-      (type === "Manga" && manga.length === 0) ||
-      (type !== "Manga" && seasons.filter((s) => s.type === type).length === 0)
-    ) {
-      collectFromScripts($panel, type);
+  // Find all panneauScan calls for manga
+  const panneauScanRegex = /panneauScan\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g;
+  while ((match = panneauScanRegex.exec(html)) !== null) {
+    const name = (match[1] || "").trim();
+    const url = (match[2] || "").trim();
+    if (name && url) {
+      manga.push({ name, url });
     }
+  }
+
+  // Deduplicate seasons
+  const seenSeason = new Set<string>();
+  const uniqueSeasons = seasons.filter(s => {
+    const key = `${s.type}|${s.url}`;
+    if (seenSeason.has(key)) return false;
+    seenSeason.add(key);
+    return true;
   });
 
-  // Deduplicate seasons by (type + url)
-  const seenSeason = new Set<string>();
-  const uniqueSeasons: AnimeSeason[] = [];
-  for (const s of seasons) {
-    const key = `${s.type}|${s.url}`;
-    if (seenSeason.has(key)) continue;
-    seenSeason.add(key);
-    uniqueSeasons.push(s);
-  }
-
-  // Deduplicate manga by url
+  // Deduplicate manga
   const seenManga = new Set<string>();
-  const uniqueManga: { name: string; url: string }[] = [];
-  for (const m of manga) {
-    if (seenManga.has(m.url)) continue;
+  const uniqueManga = manga.filter(m => {
+    if (seenManga.has(m.url)) return false;
     seenManga.add(m.url);
-    uniqueManga.push(m);
-  }
+    return true;
+  });
 
   return {
     title,
@@ -230,78 +161,35 @@ export interface CatalogueItem {
 }
 
 // Parse the catalogue grid page for items. It contains anchors with posters and titles.
-// We use cheerio for resilience across minor markup changes.
+// We use regex for basic parsing.
 export function parseCataloguePage(html: string): CatalogueItem[] {
-  const $ = cheerio.load(html);
   const items: CatalogueItem[] = [];
 
-  // Try to find cards; anime-sama catalogue tends to use anchors wrapping an image and title.
-  // Strategy: select all anchors under the main catalogue container that link to /catalogue/<slug>
-  $('a[href*="/catalogue/"]').each((_, a) => {
-    const href = $(a).attr("href") || "";
-    const u = (() => {
-      try {
-        return new URL(href, "https://anime-sama.fr");
-      } catch {
-        return null;
-      }
-    })();
-    if (!u) return;
-    const parts = u.pathname.split("/").filter(Boolean);
-    const idx = parts.indexOf("catalogue");
-    const slug = idx !== -1 ? parts[idx + 1] : "";
-    if (!slug) return;
+  // Regex to match catalogue items: <a href="/catalogue/slug"> ... <img src="image"> ... <h3>title</h3> ... </a>
+  const itemRegex = /<a[^>]*href="\/catalogue\/([^"]*)"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([^<]*)<\/h3>/gi;
 
-    // Title: try common heading tags, then elements with title-like classes, then img alt, then anchor text
-    let title = $(a).find("h1, h2, h3, h4").first().text().trim();
-    if (!title)
-      title = $(a)
-        .find('[class*="title" i], [class*="name" i]')
-        .first()
-        .text()
-        .trim();
-    if (!title) title = $(a).find("img").attr("alt")?.trim() || "";
-    if (!title) title = $(a).text().replace(/\s+/g, " ").trim();
-    if (!title) return;
+  let match;
+  while ((match = itemRegex.exec(html)) !== null) {
+    const slug = match[1];
+    const image = match[2];
+    const title = match[3]?.trim() || "";
 
-    // Extract type from the full anchor text and content
-    const fullText = $(a).text().replace(/\s+/g, " ").trim();
-    const infoText = $(a).find('.infoCarteHorizontale').text().replace(/\s+/g, " ").trim();
-    let type = 'Unknown';
-    
-    // Prioritize detection in this order
-    if (fullText.includes(' Scans') || infoText.includes(' Scans')) {
-      type = 'Scans';
-    } else if (fullText.includes(' VOSTFR') || fullText.includes(' VF') || infoText.includes('VOSTFR') || infoText.includes('VF')) {
-      type = 'Anime';
-    } else if (fullText.includes(' Film ') || infoText.includes(' Film ')) {
-      type = 'Film';
-    } else {
-      // Default to Anime for most catalogue items
-      type = 'Anime';
+    if (slug && image && title) {
+      // Determine type: default to Anime, check for Scans or Film
+      let type: string = 'Anime';
+      const anchorText = match[0];
+      if (anchorText.includes(' Scans')) type = 'Scans';
+      else if (anchorText.includes(' Film ')) type = 'Film';
+
+      items.push({ id: slug, title, image, type });
     }
-
-    // Image: handle lazy-loaded images and srcset
-    const $img = $(a).find("img").first();
-    let image = $img.attr("src") || "";
-    if (!image)
-      image = $img.attr("data-src") || $img.attr("data-lazy-src") || "";
-    if (!image) {
-      const srcset = $img.attr("srcset") || "";
-      if (srcset) {
-        // pick the first URL from srcset
-        const first = srcset.split(",")[0]?.trim().split(" ")[0];
-        if (first) image = first;
-      }
-    }
-    if (!image) return;
-
-    items.push({ id: slug, title, image, type });
-  });
+  }
 
   // Deduplicate by id
   const seen = new Set<string>();
-  return items.filter((it) =>
-    seen.has(it.id) ? false : (seen.add(it.id), true),
-  );
+  return items.filter(item => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
 }
