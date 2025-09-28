@@ -29,8 +29,8 @@ export default defineEventHandler(async (event) => {
 
       // Get progress for this specific anime
       const db = DatabaseService.getInstance()
-      const allProgress = await db.getUserContinueWatching(user.id)
-      const animeProgress = allProgress.filter(p => p.animeId === animeId)
+      const result = await db.getUserContinueWatching(user.id, 1000, 0) // Get all for filtering
+      const animeProgress = result.items.filter((p: any) => p.animeId === animeId)
 
       console.log('✅ [LOAD_PROGRESS] Found', animeProgress.length, 'progress items for anime:', animeId)
       return {

@@ -142,7 +142,7 @@ if (!props.items && (props.genre || props.type)) {
 
             <!-- Image area -->
             <div class="h-[240px] relative overflow-hidden">
-              <img :src="item.image" :alt="item.title" class="w-[200px] h-[240px] object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" decoding="async" fetchpriority="low" />
+              <NuxtImg :src="item.image" :alt="item.title" class="w-[200px] h-[240px] object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" decoding="async" fetchpriority="low" />
 
               <!-- Play overlay -->
               <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">

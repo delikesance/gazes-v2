@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "nuxt/app";
-import CarouselRow from "~/components/CarouselRow.vue";
+const CarouselRow = defineAsyncComponent(() => import('~/components/CarouselRow.vue'));
 import HeroBanner from "~/components/HeroBanner.vue";
 import ContinueWatchingRow from "~/components/ContinueWatchingRow.vue";
 import { useSearch } from "~/composables/useSearch";
@@ -278,7 +278,7 @@ const handleRetrySearch = () => {
 
                           <!-- Image area -->
                           <div class="relative h-[240px] bg-black">
-                            <img :src="item.image" :alt="item.title" class="h-full w-full object-cover" loading="lazy" decoding="async" fetchpriority="low" />
+                            <NuxtImg :src="item.image" :alt="item.title" class="h-full w-full object-cover" loading="lazy" decoding="async" fetchpriority="low" />
 
                             <!-- subtle overlay for text legibility -->
                             <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent pointer-events-none"></div>

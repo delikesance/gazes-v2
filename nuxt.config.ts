@@ -102,20 +102,22 @@ export default defineNuxtConfig({
      prerender: {
        routes: ['/']
      },
-     routeRules: {
-       '/api/**': {
-         cors: true,
-         headers: {
-           'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
-           'access-control-allow-headers': 'Content-Type,Authorization',
-           'access-control-allow-credentials': 'true'
-         }
-       },
-       '/favicon.ico': { cache: { maxAge: 86400 * 30 } },
-       '/robots.txt': { cache: { maxAge: 86400 * 7 } },
-       '/sw.js': { cache: { maxAge: 0 } },
-       '/_nuxt/**': { cache: { maxAge: 86400 * 30 } }
-     }
+      routeRules: {
+        '/api/**': {
+          cors: true,
+          headers: {
+            'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+            'access-control-allow-headers': 'Content-Type,Authorization',
+            'access-control-allow-credentials': 'true'
+          }
+        },
+        '/api/catalogue': { cache: { maxAge: 300 } }, // Cache catalogue for 5 minutes
+        '/api/search': { cache: { maxAge: 300 } }, // Cache search for 5 minutes
+        '/favicon.ico': { cache: { maxAge: 86400 * 30 } },
+        '/robots.txt': { cache: { maxAge: 86400 * 7 } },
+        '/sw.js': { cache: { maxAge: 0 } },
+        '/_nuxt/**': { cache: { maxAge: 86400 * 30 } }
+      }
    },
 
   ssr: true,

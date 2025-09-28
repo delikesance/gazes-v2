@@ -116,7 +116,19 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (request.method !== 'GET') return
 
-  // Skip external requests
+  // Handle API routes
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(CACHE_STRATEGIES.networkFirst(request))
+    return
+  }
+
+  // Handle external anime-sama.fr images
+  if (url.origin === 'https://anime-sama.fr' && request.destination === 'image') {
+    event.respondWith(CACHE_STRATEGIES.cacheFirst(request))
+    return
+  }
+
+  // Skip other external requests
   if (!url.origin.includes(self.location.origin)) return
 
   // Handle different resource types

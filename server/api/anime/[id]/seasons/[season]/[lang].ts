@@ -1,5 +1,6 @@
 import { preferNonBlacklisted, isBlacklisted, hostnameOf } from '~/shared/utils/hosts'
 import { defineEventHandler, getQuery, createError } from 'h3'
+import { cachedFetch, CACHE_TTL } from '~/server/utils/cache'
 // Function to scrape episode titles from the main anime page on anime-sama
 async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, lang: string): Promise<Record<number, string>> {
     const titles: Record<number, string> = {}
@@ -7,14 +8,17 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
     try {
         // Try to fetch the main anime page first
         const mainPageUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(animeId)}/`
-        const mainPageRes = await fetch(mainPageUrl, {
-            headers: {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-            },
-            redirect: 'follow',
-            referrerPolicy: 'strict-origin-when-cross-origin',
-        })
+        const mainPageCacheKey = `anime-main-page:${animeId}`
+        const mainPageRes = await cachedFetch(mainPageCacheKey, async () => {
+            return await fetch(mainPageUrl, {
+                headers: {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+                },
+                redirect: 'follow',
+                referrerPolicy: 'strict-origin-when-cross-origin',
+            })
+        }, CACHE_TTL.GENERAL)
 
         if (mainPageRes.ok) {
             const mainPageHtml = await mainPageRes.text()
@@ -72,14 +76,17 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
 
         // Also try the specific season page URL for additional episode data
         const seasonPageUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/`
-        const seasonPageRes = await fetch(seasonPageUrl, {
-            headers: {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-            },
-            redirect: 'follow',
-            referrerPolicy: 'strict-origin-when-cross-origin',
-        })
+        const seasonPageCacheKey = `anime-season-page:${animeId}:${season}`
+        const seasonPageRes = await cachedFetch(seasonPageCacheKey, async () => {
+            return await fetch(seasonPageUrl, {
+                headers: {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+                },
+                redirect: 'follow',
+                referrerPolicy: 'strict-origin-when-cross-origin',
+            })
+        }, CACHE_TTL.GENERAL)
 
         if (seasonPageRes.ok) {
             const seasonPageHtml = await seasonPageRes.text()
@@ -96,14 +103,17 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
 
         // For films and special cases, also try the language-specific page where selectEpisodes might be located
         const langPageUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`
-        const langPageRes = await fetch(langPageUrl, {
-            headers: {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-            },
-            redirect: 'follow',
-            referrerPolicy: 'strict-origin-when-cross-origin',
-        })
+        const langPageCacheKey = `anime-lang-page:${animeId}:${season}:${lang}`
+        const langPageRes = await cachedFetch(langPageCacheKey, async () => {
+            return await fetch(langPageUrl, {
+                headers: {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+                },
+                redirect: 'follow',
+                referrerPolicy: 'strict-origin-when-cross-origin',
+            })
+        }, CACHE_TTL.GENERAL)
 
         if (langPageRes.ok) {
             const langPageHtml = await langPageRes.text()
@@ -359,15 +369,18 @@ export default defineEventHandler(async (event) => {
     let sourceText = ''
 
     try {
-        const jsRes = await fetch(jsUrl, {
-            headers: {
-                'Accept': '*/*',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-            },
-            redirect: 'follow',
-            referrerPolicy: 'strict-origin-when-cross-origin',
-            signal: AbortSignal.timeout(10000), // 10 second timeout
-        })
+        const jsCacheKey = `anime-episodes-js:${id}:${season}:${lang}`
+        const jsRes = await cachedFetch(jsCacheKey, async () => {
+            return await fetch(jsUrl, {
+                headers: {
+                    'Accept': '*/*',
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+                },
+                redirect: 'follow',
+                referrerPolicy: 'strict-origin-when-cross-origin',
+                signal: AbortSignal.timeout(10000), // 10 second timeout
+            })
+        }, CACHE_TTL.GENERAL)
 
         if (jsRes.ok) {
             const jsText = await jsRes.text()
@@ -385,14 +398,17 @@ export default defineEventHandler(async (event) => {
     if (!sourceText) {
         const seasonUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`
         try {
-            const res = await fetch(seasonUrl, {
-                headers: {
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-                },
-                redirect: 'follow',
-                referrerPolicy: 'strict-origin-when-cross-origin',
-            })
+            const seasonPageCacheKey = `anime-episodes-page:${id}:${season}:${lang}`
+            const res = await cachedFetch(seasonPageCacheKey, async () => {
+                return await fetch(seasonUrl, {
+                    headers: {
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+                    },
+                    redirect: 'follow',
+                    referrerPolicy: 'strict-origin-when-cross-origin',
+                })
+            }, CACHE_TTL.GENERAL)
 
             if (res.ok) {
                 sourceText = await res.text()

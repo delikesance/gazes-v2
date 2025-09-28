@@ -72,6 +72,33 @@ export class DatabaseService {
     console.log('📁 [DATABASE] Database schema initialization completed')
   }
 
+  /**
+   * Health check for database connection
+   */
+  async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy', latency: number }> {
+    const startTime = Date.now()
+
+    try {
+      // Simple query to test connection
+      const { error } = await this.supabase
+        .from('users')
+        .select('count', { count: 'exact', head: true })
+        .limit(1)
+
+      const latency = Date.now() - startTime
+
+      if (error) {
+        console.error('📁 [DATABASE] Health check failed:', error)
+        return { status: 'unhealthy', latency }
+      }
+
+      return { status: 'healthy', latency }
+    } catch (error) {
+      console.error('📁 [DATABASE] Health check error:', error)
+      return { status: 'unhealthy', latency: Date.now() - startTime }
+    }
+  }
+
   // User operations
   async createUser(email: string, username: string, hashedPassword: string): Promise<User> {
     console.log('📁 [DATABASE] Creating user:', username, 'with email:', email)
@@ -255,13 +282,25 @@ export class DatabaseService {
     return true
   }
 
-  async getAllUsers(): Promise<User[]> {
-    console.log('📁 [DATABASE] Getting all users')
+  async getAllUsers(limit: number = 50, offset: number = 0): Promise<{ items: User[], total: number }> {
+    console.log('📁 [DATABASE] Getting all users, limit:', limit, 'offset:', offset)
 
+    // Get total count
+    const { count: totalCount, error: countError } = await this.supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+
+    if (countError) {
+      console.error('📁 [DATABASE] Error getting user count:', countError)
+      throw countError
+    }
+
+    // Get paginated data
     const { data, error } = await this.supabase
       .from('users')
       .select('id, email, username, created_at, updated_at')
       .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1)
 
     if (error) {
       console.error('📁 [DATABASE] Error getting all users:', error)
@@ -276,8 +315,8 @@ export class DatabaseService {
       updatedAt: new Date(row.updated_at)
     }))
 
-    console.log('📁 [DATABASE] Found', users.length, 'users')
-    return users
+    console.log('📁 [DATABASE] Found', users.length, 'users (total:', totalCount, ')')
+    return { items: users, total: totalCount || 0 }
   }
 
   async getUserCount(): Promise<number> {
@@ -382,16 +421,29 @@ export class DatabaseService {
     }
   }
 
-  async getUserContinueWatching(userId: string, limit: number = 20): Promise<WatchingProgress[]> {
-    console.log('📁 [DATABASE] Getting continue watching for user:', userId)
+  async getUserContinueWatching(userId: string, limit: number = 20, offset: number = 0): Promise<{ items: WatchingProgress[], total: number }> {
+    console.log('📁 [DATABASE] Getting continue watching for user:', userId, 'limit:', limit, 'offset:', offset)
 
+    // Get total count
+    const { count: totalCount, error: countError } = await this.supabase
+      .from('watching_progress')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('completed', false)
+
+    if (countError) {
+      console.error('📁 [DATABASE] Error getting continue watching count:', countError)
+      throw countError
+    }
+
+    // Get paginated data
     const { data, error } = await this.supabase
       .from('watching_progress')
       .select('id, user_id, anime_id, season, episode, current_time, duration, last_watched_at, completed')
       .eq('user_id', userId)
       .eq('completed', false)
       .order('last_watched_at', { ascending: false })
-      .limit(limit)
+      .range(offset, offset + limit - 1)
 
     if (error) {
       console.error('📁 [DATABASE] Error getting continue watching:', error)
@@ -410,8 +462,8 @@ export class DatabaseService {
       completed: Boolean(row.completed)
     }))
 
-    console.log('📁 [DATABASE] Found', progress.length, 'continue watching items')
-    return progress
+    console.log('📁 [DATABASE] Found', progress.length, 'continue watching items (total:', totalCount, ')')
+    return { items: progress, total: totalCount || 0 }
   }
 
   async deleteWatchingProgress(userId: string, animeId: string, season: string, episode: number): Promise<boolean> {

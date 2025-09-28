@@ -1,4 +1,5 @@
 import { parseAnimePage, parseAnimeResults } from '#shared/utils/parsers'
+import { cachedFetch, CACHE_TTL } from '~/server/utils/cache'
 
 const USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
 
@@ -13,26 +14,32 @@ export default defineEventHandler(async (event) => {
         })
 
     // Try to fetch directly first
-    let response = await fetch(`https://anime-sama.fr/catalogue/${id}/`, {
-        headers: {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'User-Agent': USER_AGENT,
-        },
-        redirect: 'follow',
-    })
+    const animeCacheKey = `anime:${id}`
+    let response = await cachedFetch(animeCacheKey, async () => {
+        return await fetch(`https://anime-sama.fr/catalogue/${id}/`, {
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'User-Agent': USER_AGENT,
+            },
+            redirect: 'follow',
+        })
+    }, CACHE_TTL.GENERAL)
 
     // If direct fetch fails, try to search for the anime
     if (!response.ok) {
         const searchTerm = id.replace(/[-_]/g, ' ')
-        
-        const searchResponse = await fetch("https://anime-sama.fr/template-php/defaut/fetch.php", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "X-Requested-With": "XMLHttpRequest"
-            },
-            body: "query=" + encodeURIComponent(searchTerm),
-        })
+        const searchCacheKey = `anime-search:${searchTerm}`
+
+        const searchResponse = await cachedFetch(searchCacheKey, async () => {
+            return await fetch("https://anime-sama.fr/template-php/defaut/fetch.php", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    "X-Requested-With": "XMLHttpRequest"
+                },
+                body: "query=" + encodeURIComponent(searchTerm),
+            })
+        }, CACHE_TTL.SEARCH)
 
         const searchResults = parseAnimeResults(await searchResponse.text())
 
@@ -53,13 +60,16 @@ export default defineEventHandler(async (event) => {
             })
         }
         const realAnimeId = searchResults[0].id
-        response = await fetch(`https://anime-sama.fr/catalogue/${realAnimeId}/`, {
-            headers: {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'User-Agent': USER_AGENT,
-            },
-            redirect: 'follow',
-        })
+        const realAnimeCacheKey = `anime:${realAnimeId}`
+        response = await cachedFetch(realAnimeCacheKey, async () => {
+            return await fetch(`https://anime-sama.fr/catalogue/${realAnimeId}/`, {
+                headers: {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'User-Agent': USER_AGENT,
+                },
+                redirect: 'follow',
+            })
+        }, CACHE_TTL.GENERAL)
 
         if (!response.ok) {
             throw createError({
@@ -88,20 +98,24 @@ export default defineEventHandler(async (event) => {
         }
 
         try {
-            // Add timeout for language flags scraping to avoid slow loading
-            const controller = new AbortController()
-            const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
+            const flagsCacheKey = `anime-flags:${id}`
+            const seasonResponse = await cachedFetch(flagsCacheKey, async () => {
+                // Add timeout for language flags scraping to avoid slow loading
+                const controller = new AbortController()
+                const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
 
-            const seasonResponse = await fetch(seasonUrl, {
-                headers: {
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'User-Agent': USER_AGENT,
-                },
-                redirect: 'follow',
-                signal: controller.signal
-            })
+                const res = await fetch(seasonUrl, {
+                    headers: {
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'User-Agent': USER_AGENT,
+                    },
+                    redirect: 'follow',
+                    signal: controller.signal
+                })
 
-            clearTimeout(timeoutId)
+                clearTimeout(timeoutId)
+                return res
+            }, CACHE_TTL.GENERAL)
 
             if (seasonResponse.ok) {
                 const seasonHtml = await seasonResponse.text()

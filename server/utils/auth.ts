@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import type { H3Event } from 'h3'
 import { DatabaseService } from './database'
 import type { User } from './database'
+import { getCache, CACHE_TTL } from './cache'
 
 export interface JWTPayload {
   userId: string
@@ -72,22 +73,33 @@ export class AuthService {
   }
 
   /**
-   * Verify and decode a JWT token
-   */
-  static verifyToken(token: string, type: 'access' | 'refresh' = 'access'): JWTPayload {
-    const config = useRuntimeConfig()
-    const secret = type === 'access' ? config.jwtSecret : config.jwtRefreshSecret
+    * Verify and decode a JWT token with caching
+    */
+   static verifyToken(token: string, type: 'access' | 'refresh' = 'access'): JWTPayload {
+     const cache = getCache()
+     const cacheKey = `jwt:${type}:${token}`
 
-    try {
-      const decoded = jwt.verify(token, secret, { issuer: 'gazes-app' }) as JWTPayload
-      return decoded
-    } catch (error) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid token'
-      })
-    }
-  }
+     // Check cache first
+     const cached = cache.get<JWTPayload>(cacheKey)
+     if (cached) {
+       return cached
+     }
+
+     const config = useRuntimeConfig()
+     const secret = type === 'access' ? config.jwtSecret : config.jwtRefreshSecret
+
+     try {
+       const decoded = jwt.verify(token, secret, { issuer: 'gazes-app' }) as JWTPayload
+       // Cache successful verification for 5 minutes
+       cache.set(cacheKey, decoded, CACHE_TTL.USER_DATA)
+       return decoded
+     } catch (error) {
+       throw createError({
+         statusCode: 401,
+         statusMessage: 'Invalid token'
+       })
+     }
+   }
 
   /**
    * Create a new user
@@ -118,15 +130,31 @@ export class AuthService {
   }
 
   /**
-   * Find user by ID
-   */
-  static async findUserById(id: string): Promise<User | null> {
-    console.log('🔐 [AUTH_SERVICE] Looking for user by ID:', id)
-    const db = DatabaseService.getInstance()
-    const user = await db.findUserById(id)
-    console.log('🔐 [AUTH_SERVICE] User found:', user ? 'YES' : 'NO')
-    return user
-  }
+    * Find user by ID with caching
+    */
+   static async findUserById(id: string): Promise<User | null> {
+     const cache = getCache()
+     const cacheKey = `user:id:${id}`
+
+     // Check cache first
+     const cached = cache.get<User>(cacheKey)
+     if (cached) {
+       console.log('🔐 [AUTH_SERVICE] User found in cache:', id)
+       return cached
+     }
+
+     console.log('🔐 [AUTH_SERVICE] Looking for user by ID:', id)
+     const db = DatabaseService.getInstance()
+     const user = await db.findUserById(id)
+     console.log('🔐 [AUTH_SERVICE] User found:', user ? 'YES' : 'NO')
+
+     // Cache user data for 5 minutes
+     if (user) {
+       cache.set(cacheKey, user, CACHE_TTL.USER_DATA)
+     }
+
+     return user
+   }
 
   /**
    * Authenticate user with email and password

@@ -4,11 +4,12 @@
         :class="{ 'bg-gradient-to-br from-violet-900/40 via-zinc-900 to-zinc-950': !image }"
     >
         <!-- Background Image -->
-        <img
+        <NuxtImg
             v-if="image"
             class="absolute inset-0 w-full h-full object-cover opacity-15"
             :src="image"
             :alt="title"
+            loading="eager"
         />
 
         <!-- Gradient Overlay -->
@@ -79,11 +80,12 @@
                                 class="absolute inset-0 z-10"
                             ></NuxtLink>
 
-                            <img
+                            <NuxtImg
                                 v-if="image"
                                 :src="image"
                                 :alt="title"
                                 class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                loading="lazy"
                             />
                             <div v-else class="w-full h-full bg-gradient-to-br from-violet-900/40 to-zinc-900 flex items-center justify-center">
                                 <Icon name="heroicons:film" class="w-12 h-12 text-zinc-400" />
