@@ -1,0 +1,4 @@
+const a=".custom-scrollbar[data-v-cc3ad26b]::-webkit-scrollbar{width:6px}.custom-scrollbar[data-v-cc3ad26b]::-webkit-scrollbar-track{background:#27272a80;border-radius:3px}.custom-scrollbar[data-v-cc3ad26b]::-webkit-scrollbar-thumb{background:#a1a1aa80;border-radius:3px}.custom-scrollbar[data-v-cc3ad26b]::-webkit-scrollbar-thumb:hover{background:#a1a1aacc}";
+
+export { a };
+//# sourceMappingURL=_episode_-styles-1.mjs-BgiVBztH.mjs.map

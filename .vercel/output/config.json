@@ -1,0 +1,202 @@
+{
+  "version": 3,
+  "overrides": {
+    "index.html": {
+      "path": ""
+    }
+  },
+  "routes": [
+    {
+      "headers": {
+        "cache-control": "public, max-age=31536000, immutable"
+      },
+      "src": "/_nuxt/builds/meta/(.*)"
+    },
+    {
+      "headers": {
+        "cache-control": "public, max-age=1, immutable"
+      },
+      "src": "/_nuxt/builds/(.*)"
+    },
+    {
+      "headers": {
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
+        "access-control-allow-headers": "Content-Type,Authorization",
+        "access-control-max-age": "0",
+        "access-control-allow-credentials": "true"
+      },
+      "src": "/api/(.*)"
+    },
+    {
+      "headers": {
+        "cache-control": "public, max-age=2592000, immutable"
+      },
+      "src": "/_nuxt/(.*)"
+    },
+    {
+      "src": "/_nuxt/builds/meta(.*)",
+      "headers": {
+        "cache-control": "public,max-age=31536000,immutable"
+      },
+      "continue": true
+    },
+    {
+      "src": "/_nuxt/builds(.*)",
+      "headers": {
+        "cache-control": "public,max-age=31536000,immutable"
+      },
+      "continue": true
+    },
+    {
+      "src": "/_nuxt(.*)",
+      "headers": {
+        "cache-control": "public,max-age=31536000,immutable"
+      },
+      "continue": true
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/__nuxt_error",
+      "dest": "/__fallback"
+    },
+    {
+      "src": "/series",
+      "dest": "/series"
+    },
+    {
+      "src": "/register",
+      "dest": "/register"
+    },
+    {
+      "src": "/movies",
+      "dest": "/movies"
+    },
+    {
+      "src": "/login",
+      "dest": "/login"
+    },
+    {
+      "src": "/catalogue",
+      "dest": "/catalogue"
+    },
+    {
+      "src": "/api/watch/progress",
+      "dest": "/api/watch/progress"
+    },
+    {
+      "src": "/api/test-embed",
+      "dest": "/api/test-embed"
+    },
+    {
+      "src": "/api/test",
+      "dest": "/api/test"
+    },
+    {
+      "src": "/api/search",
+      "dest": "/api/search"
+    },
+    {
+      "src": "/api/proxy",
+      "dest": "/api/proxy"
+    },
+    {
+      "src": "/api/providers",
+      "dest": "/api/providers"
+    },
+    {
+      "src": "/api/player/resolve",
+      "dest": "/api/player/resolve"
+    },
+    {
+      "src": "/api/debug-anime",
+      "dest": "/api/debug-anime"
+    },
+    {
+      "src": "/api/catalogue",
+      "dest": "/api/catalogue"
+    },
+    {
+      "src": "/api/auth/register",
+      "dest": "/api/auth/register"
+    },
+    {
+      "src": "/api/auth/refresh",
+      "dest": "/api/auth/refresh"
+    },
+    {
+      "src": "/api/auth/me",
+      "dest": "/api/auth/me"
+    },
+    {
+      "src": "/api/auth/logout",
+      "dest": "/api/auth/logout"
+    },
+    {
+      "src": "/api/auth/login",
+      "dest": "/api/auth/login"
+    },
+    {
+      "src": "/__nuxt_error",
+      "dest": "/__nuxt_error"
+    },
+    {
+      "src": "/",
+      "dest": "/index"
+    },
+    {
+      "src": "/watch/(?<id>[^/]+)/(?<season>[^/]+)/(?<lang>[^/]+)/(?<episode>[^/]+)",
+      "dest": "/watch/[id]/[season]/[lang]/[episode]"
+    },
+    {
+      "src": "/api/watch/progress/(?<animeId>[^/]+)",
+      "dest": "/api/watch/progress/[animeId]"
+    },
+    {
+      "src": "/api/test/(?<id>[^/]+)",
+      "dest": "/api/test/[id]"
+    },
+    {
+      "src": "/api/anime/(?<id>[^/]+)/skip/(?<episode>[^/]+)",
+      "dest": "/api/anime/[id]/skip/[episode]"
+    },
+    {
+      "src": "/api/anime/(?<id>[^/]+)/seasons/(?<season>[^/]+)/(?<lang>[^/]+)",
+      "dest": "/api/anime/[id]/seasons/[season]/[lang]"
+    },
+    {
+      "src": "/api/anime/(?<id>[^/]+)/index_backup",
+      "dest": "/api/anime/[id]/index_backup"
+    },
+    {
+      "src": "/api/anime/(?<id>[^/]+)",
+      "dest": "/api/anime/[id]"
+    },
+    {
+      "src": "/api/_nuxt_icon/(?<collection>[^/]+)",
+      "dest": "/api/_nuxt_icon/[collection]"
+    },
+    {
+      "src": "/anime/(?<id>[^/]+)",
+      "dest": "/anime/[id]"
+    },
+    {
+      "src": "/api/anime/episodes/?(?<slug>.+)",
+      "dest": "/api/anime/episodes/[...slug]"
+    },
+    {
+      "src": "/_ipx/(?:.*)",
+      "dest": "/_ipx/[...]"
+    },
+    {
+      "src": "/__nuxt_island/(?:.*)",
+      "dest": "/__nuxt_island/[...]"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/__fallback"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+const a="@keyframes spin-15a407e0{to{transform:rotate(1turn)}}.fade-enter-active[data-v-15a407e0],.fade-leave-active[data-v-15a407e0]{transition:opacity .3s ease}.fade-enter-from[data-v-15a407e0],.fade-leave-to[data-v-15a407e0]{opacity:0}";
+
+export { a };
+//# sourceMappingURL=index-styles-1.mjs-D6IiQb7X.mjs.map

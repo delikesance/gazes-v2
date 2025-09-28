@@ -1,0 +1,4 @@
+const a=".pill[data-v-2aa80c67]{transition:all .2s ease}@keyframes pulse-2aa80c67{0%,to{opacity:1}50%{opacity:.5}}@keyframes spin-2aa80c67{to{transform:rotate(1turn)}}.pill[data-v-2aa80c67]:focus-within{outline:2px solid rgba(139,92,246,.5);outline-offset:2px}";
+
+export { a };
+//# sourceMappingURL=catalogue-styles-1.mjs-B3v6ihlK.mjs.map

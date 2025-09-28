@@ -1,0 +1,41 @@
+import { c as lt } from './server.mjs';
+import { defineComponent, ref, withAsyncContext, computed, useSSRContext } from 'vue';
+import { ssrRenderAttrs, ssrRenderComponent, ssrRenderList, ssrRenderSuspense, ssrInterpolate } from 'vue/server-renderer';
+import { O, T } from './HeroBanner-DB7RgRuh.mjs';
+import { u as S } from './index-BZnvd90h.mjs';
+import { u } from './fetch-B1uUfs--.mjs';
+import '../nitro/nitro.mjs';
+import 'cheerio';
+import 'jsonwebtoken';
+import 'bcryptjs';
+import 'node:http';
+import 'node:https';
+import 'node:events';
+import 'node:buffer';
+import 'node:fs';
+import 'node:path';
+import 'node:crypto';
+import '@supabase/supabase-js';
+import '@iconify/utils';
+import 'consola';
+import 'node:url';
+import 'ipx';
+import 'vue-router';
+import '@iconify/vue';
+import './CardPoster-BLzLRno_.mjs';
+import '@iconify/utils/lib/css/icon';
+import './asyncData-BOLdWyFS.mjs';
+import 'perfect-debounce';
+import '../routes/renderer.mjs';
+import 'vue-bundle-renderer/runtime';
+import 'unhead/server';
+import 'devalue';
+import 'unhead/plugins';
+import 'unhead/utils';
+import '@vue/shared';
+import './ssr-DTPz_gAB.mjs';
+
+const g=defineComponent({__name:"movies",__ssrInlineRender:true,async setup(s){let d,g;S({title:"Films - Gazes",description:"Découvrez notre collection de films animés"}),ref(false),ref([]);const f=["Action","Aventure","Comédie","Drame","Fantastique","Horreur","Romance","Science-Fiction"],{data:x}=([d,g]=withAsyncContext(()=>u("/api/catalogue",{params:{genre:"Action",type:"movie",limit:1},key:"movies:featured"},"$ajYmb92bWr")),d=await d,g(),d),z=computed(()=>x.value?.items?.[0]||null);return (s,t,i,o)=>{const d=lt;t(`<div${ssrRenderAttrs(o)}><div class="absolute top-0 left-0 w-full z-0">`),z.value?t(ssrRenderComponent(O,{title:"Films",image:z.value.image,"featured-id":z.value.id,"featured-title":z.value.title,"primary-to":"/catalogue?type=movie",synopsis:"Découvrez notre collection de films d'animation. Des chefs-d'œuvre du Studio Ghibli aux dernières productions."},null,i)):t('<div class="h-[60vh] md:h-[80vh] lg:h-[90vh] bg-gradient-to-br from-violet-900/20 via-zinc-900 to-zinc-950 flex items-center justify-center"><div class="text-center"><div class="w-16 h-16 border-4 border-violet-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div><h2 class="text-xl font-semibold mb-2">Chargement...</h2><p class="text-zinc-400">Préparation du contenu</p></div></div>'),t('</div><div class="flex flex-col gap-12 pt-[60vh] md:pt-[80vh] lg:pt-[90vh] mt-16">\x3c!--[--\x3e'),ssrRenderList(f,e=>{t("<div>"),ssrRenderSuspense(t,{fallback:()=>{t(`<section class="section"><div class="flex justify-between items-center mb-4 px-20"><h3 class="row-title">${ssrInterpolate(e)}</h3><div class="flex items-center gap-5"><button type="button">`),t(ssrRenderComponent(d,null,{},i)),t('</button><button type="button">'),t(ssrRenderComponent(d,null,{},i)),t('</button></div></div><div class="relative"><div aria-hidden class="pointer-events-none absolute inset-y-0 left-0 w-20 z-10 bg-gradient-to-r from-zinc-950 to-transparent"></div><div aria-hidden class="pointer-events-none absolute inset-y-0 right-0 w-20 z-10 bg-gradient-to-l from-zinc-950 to-transparent"></div><div class="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pl-20 pr-20 scroll-pl-20 scroll-pr-20">\x3c!--[--\x3e'),ssrRenderList(8,e=>{t('<div class="snap-start shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/40 animate-pulse aspect-[9/12] w-[200px]"></div>');}),t("\x3c!--]--\x3e</div></div></section>");},default:()=>{t(ssrRenderComponent(T,{title:`Films ${e}`,genre:e,type:"movie","card-size":"md"},null,i));},_:2}),t("</div>");}),t("\x3c!--]--\x3e</div></div>");}}}),f=g.setup;g.setup=(e,s)=>{const t=useSSRContext();return (t.modules||(t.modules=new Set)).add("pages/movies.vue"),f?f(e,s):void 0};
+
+export { g as default };
+//# sourceMappingURL=movies-9MagRkZd.mjs.map
