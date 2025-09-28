@@ -1,8 +1,46 @@
 <script setup lang="ts">
-import videojs from 'video.js'
-import 'video.js/dist/video-js.css'
+// Ultra-optimized video.js lazy loading with preloading hints
+let videojs: any = null
+let videojsPromise: Promise<any> | null = null
+
+const loadVideoJS = async () => {
+  if (videojs) return videojs
+  if (videojsPromise) return videojsPromise
+
+  // Add preload hint for video.js when component mounts
+  if (typeof document !== 'undefined' && !document.querySelector('link[data-videojs-preload]')) {
+    const preloadLink = document.createElement('link')
+    preloadLink.rel = 'preload'
+    preloadLink.href = '/_nuxt/video-player.js'
+    preloadLink.as = 'script'
+    preloadLink.setAttribute('data-videojs-preload', 'true')
+    document.head.appendChild(preloadLink)
+  }
+
+  videojsPromise = import('video.js').then(async (module) => {
+    videojs = module.default
+    // Load CSS separately and optimized
+    if (typeof document !== 'undefined') {
+      await import('video.js/dist/video-js.css')
+      // Add critical video styles immediately
+      const criticalVideoCSS = `
+        .video-js { width: 100%; height: 100%; }
+        .vjs-loading-spinner { display: none; }
+        .vjs-big-play-button { display: none; }
+      `
+      const style = document.createElement('style')
+      style.textContent = criticalVideoCSS
+      document.head.appendChild(style)
+    }
+    return videojs
+  })
+
+  return videojsPromise
+}
+
 import { onBeforeUnmount, onMounted, ref, watch, nextTick, computed } from 'vue'
 import { formatSeasonDisplay } from '~/shared/utils/season'
+import { getProviderInfo } from '~/server/utils/videoProviders'
 
 // Use player layout (no navbar)
 definePageMeta({
@@ -47,13 +85,31 @@ const wasPlayingBeforeSeek = ref(false) // Track if video was playing before see
 // Animation frame for smooth progress updates
 let progressAnimationFrame: number | null = null
 
+// Optimized progress updates with throttling
+let lastProgressUpdate = 0
+const PROGRESS_UPDATE_THROTTLE = 100 // Update at most every 100ms
+
 function updateProgressSmoothly() {
+  const now = Date.now()
+  if (now - lastProgressUpdate < PROGRESS_UPDATE_THROTTLE) {
+    progressAnimationFrame = requestAnimationFrame(updateProgressSmoothly)
+    return
+  }
+
   const el = videoRef.value
   if (el && !el.paused && !el.ended) {
-    currentTime.value = el.currentTime
-    if (el.buffered.length > 0) {
-      buffered.value = el.buffered.end(el.buffered.length - 1)
+    const newTime = el.currentTime
+    const newBuffered = el.buffered.length > 0 ? el.buffered.end(el.buffered.length - 1) : 0
+
+    // Only update if values actually changed to reduce re-renders
+    if (Math.abs(newTime - currentTime.value) > 0.1) {
+      currentTime.value = newTime
     }
+    if (Math.abs(newBuffered - buffered.value) > 0.5) {
+      buffered.value = newBuffered
+    }
+
+    lastProgressUpdate = now
     progressAnimationFrame = requestAnimationFrame(updateProgressSmoothly)
   }
 }
@@ -76,6 +132,141 @@ function stopProgressUpdates() {
 const showEpisodes = ref(false)
 const episodesList = ref<Array<{ episode: number; title?: string; url: string; urls?: string[] }>>([])
 const loadingEpisodes = ref(false)
+
+// Optimized caching with LRU-like behavior and memory limits
+const urlCache = ref<Record<string, { urls: any[]; timestamp: number; accessCount: number }>>({})
+const CACHE_DURATION = 30 * 60 * 1000 // 30 minutes
+const MAX_CACHE_ENTRIES = 20 // Limit cache size to prevent memory bloat
+
+// Cache for anime metadata and episodes
+const metadataCache = ref<Record<string, { data: any; timestamp: number; accessCount: number }>>({})
+const episodesCache = ref<Record<string, { data: any; timestamp: number; accessCount: number }>>({})
+const skipCache = ref<Record<string, { data: any; timestamp: number; accessCount: number }>>({})
+
+// Cache management functions
+function getCacheKey(animeId: string, season: string, lang: string, episode: number): string {
+  return `${animeId}-${season}-${lang}-${episode}`
+}
+
+// Optimized cache with LRU eviction
+function getCachedUrls(cacheKey: string): any[] | null {
+  const cached = urlCache.value[cacheKey]
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    cached.accessCount++
+    console.log('🎯 Using cached URLs for:', cacheKey, `(accessed ${cached.accessCount} times)`)
+    return cached.urls
+  }
+  return null
+}
+
+function setCachedUrls(cacheKey: string, urls: any[]): void {
+  // Evict least recently used entries if cache is full
+  const entries = Object.entries(urlCache.value)
+  if (entries.length >= MAX_CACHE_ENTRIES) {
+    // Find entry with lowest access count, then oldest timestamp
+    const toEvict = entries.reduce((min, [key, value]) => {
+      if (value.accessCount < min.accessCount ||
+          (value.accessCount === min.accessCount && value.timestamp < min.timestamp)) {
+        return { key, ...value }
+      }
+      return min
+    }, { key: '', accessCount: Infinity, timestamp: Infinity })
+
+    if (toEvict.key) {
+      delete urlCache.value[toEvict.key]
+      console.log('🗑️ Evicted cache entry:', toEvict.key)
+    }
+  }
+
+  urlCache.value[cacheKey] = {
+    urls,
+    timestamp: Date.now(),
+    accessCount: 1
+  }
+  console.log('💾 Cached URLs for:', cacheKey)
+}
+
+// Load cache from sessionStorage on mount
+function loadUrlCache(): void {
+  try {
+    const cached = sessionStorage.getItem('video-url-cache')
+    if (cached) {
+      urlCache.value = JSON.parse(cached)
+      console.log('📥 Loaded URL cache from sessionStorage')
+    }
+  } catch (error) {
+    console.warn('Failed to load URL cache:', error)
+  }
+}
+
+// Save cache to sessionStorage
+function saveUrlCache(): void {
+  try {
+    sessionStorage.setItem('video-url-cache', JSON.stringify(urlCache.value))
+  } catch (error) {
+    console.warn('Failed to save URL cache:', error)
+  }
+}
+
+// Cache management for metadata
+function getCachedMetadata(animeId: string): any | null {
+  const cached = metadataCache.value[animeId]
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    cached.accessCount++
+    console.log('📋 Using cached metadata for:', animeId, `(accessed ${cached.accessCount} times)`)
+    return cached.data
+  }
+  return null
+}
+
+function setCachedMetadata(animeId: string, data: any): void {
+  metadataCache.value[animeId] = {
+    data,
+    timestamp: Date.now(),
+    accessCount: 1
+  }
+  console.log('💾 Cached metadata for:', animeId)
+}
+
+// Cache management for episodes
+function getCachedEpisodes(cacheKey: string): any | null {
+  const cached = episodesCache.value[cacheKey]
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    cached.accessCount++
+    console.log('📋 Using cached episodes for:', cacheKey, `(accessed ${cached.accessCount} times)`)
+    return cached.data
+  }
+  return null
+}
+
+function setCachedEpisodes(cacheKey: string, data: any): void {
+  episodesCache.value[cacheKey] = {
+    data,
+    timestamp: Date.now(),
+    accessCount: 1
+  }
+  console.log('💾 Cached episodes for:', cacheKey)
+}
+
+// Cache management for skip times
+function getCachedSkipTimes(cacheKey: string): any | null {
+  const cached = skipCache.value[cacheKey]
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    cached.accessCount++
+    console.log('⏭️ Using cached skip times for:', cacheKey, `(accessed ${cached.accessCount} times)`)
+    return cached.data
+  }
+  return null
+}
+
+function setCachedSkipTimes(cacheKey: string, data: any): void {
+  skipCache.value[cacheKey] = {
+    data,
+    timestamp: Date.now(),
+    accessCount: 1
+  }
+  console.log('⏭️ Cached skip times for:', cacheKey)
+}
 
 // Progress tracking state
 const savedProgress = ref<{ currentTime: number; duration: number } | null>(null)
@@ -275,6 +466,10 @@ function destroyPlayer() {
       if (hlsLoadTimeout) {
         clearTimeout(hlsLoadTimeout)
         hlsLoadTimeout = null
+      }
+      if (retryTimeout) {
+        clearTimeout(retryTimeout)
+        retryTimeout = null
       }
       player.dispose()
     }
@@ -532,14 +727,12 @@ function onVideoSeeked() {
     })
   }
 }
-function onVideoError(e: Event) { 
-  console.error('Native video error:', e); 
-  videoError.value = 'Erreur de chargement vidéo'; 
+ function onVideoError(e: Event) {
+  const videoEl = e.target as HTMLVideoElement
+  const error = videoEl?.error
+  videoError.value = 'Erreur de chargement vidéo'
   videoLoading.value = false
-  // Automatically try next source on video error
-  setTimeout(() => {
-    tryNextSource()
-  }, 1000)
+  handleVideoError(error, 'native')
 }
 function onVideoEnded() { 
   isPlaying.value = false
@@ -574,15 +767,16 @@ function removeVideoEventListeners(el: any) {
 
 function addVideoEventListeners(el: any) {
   if (!el) return
-  el.addEventListener('play', onVideoPlay)
-  el.addEventListener('pause', onVideoPause)
-  el.addEventListener('timeupdate', onVideoTimeUpdate)
-  el.addEventListener('loadedmetadata', onVideoLoadedMetadata)
-  el.addEventListener('volumechange', onVideoVolumeChange)
-  el.addEventListener('seeking', onVideoSeeking)
-  el.addEventListener('seeked', onVideoSeeked)
-  el.addEventListener('ended', onVideoEnded)
-  el.addEventListener('error', onVideoError)
+  // Use passive listeners for better performance where appropriate
+  el.addEventListener('play', onVideoPlay, { passive: true })
+  el.addEventListener('pause', onVideoPause, { passive: true })
+  el.addEventListener('timeupdate', onVideoTimeUpdate, { passive: true })
+  el.addEventListener('loadedmetadata', onVideoLoadedMetadata, { passive: true })
+  el.addEventListener('volumechange', onVideoVolumeChange, { passive: true })
+  el.addEventListener('seeking', onVideoSeeking, { passive: true })
+  el.addEventListener('seeked', onVideoSeeked, { passive: true })
+  el.addEventListener('ended', onVideoEnded, { passive: true })
+  el.addEventListener('error', onVideoError, { passive: true })
 }
 
 function handleVideoEvents() {
@@ -700,6 +894,15 @@ function handleEnded() {
 
 // Skip functionality functions
 async function loadSkipTimes() {
+  const cacheKey = `${id.value}-${episodeNum.value}`
+
+  // Check cache first
+  const cached = getCachedSkipTimes(cacheKey)
+  if (cached) {
+    skipTimes.value = cached.skipTimes || []
+    return
+  }
+
   try {
     console.log('⏭️ [SKIP] Loading skip times for anime:', id.value, 'episode:', episodeNum.value, 'duration:', duration.value)
     const params = duration.value > 0 ? { episodeLength: duration.value } : {}
@@ -708,6 +911,9 @@ async function loadSkipTimes() {
       skipTimes.value = response.skipTimes
       console.log('⏭️ [SKIP] Successfully loaded skip times:', skipTimes.value.length, 'entries')
       console.log('⏭️ [SKIP] Skip times details:', skipTimes.value)
+
+      // Cache the skip times
+      setCachedSkipTimes(cacheKey, response)
     } else {
       skipTimes.value = []
       console.log('⏭️ [SKIP] No skip times found for this episode')
@@ -785,6 +991,12 @@ function checkSkipAvailability() {
 // Track setup attempts to prevent infinite loops
 let setupAttempts = 0
 
+// Retry system for video errors
+let currentSourceRetries = 0
+const MAX_RETRIES_PER_SOURCE = 2
+let lastErrorType = ''
+let retryTimeout: ReturnType<typeof setTimeout> | null = null
+
 async function setupVideo() {
   const el = videoRef.value
   if (!el || !playUrl.value) {
@@ -817,7 +1029,8 @@ async function setupVideo() {
   try {
     if (isM3U8(playUrl.value)) {
       // Use Video.js for HLS streams
-      player = videojs(el, {
+      const VideoJS = await loadVideoJS()
+      player = VideoJS(el, {
         controls: false, // We use custom controls
         autoplay: true, // Enable autoplay
         muted: false, // Don't mute by default
@@ -856,19 +1069,16 @@ async function setupVideo() {
       // Attach video element events BEFORE setting source
       handleVideoEvents()
 
-      // Set up video.js event handlers
-      player.on('error', (e) => {
-        console.error('Video.js error:', e)
-        const error = player.error()
-        if (error) {
-          videoError.value = `Erreur vidéo: ${error.message || 'Unknown error'}`
-          videoLoading.value = false
-          // Try next source on error
-          setTimeout(() => {
-            tryNextSource()
-          }, 1000)
-        }
-      })
+       // Set up video.js event handlers
+       player.on('error', (e) => {
+         console.error('Video.js error:', e)
+         const error = player.error()
+         if (error) {
+           videoError.value = `Erreur vidéo: ${error.message || 'Unknown error'}`
+           videoLoading.value = false
+           handleVideoError(error, 'videojs')
+         }
+       })
 
       player.on('loadedmetadata', () => {
         console.log('Video.js loadedmetadata')
@@ -980,26 +1190,97 @@ async function setupVideo() {
   }
 }
 
+// Smart retry system that considers error types
+function isRecoverableError(error: any): boolean {
+  if (!error) return false
+
+  // Get error code/message
+  const errorCode = error.code || error.status || 0
+  const errorMessage = (error.message || '').toLowerCase()
+
+  // Network errors are recoverable
+  if (errorCode >= 500 || errorMessage.includes('network') || errorMessage.includes('timeout') ||
+      errorMessage.includes('connection') || errorMessage.includes('fetch')) {
+    return true
+  }
+
+  // HLS specific recoverable errors
+  if (errorMessage.includes('frag') || errorMessage.includes('segment') ||
+      errorMessage.includes('buffer') || errorMessage.includes('manifest')) {
+    return true
+  }
+
+  // CORS or temporary server issues
+  if (errorCode === 0 || errorMessage.includes('cors') || errorMessage.includes('blocked')) {
+    return true
+  }
+
+  return false
+}
+
+function handleVideoError(error: any, errorType: string = 'unknown') {
+  console.error(`Video error (${errorType}):`, error)
+
+  // Clear any pending retry
+  if (retryTimeout) {
+    clearTimeout(retryTimeout)
+    retryTimeout = null
+  }
+
+  // Determine if this is a new error type
+  const isNewErrorType = lastErrorType !== errorType
+  if (isNewErrorType) {
+    lastErrorType = errorType
+    currentSourceRetries = 0
+  }
+
+  const recoverable = isRecoverableError(error)
+
+  if (recoverable && currentSourceRetries < MAX_RETRIES_PER_SOURCE) {
+    // Retry the same source
+    currentSourceRetries++
+    console.log(`🔄 Retrying same source (attempt ${currentSourceRetries}/${MAX_RETRIES_PER_SOURCE}) for recoverable error`)
+
+    videoError.value = `Nouvelle tentative ${currentSourceRetries}/${MAX_RETRIES_PER_SOURCE}...`
+    videoLoading.value = true
+
+    retryTimeout = setTimeout(() => {
+      setupVideo()
+    }, 2000 * currentSourceRetries) // Exponential backoff
+
+  } else {
+    // Either not recoverable or max retries reached - try next source
+    console.log(`❌ ${recoverable ? 'Max retries reached' : 'Non-recoverable error'}, trying next source`)
+    tryNextSource()
+  }
+}
+
 function tryNextSource() {
-  if (resolvedList.value.length <= 1) return
-  
+  if (resolvedList.value.length <= 1) {
+    videoError.value = 'Aucune source alternative disponible'
+    return
+  }
+
   // Track how many sources we've tried to avoid infinite loops
   const startIndex = currentSourceIndex.value
   currentSourceIndex.value = (currentSourceIndex.value + 1) % resolvedList.value.length
-  
+
   // If we've cycled through all sources, stop trying
   if (currentSourceIndex.value === startIndex) {
     console.log('Tried all sources, giving up')
     videoError.value = 'Toutes les sources vidéo ont échoué'
     return
   }
-  
+
   const nextSource = resolvedList.value[currentSourceIndex.value]
-  
+
   if (!nextSource) return
-  
-  // Reset attempts when trying a different source
+
+  // Reset retry counters when switching sources
   setupAttempts = 0
+  currentSourceRetries = 0
+  lastErrorType = ''
+
   playUrl.value = nextSource.proxiedUrl || nextSource.url
   videoError.value = '' // Clear previous error
   videoLoading.value = true // Set loading when switching
@@ -1011,8 +1292,10 @@ function switchToSource(source: { type: string; url: string; proxiedUrl: string;
   if (index !== -1) {
     currentSourceIndex.value = index
   }
-  // Reset attempts when switching sources
+  // Reset attempts and retry counters when switching sources
   setupAttempts = 0
+  currentSourceRetries = 0
+  lastErrorType = ''
   playUrl.value = source.proxiedUrl || source.url
   videoError.value = ''
   videoLoading.value = true // Set loading when switching
@@ -1021,15 +1304,28 @@ function switchToSource(source: { type: string; url: string; proxiedUrl: string;
 
 // Episode selector functions
 async function loadAnimeMetadata() {
+  // Check cache first
+  const cached = getCachedMetadata(id.value)
+  if (cached) {
+    animeTitle.value = cached.title || cached.name || `Anime ${id.value}`
+    if (cached.languageFlags) {
+      dynamicLanguageFlags.value = cached.languageFlags
+    }
+    return
+  }
+
   try {
     const response = await $fetch(`/api/anime/${id.value}`) as any
     animeTitle.value = response?.title || response?.name || `Anime ${id.value}`
-    
+
     // Extract dynamic language flags from the response
     if (response?.languageFlags) {
       dynamicLanguageFlags.value = response.languageFlags
       console.log('Loaded dynamic language flags:', dynamicLanguageFlags.value)
     }
+
+    // Cache the metadata
+    setCachedMetadata(id.value, response)
   } catch (error) {
     console.error('Failed to load anime metadata:', error)
     animeTitle.value = `Anime ${id.value}`
@@ -1038,7 +1334,18 @@ async function loadAnimeMetadata() {
 
 async function loadEpisodesList() {
   if (episodesList.value.length > 0) return // Already loaded
-  
+
+  const cacheKey = `${id.value}-${season.value}-${lang.value}`
+
+  // Check cache first
+  const cached = getCachedEpisodes(cacheKey)
+  if (cached) {
+    episodesList.value = cached.episodes || []
+    const currentEp = episodesList.value.find(ep => ep.episode === episodeNum.value)
+    currentEpisodeTitle.value = currentEp?.title || formattedEpisodeDisplay.value
+    return
+  }
+
   loadingEpisodes.value = true
   try {
     const url = `/api/anime/episodes/${id.value}/${season.value}/${lang.value}`
@@ -1046,10 +1353,13 @@ async function loadEpisodesList() {
     const response = await $fetch(url) as any
     episodesList.value = (response?.episodes || []) as Array<{ episode: number; title?: string; url: string; urls?: string[] }>
     console.log('Loaded episodes:', episodesList.value)
-    
+
     // Update current episode title
     const currentEp = episodesList.value.find(ep => ep.episode === episodeNum.value)
     currentEpisodeTitle.value = currentEp?.title || formattedEpisodeDisplay.value
+
+    // Cache the episodes
+    setCachedEpisodes(cacheKey, response)
   } catch (error) {
     console.error('Failed to load episodes:', error)
     episodesList.value = []
@@ -1071,7 +1381,7 @@ function selectEpisode(episodeNumber: number) {
 
 function toggleEpisodesPanel() {
   showEpisodes.value = !showEpisodes.value
-  if (showEpisodes.value && episodesList.value.length === 0) {
+  if (showEpisodes.value && episodesList.value.length === 0 && !loadingEpisodes.value) {
     loadEpisodesList()
   }
 }
@@ -1113,6 +1423,10 @@ onBeforeUnmount(() => {
   if (resolveTimeout) {
     clearTimeout(resolveTimeout)
     resolveTimeout = null
+  }
+  if (retryTimeout) {
+    clearTimeout(retryTimeout)
+    retryTimeout = null
   }
 
   // Clear skip timeout
@@ -1158,12 +1472,27 @@ async function resolveEpisode() {
   notice.value = ''
   playUrl.value = ''
   resolvedList.value = []
-  
-  // Reset setup attempts for new episode
+
+  // Reset setup attempts and retry counters for new episode
   setupAttempts = 0
-  
+  currentSourceRetries = 0
+  lastErrorType = ''
+
+  const cacheKey = getCacheKey(id.value, season.value, lang.value, episodeNum.value)
   console.log(`🎬 Resolving episode: ${id.value}/${season.value}/${lang.value}/${episodeNum.value}`)
-  
+
+  // Check cache first
+  const cachedUrls = getCachedUrls(cacheKey)
+  if (cachedUrls) {
+    console.log('✅ Using cached resolved URLs')
+    resolvedList.value = cachedUrls
+    currentSourceIndex.value = 0
+    const hlsFirst = cachedUrls.find((u: any) => u.type === "hls") || cachedUrls[0];
+    playUrl.value = hlsFirst.proxiedUrl || hlsFirst.url;
+    resolving.value = false
+    return
+  }
+
   try {
     // Optimize: Only check priority languages first, then expand if needed
     const priorityLanguages: ('vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj')[] = 
@@ -1255,52 +1584,75 @@ async function resolveEpisode() {
       }
     }))
 
-    // Try candidates in order, with smart fallback for failed providers
+    // Try candidates sequentially for better reliability (less server load)
     let resolvedUrls: any[] = []
     let lastError = ''
-    
-    for (let i = 0; i < Math.min(candidates.length, 3); i++) { // Try up to 3 candidates
+
+    // Process candidates sequentially to avoid overwhelming servers
+    for (let i = 0; i < Math.min(candidates.length, 3); i++) {
       const targetUrl = candidates[i]
       if (!targetUrl) continue
-      
+
       console.log(`🎯 Trying candidate ${i + 1}/${Math.min(candidates.length, 3)}: ${targetUrl}`)
-      
+
       try {
         // Resolve the provider URL to actual video stream
-        const encoder = new TextEncoder();
-        const data = encoder.encode(targetUrl);
+        const encoder = new TextEncoder()
+        const data = encoder.encode(targetUrl)
         const base64 = btoa(String.fromCharCode(...data))
           .replace(/\+/g, "-")
           .replace(/\//g, "_")
-          .replace(/=+$/, "");
-        
-        let referer: string | undefined;
+          .replace(/=+$/, "")
+
+        let referer: string | undefined
         try {
-          const u = new URL(targetUrl);
-          referer = u.origin + "/";
+          const u = new URL(targetUrl)
+          referer = u.origin + "/"
         } catch {}
-        
+
         const resolveResponse = await $fetch<any>("/api/player/resolve", {
           params: {
             u64: base64,
             referer,
             ...(debug.value ? { debug: "1" } : {}),
           },
-          timeout: 6000, // Reduce to 6s for faster failure detection
-        });
-        
+          timeout: 4000, // Reduced to 4s for faster failure detection
+        })
+
         if (resolveResponse?.ok && resolveResponse?.urls?.length > 0) {
           console.log(`✅ Successfully resolved candidate ${i + 1}: ${resolveResponse.urls.length} URLs found`)
           resolvedUrls = resolveResponse.urls
-          break // Success! Stop trying other candidates
+          break // Use the first successful result
         } else {
-          lastError = resolveResponse?.message || "No URLs found"
-          console.warn(`❌ Candidate ${i + 1} failed: ${lastError}`)
+          const error = resolveResponse?.message || "No URLs found"
+          console.warn(`❌ Candidate ${i + 1} failed: ${error}`)
+          lastError = error
         }
       } catch (error: any) {
-        lastError = error?.message || 'Network error'
-        console.warn(`❌ Candidate ${i + 1} error: ${lastError}`)
+        const errorMsg = error?.message || 'Network error'
+        console.warn(`❌ Candidate ${i + 1} error: ${errorMsg}`)
+        lastError = errorMsg
       }
+    }
+    try {
+      const results = await Promise.allSettled(resolvePromises)
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value) {
+          resolvedUrls = result.value
+          break // Use the first successful result
+        }
+      }
+
+      // If no candidates succeeded, collect error messages
+      if (resolvedUrls.length === 0) {
+        const errors = results
+          .filter(r => r.status === 'rejected')
+          .map(r => r.reason?.message || 'Unknown error')
+        lastError = errors.length > 0 ? errors.join(', ') : 'All candidates failed'
+      }
+    } catch (error: any) {
+      lastError = error?.message || 'Parallel resolution failed'
+      console.error('❌ Parallel resolution error:', error)
     }
     
     if (resolvedUrls.length === 0) {
@@ -1312,6 +1664,10 @@ async function resolveEpisode() {
     currentSourceIndex.value = 0
     const hlsFirst = resolvedUrls.find((u: any) => u.type === "hls") || resolvedUrls[0];
     playUrl.value = hlsFirst.proxiedUrl || hlsFirst.url;
+
+    // Cache the resolved URLs
+    setCachedUrls(cacheKey, resolvedUrls)
+    saveUrlCache()
   } catch (e: any) {
     resolveError.value = e?.message || 'Erreur de résolution'
   } finally {
@@ -1325,59 +1681,176 @@ watch([showPlayer, playUrl], async () => {
   setupVideo()
 })
 
-// Preload next episode for faster navigation
+// Preload next episode URLs for faster navigation
 async function preloadNextEpisode() {
   try {
     const nextEpisodeNum = episodeNum.value + 1
+    const cacheKey = getCacheKey(id.value, season.value, lang.value, nextEpisodeNum)
+
+    // Check if already cached
+    if (getCachedUrls(cacheKey)) {
+      console.log(`🚀 Next episode ${nextEpisodeNum} already cached`)
+      return
+    }
+
     const nextEpisodeUrl = `/api/anime/episodes/${id.value}/${season.value}/${lang.value}`
-    
+
     // Prefetch the episodes list for next episode
     const response = await $fetch(nextEpisodeUrl) as any
     const episodes = response?.episodes || []
     const nextEpisode = episodes.find((ep: any) => ep.episode === nextEpisodeNum)
-    
+
     if (nextEpisode && nextEpisode.urls && nextEpisode.urls.length > 0) {
-      // Preload the first URL of the next episode
-      const nextUrl = nextEpisode.urls[0]
-      console.log(`🚀 Preloading next episode ${nextEpisodeNum}:`, nextUrl)
-      
-      // Create a hidden link element to prefetch the URL
-      const link = document.createElement('link')
-      link.rel = 'prefetch'
-      link.href = nextUrl
-      document.head.appendChild(link)
-      
-      // Clean up after a short delay
-      setTimeout(() => {
-        document.head.removeChild(link)
-      }, 5000)
+      // Pre-resolve the next episode URLs in background
+      const firstUrl = nextEpisode.urls[0]
+      console.log(`🚀 Pre-resolving next episode ${nextEpisodeNum}:`, firstUrl)
+
+      // Start background resolution (don't await)
+      resolveEpisodeInBackground(id.value, season.value, lang.value, nextEpisodeNum, nextEpisode.urls)
+        .catch(error => console.debug('Background preload failed:', error))
     }
   } catch (error) {
     console.debug('Failed to preload next episode:', error)
   }
 }
 
-// Initial setup after component mounts
-onMounted(async () => {
-  // Load saved progress first
-  await loadSavedProgress()
-  
-  // Start metadata and episode loading immediately (before route params are fully reactive)
-  const metadataPromise = loadAnimeMetadata().catch(() => null)
-  const episodesPromise = loadEpisodesList().catch(() => null)
-  
-  // Small delay to ensure route params are fully reactive
-  await nextTick()
-  await new Promise(resolve => setTimeout(resolve, 100))
-  
-  // Start resolving episode immediately (most critical)
-  const resolvePromise = resolveEpisode()
-  
-  // Wait only for episode resolution
-  await resolvePromise
-  
-  // Preload next episode in background (non-blocking)
-  preloadNextEpisode().catch(() => null)
+// Background episode resolution for preloading
+async function resolveEpisodeInBackground(animeId: string, season: string, lang: string, episodeNum: number, candidateUrls: string[]) {
+  const cacheKey = getCacheKey(animeId, season, lang, episodeNum)
+
+  // Check cache again in case it was resolved while we were waiting
+  if (getCachedUrls(cacheKey)) {
+    return
+  }
+
+  console.log(`🔄 Background resolving episode: ${animeId}/${season}/${lang}/${episodeNum}`)
+
+  // Sort candidates by provider reliability
+  const candidates = candidateUrls.sort((a, b) => {
+    const getReliability = (url: string) => {
+      try {
+        const hostname = new URL(url).hostname.toLowerCase()
+        if (hostname.includes('sibnet')) return 10
+        if (hostname.includes('streamtape')) return 8
+        if (hostname.includes('vidmoly')) return 7
+        if (hostname.includes('uqload')) return 5
+        if (hostname.includes('doodstream')) return 4
+        if (hostname.includes('myvi')) return 3
+        if (hostname.includes('sendvid')) return 1
+        return 0
+      } catch {
+        return 0
+      }
+    }
+    return getReliability(b) - getReliability(a)
+  })
+
+  // Try candidates in parallel (same logic as main resolveEpisode)
+  const resolvePromises = candidates.slice(0, 3).map(async (targetUrl) => {
+    if (!targetUrl) return null
+
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(targetUrl);
+      const base64 = btoa(String.fromCharCode(...data))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+
+      let referer: string | undefined;
+      try {
+        const u = new URL(targetUrl);
+        referer = u.origin + "/";
+      } catch {}
+
+      const resolveResponse = await $fetch<any>("/api/player/resolve", {
+        params: {
+          u64: base64,
+          referer,
+        },
+        timeout: 8000, // Longer timeout for background loading
+      });
+
+      if (resolveResponse?.ok && resolveResponse?.urls?.length > 0) {
+        return resolveResponse.urls
+      }
+    } catch (error) {
+      // Silent fail for background loading
+    }
+    return null
+  })
+
+  try {
+    const results = await Promise.allSettled(resolvePromises)
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value) {
+        // Process URLs the same way as main resolution
+        const extractedUrls = result.value
+        const uniqueUrls = new Map<string, any>()
+        for (const urlData of extractedUrls) {
+          if (!uniqueUrls.has(urlData.url)) {
+            const providerInfo = getProviderInfo(urlData.url)
+            uniqueUrls.set(urlData.url, {
+              type: urlData.type === 'hls' ? 'hls' : urlData.type === 'mp4' ? 'mp4' : 'unknown',
+              url: urlData.url,
+              proxiedUrl: `/api/proxy?url=${encodeURIComponent(urlData.url)}&rewrite=1`,
+              quality: urlData.quality,
+              provider: providerInfo ? {
+                hostname: providerInfo.hostname,
+                reliability: providerInfo.reliability,
+                description: providerInfo.description
+              } : null
+            })
+          }
+        }
+
+        const finalUrls = Array.from(uniqueUrls.values()).sort((a, b) => {
+          const reliabilityA = a.provider?.reliability || 0
+          const reliabilityB = b.provider?.reliability || 0
+          return reliabilityB - reliabilityA
+        })
+
+        if (finalUrls.length > 0) {
+          setCachedUrls(cacheKey, finalUrls)
+          saveUrlCache()
+          console.log(`✅ Background resolved episode ${animeId}/${season}/${lang}/${episodeNum}: ${finalUrls.length} URLs cached`)
+        }
+        break
+      }
+    }
+  } catch (error) {
+    console.debug('Background resolution failed:', error)
+  }
+}
+
+  // Initial setup after component mounts
+  onMounted(async () => {
+    // Load URL cache from sessionStorage
+    loadUrlCache()
+
+    // Small delay to ensure route params are fully reactive
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    // Start ALL API calls in parallel for maximum speed
+    const [
+      progressResult,
+      metadataResult,
+      skipResult
+    ] = await Promise.allSettled([
+      loadSavedProgress().catch(() => null),
+      loadAnimeMetadata().catch(() => null),
+      loadSkipTimes().catch(() => null)
+    ])
+
+    // Start resolving episode immediately (most critical)
+    const resolvePromise = resolveEpisode()
+
+    // Wait only for episode resolution
+    await resolvePromise
+
+    // Preload next episode in background (non-blocking)
+    preloadNextEpisode().catch(() => null)
   
   // Ensure video element events are set up immediately
   await nextTick()
@@ -1418,24 +1891,30 @@ onMounted(async () => {
 
 // Re-resolve when params change (e.g., after fallback navigation) - debounced to prevent rapid calls
 let resolveTimeout: ReturnType<typeof setTimeout> | null = null
+let lastResolvedParams = ''
 watch([season, lang, episodeNum], () => {
   if (resolveTimeout) clearTimeout(resolveTimeout)
   resolveTimeout = setTimeout(() => {
-    // Reset language availability when switching episodes/languages
-    availableLanguages.value = {
-      vostfr: false,
-      vf: false,
-      va: false,
-      var: false,
-      vkr: false,
-      vcn: false,
-      vqc: false,
-      vf1: false,
-      vf2: false,
-      vj: false
+    const currentParams = `${id.value}-${season.value}-${lang.value}-${episodeNum.value}`
+    // Only re-resolve if params actually changed
+    if (currentParams !== lastResolvedParams) {
+      lastResolvedParams = currentParams
+      // Reset language availability when switching episodes/languages
+      availableLanguages.value = {
+        vostfr: false,
+        vf: false,
+        va: false,
+        var: false,
+        vkr: false,
+        vcn: false,
+        vqc: false,
+        vf1: false,
+        vf2: false,
+        vj: false
+      }
+      resolveEpisode()
+      // Skip times will be loaded automatically when video metadata loads
     }
-    resolveEpisode()
-    // Skip times will be loaded automatically when video metadata loads
   }, 100) // Small debounce to handle rapid param changes
 })
 

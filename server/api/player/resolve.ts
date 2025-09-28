@@ -286,7 +286,7 @@ export default defineEventHandler(async (event) => {
     
     // Create AbortController for timeout
     const controller = new AbortController()
-    const timeoutMs = 8000 // 8 second timeout for faster failure recovery
+    const timeoutMs = 5000 // 5 second timeout for faster failure recovery
     const timeoutId = setTimeout(() => {
       controller.abort()
     }, timeoutMs)
@@ -325,7 +325,7 @@ export default defineEventHandler(async (event) => {
           uniqueUrls.set(urlData.url, {
             type: urlData.type === 'hls' ? 'hls' : urlData.type === 'mp4' ? 'mp4' : 'unknown',
             url: urlData.url,
-            proxiedUrl: `/api/proxy?url=${encodeURIComponent(urlData.url)}&rewrite=1`,
+            proxiedUrl: `/api/proxy?url=${encodeURIComponent(urlData.url)}&referer=${encodeURIComponent(url)}&origin=${encodeURIComponent(new URL(url).origin)}&rewrite=1`,
             quality: urlData.quality,
             provider: providerInfo ? {
               hostname: providerInfo.hostname,

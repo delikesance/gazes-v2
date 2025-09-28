@@ -73,14 +73,14 @@ export default defineEventHandler(async (event) => {
     const html = await response.text()
     const animeData = parseAnimePage(html)
 
-    // Scrape language flags from the first available season
+    // Scrape language flags from the first available season (with timeout for speed)
     if (animeData.seasons && animeData.seasons.length > 0) {
         const firstSeason = animeData.seasons[0]
         if (!firstSeason?.url) {
             return animeData
         }
         let seasonUrl = firstSeason.url
-        
+
         if (seasonUrl.startsWith('/')) {
             seasonUrl = `https://anime-sama.fr/catalogue${seasonUrl}`
         } else if (!seasonUrl.startsWith('http')) {
@@ -88,13 +88,20 @@ export default defineEventHandler(async (event) => {
         }
 
         try {
+            // Add timeout for language flags scraping to avoid slow loading
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
+
             const seasonResponse = await fetch(seasonUrl, {
                 headers: {
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                     'User-Agent': USER_AGENT,
                 },
                 redirect: 'follow',
+                signal: controller.signal
             })
+
+            clearTimeout(timeoutId)
 
             if (seasonResponse.ok) {
                 const seasonHtml = await seasonResponse.text()
@@ -102,7 +109,7 @@ export default defineEventHandler(async (event) => {
                 return { ...animeData, languageFlags }
             }
         } catch (error) {
-            // Silent fail for language flags
+            // Silent fail for language flags - don't let this slow down the main response
         }
     }
 

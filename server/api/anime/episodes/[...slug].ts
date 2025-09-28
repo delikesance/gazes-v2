@@ -17,6 +17,9 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
 
     // For films, only fetch the language-specific page where newSPF() calls are located
     console.log('Fetching film titles from lang page:', `https://anime-sama.fr/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 4000) // 4 second timeout
+
     const langPageRes = await fetch(`https://anime-sama.fr/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`, {
         headers: {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -24,7 +27,10 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
         },
         redirect: 'follow',
         referrerPolicy: 'strict-origin-when-cross-origin',
+        signal: controller.signal
     })
+
+    clearTimeout(timeoutId)
 
     if (langPageRes.ok) {
         const langPageHtml = await langPageRes.text()
@@ -279,6 +285,9 @@ export default defineEventHandler(async (event) => {
     let sourceText = ''
 
     try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
+
         const jsRes = await fetch(jsUrl, {
             headers: {
                 'Accept': '*/*',
@@ -286,7 +295,10 @@ export default defineEventHandler(async (event) => {
             },
             redirect: 'follow',
             referrerPolicy: 'strict-origin-when-cross-origin',
+            signal: controller.signal
         })
+
+        clearTimeout(timeoutId)
 
         if (jsRes.ok) {
             const jsText = await jsRes.text()
@@ -300,6 +312,9 @@ export default defineEventHandler(async (event) => {
     if (!sourceText) {
         const seasonUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(seasonFormatted)}/${encodeURIComponent(lang)}/`
         try {
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 4000) // 4 second timeout
+
             const res = await fetch(seasonUrl, {
                 headers: {
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -307,7 +322,10 @@ export default defineEventHandler(async (event) => {
                 },
                 redirect: 'follow',
                 referrerPolicy: 'strict-origin-when-cross-origin',
+                signal: controller.signal
             })
+
+            clearTimeout(timeoutId)
 
             if (res.ok) {
                 sourceText = await res.text()

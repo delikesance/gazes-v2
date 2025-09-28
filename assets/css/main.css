@@ -101,3 +101,144 @@ p  { @apply leading-relaxed; }
 
     .poster-filler-6 { display: none; }
     @media (min-width: 1280px) { .poster-filler-6 { display: block; } }
+
+/* 🚀 Critical Performance Optimizations */
+
+/* Critical loading states for instant feedback */
+.loading {
+  opacity: 0;
+  animation: criticalFadeIn 0.15s ease-out forwards;
+}
+
+.loaded {
+  opacity: 1;
+}
+
+@keyframes criticalFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Ultra-fast loading spinner */
+.loading-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #7c3aed;
+  animation: criticalSpin 0.8s linear infinite;
+}
+
+@keyframes criticalSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Lazy loading optimizations */
+.lazy-image {
+  opacity: 0;
+  transform: scale(1.05);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  will-change: opacity, transform;
+}
+
+.lazy-image.loaded {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.lazy-bg {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  will-change: opacity;
+}
+
+.lazy-bg.bg-loaded {
+  opacity: 1;
+}
+
+/* Performance optimizations */
+* {
+  box-sizing: border-box;
+}
+
+/* Optimize font loading and rendering */
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-display: swap;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* GPU acceleration for smooth animations */
+.gpu-accelerated {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+/* Optimize button interactions */
+.btn {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Critical path optimizations */
+.critical-path {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 200px;
+}
+
+/* Reduce layout shifts */
+.aspect-ratio-box {
+  aspect-ratio: var(--aspect-ratio, 16/9);
+}
+
+/* Optimize image loading */
+img {
+  max-width: 100%;
+  height: auto;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+
+/* Performance-focused animations */
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 30px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.slide-in-up {
+  animation: slideInUp 0.4s ease-out;
+}
+
+/* Optimize focus states for accessibility */
+.focus-visible:focus-visible {
+  outline: 2px solid #7c3aed;
+  outline-offset: 2px;
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

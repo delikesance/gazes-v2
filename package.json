@@ -30,8 +30,6 @@
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
-    "@iconify-json/simple-line-icons": "^1.2.1",
-    "@tailwindcss/line-clamp": "^0.4.4",
-    "@types/pg": "^8.15.5"
+    "@iconify-json/simple-line-icons": "^1.2.1"
   }
 }
