@@ -97,7 +97,7 @@ export default defineNuxtConfig({
   },
 
    nitro: {
-     preset: 'vercel',
+     preset: 'node-server',
      compressPublicAssets: true,
      prerender: {
        routes: ['/']
