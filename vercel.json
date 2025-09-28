@@ -1,3 +1,11 @@
 {
-  "installCommand": "rm -rf node_modules package-lock.json && npm install"
+  "buildCommand": "npm run build",
+  "outputDirectory": ".output/public",
+  "installCommand": "npm install",
+  "framework": "nuxtjs",
+  "functions": {
+    ".output/server/index.mjs": {
+      "maxDuration": 30
+    }
+  }
 }

@@ -1,0 +1,52 @@
+# Development files
+.env.local
+.env.development
+.env.test
+
+# Build artifacts
+.output
+.nuxt
+dist
+
+# Dependencies
+node_modules
+
+# IDE files
+.vscode
+.idea
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+
+# GitHub
+.github
+
+# Documentation
+README.md
+*.md
+
+# Test files
+test
+tests
+__tests__
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# Logs
+*.log
+logs
+
+# Temporary files
+tmp
+temp

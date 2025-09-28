@@ -36,7 +36,7 @@ export default defineNuxtConfig({
     }
   },
 
-  // Advanced Vite optimizations
+  // Simplified Vite configuration for Vercel compatibility
   vite: {
     resolve: {
       dedupe: ['vue', 'vue-router', '@vue/runtime-core', '@vue/runtime-dom']
@@ -44,50 +44,16 @@ export default defineNuxtConfig({
     build: {
       rollupOptions: {
         external: [
-          'bcryptjs', // Exclude bcryptjs from client bundle
-          '@supabase/supabase-js', // Exclude Supabase from client bundle
-          '@supabase/postgrest-js', // Exclude PostgREST from client bundle
-          'pg', // Exclude PostgreSQL client from client bundle
-          'cheerio' // Exclude Cheerio from client bundle
-        ],
-        output: {
-          manualChunks: (id) => {
-            // Split large libraries into separate chunks
-            if (id.includes('video.js') || id.includes('hls.js')) {
-              return 'video-player'
-            }
-            if (id.includes('jsonwebtoken')) {
-              return 'auth'
-            }
-            if (id.includes('@nuxt/icon')) {
-              return 'icons'
-            }
-            // Split Vue ecosystem
-            if (id.includes('vue') || id.includes('vue-router')) {
-              return 'vue-vendor'
-            }
-            // Split UI components
-            if (id.includes('tailwindcss') || id.includes('@nuxt')) {
-              return 'ui-vendor'
-            }
-          }
-        }
+          'bcryptjs',
+          '@supabase/supabase-js',
+          '@supabase/postgrest-js',
+          'pg',
+          'cheerio'
+        ]
       },
-      // Enable source maps only in development
-      sourcemap: process.env.NODE_ENV === 'development',
-      // Optimize chunk size
-      chunkSizeWarningLimit: 1000, // Increase limit to reduce warnings
-      // Aggressive minification
-      minify: 'terser',
-      terserOptions: {
-        compress: {
-          drop_console: process.env.NODE_ENV === 'production',
-          drop_debugger: process.env.NODE_ENV === 'production',
-          pure_funcs: process.env.NODE_ENV === 'production' ? ['console.log', 'console.info', 'console.debug'] : []
-        }
-      }
+      sourcemap: false,
+      minify: 'terser'
     },
-    // Optimize dependencies
     optimizeDeps: {
       include: [
         'video.js',
@@ -96,15 +62,7 @@ export default defineNuxtConfig({
         'vue',
         'vue-router'
       ],
-      exclude: ['@nuxt/devtools'] // Exclude dev tools from optimization
-    },
-    // CSS optimization
-    css: {
-      preprocessorOptions: {
-        scss: {
-          additionalData: '@use "~/assets/css/main.css" as *;'
-        }
-      }
+      exclude: ['@nuxt/devtools']
     }
   },
 
@@ -117,9 +75,7 @@ export default defineNuxtConfig({
 
   // CSS optimization
   tailwindcss: {
-    // Enable JIT mode for better performance
     config: {
-      mode: 'jit',
       content: [
         "./components/**/*.{js,vue,ts}",
         "./layouts/**/*.vue",
@@ -141,9 +97,7 @@ export default defineNuxtConfig({
   },
 
   nitro: {
-    // Enable compression
     compressPublicAssets: true,
-    // Optimize prerendering
     prerender: {
       routes: ['/']
     },
@@ -156,23 +110,10 @@ export default defineNuxtConfig({
           'access-control-allow-credentials': 'true'
         }
       },
-      // Aggressive caching for static assets
-      '/favicon.ico': { cache: { maxAge: 86400 * 30 } }, // 30 days
-      '/robots.txt': { cache: { maxAge: 86400 * 7 } }, // 7 days
-      '/sw.js': { cache: { maxAge: 0 } }, // No cache for service worker
-      // Cache Nuxt chunks aggressively
+      '/favicon.ico': { cache: { maxAge: 86400 * 30 } },
+      '/robots.txt': { cache: { maxAge: 86400 * 7 } },
+      '/sw.js': { cache: { maxAge: 0 } },
       '/_nuxt/**': { cache: { maxAge: 86400 * 30, immutable: true } }
-    },
-    // Optimize bundle
-    experimental: {
-      wasm: true
-    },
-    // HTTP/2 optimizations
-    http2: {
-      push: [
-        '/_nuxt/entry.css',
-        '/_nuxt/entry.js'
-      ]
     }
   },
 
@@ -182,7 +123,7 @@ export default defineNuxtConfig({
 
   // Performance optimizations
   experimental: {
-    payloadExtraction: false // Reduce initial bundle size
+    payloadExtraction: false
   },
 
   // Critical CSS and resource hints
