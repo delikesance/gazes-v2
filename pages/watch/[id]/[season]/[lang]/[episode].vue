@@ -1445,23 +1445,33 @@ async function fetchEpisodesFor(targetLang: 'vostfr' | 'vf' | 'va' | 'var' | 'vk
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const response = await $fetch(`/api/anime/episodes/${id.value}/${season.value}/${targetLang}`) as any
-      return (response?.episodes || []) as Array<{ episode: number; title?: string; url: string; urls?: string[] }>
-    } catch (error) {
-      console.warn(`Episode fetch attempt ${attempt}/${maxRetries} failed for ${targetLang}:`, error)
-      
-      // If this is the last attempt, throw the error
-      if (attempt === maxRetries) {
-        throw error
+      const episodes = (response?.episodes || []) as Array<{ episode: number; title?: string; url: string; urls?: string[] }>
+
+      // Validate that we got actual episodes with URLs
+      if (episodes.length > 0 && episodes.some(ep => ep.urls && ep.urls.length > 0)) {
+        console.log(`✅ Found ${episodes.length} episodes for ${targetLang}`)
+        return episodes
+      } else {
+        console.warn(`⚠️ Language ${targetLang} returned no valid episodes`)
+        return [] // Return empty array instead of throwing
       }
-      
+    } catch (error: any) {
+      console.warn(`Episode fetch attempt ${attempt}/${maxRetries} failed for ${targetLang}:`, error?.message || error)
+
+      // If this is the last attempt, return empty array instead of throwing
+      if (attempt === maxRetries) {
+        console.warn(`❌ All attempts failed for ${targetLang}, marking as unavailable`)
+        return []
+      }
+
       // Wait before retrying (shorter delay for faster failure recovery)
       const delay = Math.min(500 * Math.pow(2, attempt - 1), 2000)
       await new Promise(resolve => setTimeout(resolve, delay))
     }
   }
-  
+
   // This should never be reached, but TypeScript needs it
-  throw new Error('Max retries exceeded')
+  return []
 }
 
 
@@ -1518,17 +1528,17 @@ async function resolveEpisode() {
     // If not found in priority languages, check remaining languages
     if (!ep) {
       const remainingLanguages = ['var', 'vkr', 'vcn', 'vqc', 'vf1', 'vf2', 'vj'].filter(l => !priorityLanguages.includes(l as any))
-      const remainingPromises = remainingLanguages.map(langCode => 
+      const remainingPromises = remainingLanguages.map(langCode =>
         fetchEpisodesFor(langCode as any, 2).then(episodes => ({ lang: langCode, episodes })).catch(() => ({ lang: langCode, episodes: [] }))
       )
-      
+
       const remainingResults = await Promise.all(remainingPromises)
-      
+
       // Update available languages for remaining results
       remainingResults.forEach(({ lang, episodes }) => {
         availableLanguages.value[lang as keyof typeof availableLanguages.value] = episodes.length > 0
       })
-      
+
       // Check remaining languages for the episode
       for (const { lang: altLang, episodes: altEpisodes } of remainingResults) {
         if (altLang !== lang.value && altEpisodes.length > 0) {
@@ -1545,6 +1555,28 @@ async function resolveEpisode() {
           }
         }
       }
+
+      // If requested language has no episodes at all, try to find ANY available language
+      if (currentLangResult && currentLangResult.episodes.length === 0) {
+        console.log(`⚠️ Language ${lang.value} has no episodes, checking for any available language...`)
+        const allResults = [...priorityResults, ...remainingResults]
+        for (const { lang: altLang, episodes: altEpisodes } of allResults) {
+          if (altLang !== lang.value && altEpisodes.length > 0) {
+            const altEp = altEpisodes.find((e: any) => Number(e.episode) === episodeNum.value)
+            if (altEp) {
+              console.log(`🔄 Switching from unavailable ${lang.value} to available ${altLang}`)
+              notice.value = `Langue ${lang.value.toUpperCase()} indisponible. Basculement en ${altLang.toUpperCase()}.`
+              await navigateTo({
+                path: `/watch/${id.value}/${season.value}/${altLang}/${episodeNum.value}`,
+                query: { fallback: '1' },
+                replace: true,
+              })
+              return
+            }
+          }
+        }
+      }
+
       console.log(`❌ Episode ${episodeNum.value} not found in any available language`)
     }
 
@@ -1610,23 +1642,29 @@ async function resolveEpisode() {
           referer = u.origin + "/"
         } catch {}
 
-        const resolveResponse = await $fetch<any>("/api/player/resolve", {
-          params: {
-            u64: base64,
-            referer,
-            ...(debug.value ? { debug: "1" } : {}),
-          },
-          timeout: 4000, // Reduced to 4s for faster failure detection
-        })
+        try {
+          const resolveResponse = await $fetch<any>("/api/player/resolve", {
+            params: {
+              u64: base64,
+              referer,
+              ...(debug.value ? { debug: "1" } : {}),
+            },
+            timeout: 4000, // Reduced to 4s for faster failure detection
+          })
 
-        if (resolveResponse?.ok && resolveResponse?.urls?.length > 0) {
-          console.log(`✅ Successfully resolved candidate ${i + 1}: ${resolveResponse.urls.length} URLs found`)
-          resolvedUrls = resolveResponse.urls
-          break // Use the first successful result
-        } else {
-          const error = resolveResponse?.message || "No URLs found"
-          console.warn(`❌ Candidate ${i + 1} failed: ${error}`)
-          lastError = error
+          if (resolveResponse?.ok && resolveResponse?.urls?.length > 0) {
+            console.log(`✅ Successfully resolved candidate ${i + 1}: ${resolveResponse.urls.length} URLs found`)
+            resolvedUrls = resolveResponse.urls
+            break // Use the first successful result
+          } else {
+            const error = resolveResponse?.message || "No URLs found"
+            console.warn(`❌ Candidate ${i + 1} failed: ${error}`)
+            lastError = error
+          }
+        } catch (resolveError: any) {
+          const errorMsg = resolveError?.message || 'Network error during resolution'
+          console.warn(`❌ Candidate ${i + 1} resolution error: ${errorMsg}`)
+          lastError = errorMsg
         }
       } catch (error: any) {
         const errorMsg = error?.message || 'Network error'

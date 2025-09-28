@@ -156,11 +156,12 @@ export default defineEventHandler(async (event) => {
 
   console.log('[proxy] Content-Type:', contentType, 'Is M3U8:', isM3U8, 'Rewrite enabled:', rewrite)
 
-  // Disallow proxying arbitrary HTML pages: this endpoint is for media only.
+  // Check if we got HTML instead of media - this indicates the URL is not a valid media file
   if (!isM3U8 && /text\/html|application\/xhtml\+xml/i.test(contentType)) {
-    setResponseStatus(event, 415, 'Unsupported Media Type')
+    console.warn('[proxy] Received HTML response instead of media for URL:', target.toString(), 'Content-Type:', contentType)
+    setResponseStatus(event, 502, 'Bad Gateway')
     setResponseHeader(event, 'Content-Type', 'application/json; charset=utf-8')
-    return JSON.stringify({ ok: false, message: 'This proxy only serves media (m3u8/mp4). Use /api/player/resolve for embed pages.' })
+    return JSON.stringify({ ok: false, message: 'Invalid media URL - received HTML instead of video content' })
   }
 
   if (isM3U8 && rewrite && res.ok) {
