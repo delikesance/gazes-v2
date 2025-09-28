@@ -1,4 +1,0 @@
-const a=".login-page[data-v-9425b2a7]{min-height:100vh;--tw-bg-opacity:1;background-color:rgb(24 24 27/var(--tw-bg-opacity,1))}";
-
-export { a };
-//# sourceMappingURL=login-styles-1.mjs-CtfKEoIC.mjs.map

@@ -1,4 +1,0 @@
-const a=".register-page[data-v-3ab3e793]{min-height:100vh;--tw-bg-opacity:1;background-color:rgb(24 24 27/var(--tw-bg-opacity,1))}";
-
-export { a };
-//# sourceMappingURL=register-styles-1.mjs-C4Bwp-y0.mjs.map
