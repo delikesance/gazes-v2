@@ -1,22 +1,20 @@
 import { AuthService } from '~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
-  console.log('👤 [ME] Request received - checking authentication')
+  console.log('🔐 [ME] Request received')
 
   try {
-    console.log('👤 [ME] Getting user from request...')
     const user = await AuthService.getUserFromRequest(event)
-    console.log('👤 [ME] User retrieved:', user ? 'AUTHENTICATED' : 'NOT AUTHENTICATED')
 
     if (!user) {
-      console.log('❌ [ME] No authenticated user found')
+      console.log('❌ [ME] No authenticated user')
       throw createError({
         statusCode: 401,
         statusMessage: 'Non authentifié'
       })
     }
 
-    console.log('✅ [ME] User authenticated successfully:', user.username)
+    console.log('✅ [ME] User found:', user.username)
     return {
       success: true,
       user

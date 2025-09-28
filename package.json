@@ -24,12 +24,14 @@
     "hls.js": "^1.5.13",
     "jsonwebtoken": "^9.0.2",
     "nuxt": "^4.1.2",
+    "pg": "^8.16.3",
     "video.js": "^8.23.4",
     "vue": "^3.5.21",
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@iconify-json/simple-line-icons": "^1.2.1",
-    "@tailwindcss/line-clamp": "^0.4.4"
+    "@tailwindcss/line-clamp": "^0.4.4",
+    "@types/pg": "^8.15.5"
   }
 }

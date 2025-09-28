@@ -17,6 +17,7 @@ const season = ref(route.params.season as string)
 const lang = ref(route.params.lang as 'vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj')
 const episodeNum = ref(Number(route.params.episode))
 const debug = computed(() => route.query.debug === '1' || route.query.debug === 'true')
+const isContinueWatching = computed(() => route.query.continue === 'true')
 
 const showPlayer = ref(true)
 const playUrl = ref('')
@@ -641,15 +642,41 @@ function handleLoadedMetadata() {
   // Resume from saved progress if available
   if (savedProgress.value && savedProgress.value.duration > 0) {
     const resumeTime = savedProgress.value.currentTime
-    // Only resume if we're at the beginning (within first 5 seconds)
-    if ((player ? player.currentTime() : videoRef.value?.currentTime || 0) < 5) {
-      console.log('📺 Resuming from saved progress:', resumeTime, 'seconds')
+    const currentPlaybackTime = player ? player.currentTime() : videoRef.value?.currentTime || 0
+
+    // Always resume if coming from continue watching, or if we're at the beginning (within first 5 seconds)
+    const shouldResume = isContinueWatching.value || currentPlaybackTime < 5
+
+    if (shouldResume) {
+      console.log('📺 Resuming from saved progress:', resumeTime, 'seconds', isContinueWatching.value ? '(continue watching)' : '(at start)')
       if (player) {
         player.currentTime(resumeTime)
       } else if (videoRef.value) {
         videoRef.value.currentTime = resumeTime
       }
       currentTime.value = resumeTime
+
+      // Show a notice when resuming from continue watching
+      if (isContinueWatching.value) {
+        notice.value = `Repris à ${Math.floor(resumeTime / 60)}:${String(Math.floor(resumeTime % 60)).padStart(2, '0')}`
+        // Clear the notice after 3 seconds
+        setTimeout(() => {
+          notice.value = ''
+        }, 3000)
+
+        // For continue watching, try to autoplay after seeking
+        setTimeout(() => {
+          if (player && !player.playing()) {
+            player.play().catch(e => {
+              console.log('Continue watching autoplay failed, user interaction required')
+            })
+          } else if (videoRef.value && videoRef.value.paused) {
+            videoRef.value.play().catch(e => {
+              console.log('Continue watching autoplay failed, user interaction required')
+            })
+          }
+        }, 500) // Small delay to ensure seek is complete
+      }
     }
   }
 }
@@ -792,7 +819,8 @@ async function setupVideo() {
       // Use Video.js for HLS streams
       player = videojs(el, {
         controls: false, // We use custom controls
-        autoplay: false, // Handle autoplay manually
+        autoplay: true, // Enable autoplay
+        muted: false, // Don't mute by default
         preload: 'metadata',
         html5: {
           hls: {
@@ -872,10 +900,11 @@ async function setupVideo() {
       // Load the video
       player.load()
 
-      // Try to play
+      // Try to play with autoplay
       player.play().catch(e => {
-        console.log('Autoplay prevented by browser, waiting for user interaction')
+        console.log('Autoplay prevented by browser, video will start paused')
         videoLoading.value = false // Allow user interaction
+        // Don't show error for autoplay prevention - it's expected
       })
 
       // Set timeout for loading
@@ -892,6 +921,7 @@ async function setupVideo() {
       // Use native video element for MP4
       console.log('Using native video element for MP4')
       el.src = playUrl.value
+      el.autoplay = true // Enable autoplay for native video
 
       // Attach video element events
       handleVideoEvents()

@@ -5,11 +5,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     const body = await readBody(event)
-    console.log('👤 [REGISTER] Request body:', {
-      email: body.email,
-      username: body.username,
-      hasPassword: !!body.password
-    })
+    console.log('👤 [REGISTER] Request body:', { email: body.email, username: body.username, hasPassword: !!body.password })
 
     const { email, username, password } = body
 
@@ -23,44 +19,22 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    // Validate email format
-    console.log('👤 [REGISTER] Validating email format...')
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(email)) {
-      console.log('❌ [REGISTER] Invalid email format:', email)
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Format d\'email invalide'
-      })
-    }
-
-    // Validate password strength
-    console.log('👤 [REGISTER] Validating password strength...')
+    // Basic validation
     if (password.length < 6) {
-      console.log('❌ [REGISTER] Password too short:', password.length, 'characters')
+      console.log('❌ [REGISTER] Password too short')
       throw createError({
         statusCode: 400,
         statusMessage: 'Le mot de passe doit contenir au moins 6 caractères'
       })
     }
 
-    // Validate username length
-    console.log('👤 [REGISTER] Validating username length...')
-    if (username.length < 3 || username.length > 50) {
-      console.log('❌ [REGISTER] Invalid username length:', username.length)
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Le nom d\'utilisateur doit contenir entre 3 et 50 caractères'
-      })
-    }
-
     // Create user
     console.log('👤 [REGISTER] Creating user:', username, 'with email:', email)
     const user = await AuthService.createUser(email, username, password)
-    console.log('👤 [REGISTER] User created successfully:', user.username)
+    console.log('👤 [REGISTER] User created successfully')
 
     // Generate tokens
-    console.log('👤 [REGISTER] Generating tokens...')
+    console.log('👤 [REGISTER] Generating tokens for new user:', user.username)
     const tokens = AuthService.generateTokens(user)
     console.log('👤 [REGISTER] Tokens generated successfully')
 
@@ -72,11 +46,20 @@ export default defineEventHandler(async (event) => {
     console.log('✅ [REGISTER] Registration successful for user:', user.username)
     return {
       success: true,
-      message: 'Compte créé avec succès',
+      message: 'Inscription réussie',
       user
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ [REGISTER] Error occurred:', error)
+
+    // Handle specific database errors
+    if (error.message?.includes('already exists')) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Un utilisateur avec cet email existe déjà'
+      })
+    }
+
     throw error
   }
 })

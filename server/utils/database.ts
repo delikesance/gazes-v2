@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js'
 import { useRuntimeConfig } from '#imports'
 
 export interface User {
@@ -25,44 +25,29 @@ export interface WatchingProgress {
   duration: number
   lastWatchedAt: Date
   completed: boolean
+  title?: string
+  image?: string
 }
 
 export class DatabaseService {
   private static instance: DatabaseService
-  private supabase: SupabaseClient
+  private supabase: any
 
   private constructor() {
     console.log('📁 [DATABASE] Initializing Supabase connection...')
 
     const config = useRuntimeConfig()
 
-    // Log Supabase environment variables for debugging
-    console.log('📁 [DATABASE] Supabase URL:', config.supabaseUrl)
-    console.log('📁 [DATABASE] Supabase Anon Key set:', !!config.supabaseAnonKey)
-    console.log('📁 [DATABASE] Supabase JWT Secret set:', !!config.supabaseJwtSecret)
-    console.log('📁 [DATABASE] Supabase Service Role Key set:', !!config.supabaseServiceRoleKey)
-
-    // Validate required environment variables
     const supabaseUrl = config.supabaseUrl as string
-    const supabaseServiceRoleKey = config.supabaseJwtSecret as string
+    const supabaseKey = config.supabaseKey as string
 
-    if (!supabaseUrl || !supabaseServiceRoleKey) {
-      const errorMsg = 'Missing required Supabase environment variables: SUPABASE_URL and/or SUPABASE_JWT_SECRET (service role key)'
+    if (!supabaseUrl || !supabaseKey) {
+      const errorMsg = 'Missing required Supabase environment variables'
       console.error('❌ [DATABASE] ' + errorMsg)
       throw new Error(errorMsg)
     }
 
-    // Use service role key for server-side operations to bypass RLS
-    this.supabase = createClient(
-      supabaseUrl,
-      supabaseServiceRoleKey,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
+    this.supabase = createClient(supabaseUrl, supabaseKey)
 
     this.initDatabase()
   }
@@ -74,13 +59,12 @@ export class DatabaseService {
     return DatabaseService.instance
   }
 
+  public getSupabaseClient() {
+    return this.supabase
+  }
+
   private async initDatabase() {
-    console.log('📁 [DATABASE] Initializing database schema...')
-
-    // Note: Tables should be created via Supabase migrations (see database/migrations/)
-    // This method no longer creates tables programmatically
-
-    console.log('✅ [DATABASE] Database schema initialization completed')
+    console.log('📁 [DATABASE] Database schema initialization completed')
   }
 
   // User operations
@@ -106,7 +90,7 @@ export class DatabaseService {
 
       if (error) {
         console.error('📁 [DATABASE] Error creating user:', error)
-        if (error.code === '23505') { // unique constraint violation
+        if (error.code === '23505') {
           throw new Error('User with this email already exists')
         }
         throw error
@@ -137,7 +121,7 @@ export class DatabaseService {
       .single()
 
     if (error) {
-      if (error.code === 'PGRST116') { // no rows returned
+      if (error.code === 'PGRST116') {
         console.log('📁 [DATABASE] User not found:', email)
         return null
       }
@@ -163,7 +147,7 @@ export class DatabaseService {
       .single()
 
     if (error) {
-      if (error.code === 'PGRST116') { // no rows returned
+      if (error.code === 'PGRST116') {
         console.log('📁 [DATABASE] User not found:', id)
         return null
       }
@@ -191,7 +175,7 @@ export class DatabaseService {
       .single()
 
     if (error) {
-      if (error.code === 'PGRST116') { // no rows returned
+      if (error.code === 'PGRST116') {
         console.log('📁 [DATABASE] User not found:', username)
         return null
       }
@@ -279,7 +263,7 @@ export class DatabaseService {
       throw error
     }
 
-    const users = data.map(row => ({
+    const users = data.map((row: any) => ({
       id: row.id,
       email: row.email,
       username: row.username,
@@ -316,7 +300,7 @@ export class DatabaseService {
   async saveWatchingProgress(userId: string, animeId: string, season: string, episode: number, currentTime: number, duration: number): Promise<WatchingProgress> {
     console.log('📁 [DATABASE] Saving watching progress:', { userId, animeId, season, episode, currentTime, duration })
 
-    const completed = duration > 0 && currentTime >= duration * 0.9 // Consider completed if watched 90%
+    const completed = duration > 0 && currentTime >= duration * 0.9
     const now = new Date()
     const id = crypto.randomUUID()
 
@@ -371,7 +355,7 @@ export class DatabaseService {
       .single()
 
     if (error) {
-      if (error.code === 'PGRST116') { // no rows returned
+      if (error.code === 'PGRST116') {
         console.log('📁 [DATABASE] No watching progress found')
         return null
       }
@@ -409,16 +393,16 @@ export class DatabaseService {
       throw error
     }
 
-    const progress = data.map(row => ({
-      id: row.id,
-      userId: row.user_id,
-      animeId: row.anime_id,
-      season: row.season,
-      episode: row.episode,
-      currentTime: row.current_time,
-      duration: row.duration,
+    const progress: WatchingProgress[] = data.map((row: any) => ({
+      id: String(row.id),
+      userId: String(row.user_id),
+      animeId: String(row.anime_id),
+      season: String(row.season),
+      episode: Number(row.episode),
+      currentTime: Number(row.current_time),
+      duration: Number(row.duration),
       lastWatchedAt: new Date(row.last_watched_at),
-      completed: row.completed
+      completed: Boolean(row.completed)
     }))
 
     console.log('📁 [DATABASE] Found', progress.length, 'continue watching items')
@@ -466,5 +450,14 @@ export class DatabaseService {
 
     console.log('📁 [DATABASE] Episode marked as completed successfully')
     return true
+  }
+
+  // Execute raw SQL (for migrations)
+  async executeSql(sql: string): Promise<void> {
+    console.log('📁 [DATABASE] Executing SQL:', sql.substring(0, 100) + '...')
+    const { error } = await this.supabase.rpc('exec_sql', { sql })
+    if (error) {
+      throw error
+    }
   }
 }

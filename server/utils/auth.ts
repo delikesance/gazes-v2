@@ -39,7 +39,6 @@ export class AuthService {
   static generateTokens(user: User): AuthTokens {
     const config = useRuntimeConfig()
 
-    // Ensure we have valid string values with explicit typing
     const jwtSecret = (config.jwtSecret as string) || 'default-secret'
     const jwtRefreshSecret = (config.jwtRefreshSecret as string) || 'default-refresh-secret'
     const jwtExpiresIn = (config.jwtExpiresIn as string) || '7d'
@@ -59,7 +58,6 @@ export class AuthService {
       type: 'refresh'
     }
 
-    // Use explicit type assertion to match the correct overload
     const accessToken = jwt.sign(accessPayload, jwtSecret, {
       expiresIn: jwtExpiresIn,
       issuer: 'gazes-app'
@@ -192,12 +190,11 @@ export class AuthService {
   static setAuthCookies(event: H3Event, tokens: AuthTokens) {
     const config = useRuntimeConfig()
 
-    // Set HTTP-only cookies for security
     setCookie(event, 'accessToken', tokens.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      maxAge: 60 * 60 * 24 * 7,
       path: '/'
     })
 
@@ -205,7 +202,7 @@ export class AuthService {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 30, // 30 days
+      maxAge: 60 * 60 * 24 * 30,
       path: '/'
     })
   }

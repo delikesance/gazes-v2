@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS watching_progress (
   anime_id TEXT NOT NULL,
   season TEXT NOT NULL,
   episode INTEGER NOT NULL,
-  current_time REAL NOT NULL DEFAULT 0,
+  "current_time" REAL NOT NULL DEFAULT 0,
   duration REAL NOT NULL DEFAULT 0,
   last_watched_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   completed BOOLEAN DEFAULT FALSE,
@@ -32,8 +32,7 @@ CREATE TABLE IF NOT EXISTS watching_progress (
 CREATE INDEX IF NOT EXISTS idx_watching_progress_user_id ON watching_progress(user_id);
 
 -- Create index on last_watched_at for sorting recent progress
-CREATE INDEX IF NOT EXISTS idx_watching_progress_last_watched ON watching_progress(last_watched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_watching_progress_last_watched ON watching_progress("last_watched_at" DESC);
 
--- Enable Row Level Security
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE watching_progress ENABLE ROW LEVEL SECURITY;
+-- Note: Row Level Security is not enabled because this app uses custom JWT authentication
+-- instead of Supabase Auth. RLS policies would need to be implemented differently.

@@ -15,22 +15,12 @@ export default defineNuxtConfig({
       jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
       jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
       // Supabase configuration
-      supabaseUrl: process.env.gazes_SUPABASE_URL,
-      supabaseAnonKey: process.env.gazes_SUPABASE_ANON_KEY,
-      supabaseJwtSecret: process.env.gazes_SUPABASE_JWT_SECRET,
-      supabaseServiceRoleKey: process.env.gazes_SUPABASE_SERVICE_ROLE_KEY,
-      // Database configuration (for compatibility)
-      postgresUrl: process.env.gazes_POSTGRES_URL,
-      postgresPrismaUrl: process.env.gazes_POSTGRES_PRISMA_URL,
-      postgresUrlNonPooling: process.env.gazes_POSTGRES_URL_NON_POOLING,
-      postgresUser: process.env.gazes_POSTGRES_USER,
-      postgresHost: process.env.gazes_POSTGRES_HOST,
-      postgresPassword: process.env.gazes_POSTGRES_PASSWORD,
-      postgresDatabase: process.env.gazes_POSTGRES_DATABASE,
+      supabaseUrl: process.env.SUPABASE_URL,
+      supabaseKey: process.env.SUPABASE_KEY,
       // Public configuration (exposed to client-side)
       public: {
-        supabaseUrl: process.env.gazes_NEXT_PUBLIC_SUPABASE_URL,
-        supabaseAnonKey: process.env.gazes_NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        supabaseUrl: process.env.SUPABASE_URL,
+        supabaseKey: process.env.SUPABASE_KEY,
       }
     },
   // Ensure a single Vue runtime instance in the client bundle to avoid hydration issues

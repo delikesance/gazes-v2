@@ -1,10 +1,14 @@
 import { AuthService } from '~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
+  console.log('🔄 [REFRESH] Request received')
+
   try {
     const refreshToken = getCookie(event, 'refreshToken')
+    console.log('🔄 [REFRESH] Refresh token found:', !!refreshToken)
 
     if (!refreshToken) {
+      console.log('❌ [REFRESH] No refresh token')
       throw createError({
         statusCode: 401,
         statusMessage: 'Refresh token manquant'
@@ -12,12 +16,15 @@ export default defineEventHandler(async (event) => {
     }
 
     // Verify refresh token
+    console.log('🔄 [REFRESH] Verifying refresh token...')
     const payload = AuthService.verifyToken(refreshToken, 'refresh')
+    console.log('🔄 [REFRESH] Refresh token verified for user ID:', payload.userId)
 
-    // Get user from refresh token
+    // Get user
+    console.log('🔄 [REFRESH] Finding user by ID...')
     const user = await AuthService.findUserById(payload.userId)
-
     if (!user) {
+      console.log('❌ [REFRESH] User not found')
       throw createError({
         statusCode: 401,
         statusMessage: 'Utilisateur non trouvé'
@@ -25,25 +32,23 @@ export default defineEventHandler(async (event) => {
     }
 
     // Generate new tokens
+    console.log('🔄 [REFRESH] Generating new tokens...')
     const tokens = AuthService.generateTokens(user)
+    console.log('🔄 [REFRESH] New tokens generated')
 
-    // Set new cookies (refresh token stays the same)
-    setCookie(event, 'accessToken', tokens.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      path: '/'
-    })
+    // Set new cookies
+    console.log('🔄 [REFRESH] Setting new authentication cookies')
+    AuthService.setAuthCookies(event, tokens)
+    console.log('🔄 [REFRESH] Cookies set successfully')
 
+    console.log('✅ [REFRESH] Token refresh successful for user:', user.username)
     return {
       success: true,
-      message: 'Token rafraîchi avec succès',
+      message: 'Tokens rafraîchis',
       user
     }
   } catch (error) {
-    // Clear cookies on error
-    AuthService.clearAuthCookies(event)
+    console.error('❌ [REFRESH] Error occurred:', error)
     throw error
   }
 })

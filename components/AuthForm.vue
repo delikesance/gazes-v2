@@ -1,108 +1,88 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-zinc-950 py-12 px-4 sm:px-6 lg:px-8">
-    <div class="max-w-md w-full space-y-8">
-      <div>
-        <h2 class="mt-6 text-center text-3xl font-extrabold text-white">
-          {{ isLogin ? 'Se connecter' : 'Créer un compte' }}
-        </h2>
-        <p class="mt-2 text-center text-sm text-zinc-400">
-          {{ isLogin ? 'Connectez-vous à votre compte' : 'Rejoignez-nous dès aujourd\'hui' }}
+  <div class="auth-form">
+    <div class="auth-form__container">
+      <!-- Header -->
+      <div class="auth-form__header">
+        <h1 class="auth-form__title">
+          {{ isLogin ? 'Se connecter' : 'S\'inscrire' }}
+        </h1>
+        <p class="auth-form__subtitle">
+          {{ isLogin ? 'Bienvenue sur Gazes' : 'Rejoignez la communauté Gazes' }}
         </p>
       </div>
 
-      <form class="mt-8 space-y-6" @submit.prevent="handleSubmit">
-        <div v-if="error" class="bg-red-900/50 border border-red-500 rounded-lg p-4">
-          <div class="flex">
-            <Icon name="heroicons:exclamation-triangle" class="w-5 h-5 text-red-400 mr-3 flex-shrink-0" />
-            <p class="text-red-200 text-sm">{{ error }}</p>
-          </div>
+      <!-- Form -->
+      <form @submit.prevent="handleSubmit" class="auth-form__form">
+        <!-- Email -->
+        <div class="auth-form__field">
+          <label for="email" class="auth-form__label">Email</label>
+          <input
+            id="email"
+            v-model="form.email"
+            type="email"
+            class="auth-form__input"
+            placeholder="votre@email.com"
+            required
+          />
         </div>
 
-        <div v-if="!isLogin" class="space-y-6">
-          <div>
-            <label for="username" class="block text-sm font-medium text-zinc-300 mb-2">
-              Nom d'utilisateur
-            </label>
-            <input
-              id="username"
-              v-model="form.username"
-              name="username"
-              type="text"
-              autocomplete="username"
-              required
-              :disabled="loading"
-              class="appearance-none relative block w-full px-3 py-2 border border-zinc-700 placeholder-zinc-500 text-white bg-zinc-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent disabled:opacity-50"
-              placeholder="Votre nom d'utilisateur"
-            />
-          </div>
+        <!-- Username (only for register) -->
+        <div v-if="!isLogin" class="auth-form__field">
+          <label for="username" class="auth-form__label">Nom d'utilisateur</label>
+          <input
+            id="username"
+            v-model="form.username"
+            type="text"
+            class="auth-form__input"
+            placeholder="votre_nom"
+            required
+          />
         </div>
 
-        <div class="space-y-6">
-          <div>
-            <label for="email" class="block text-sm font-medium text-zinc-300 mb-2">
-              Email
-            </label>
-            <input
-              id="email"
-              v-model="form.email"
-              name="email"
-              type="email"
-              autocomplete="email"
-              required
-              :disabled="loading"
-              class="appearance-none relative block w-full px-3 py-2 border border-zinc-700 placeholder-zinc-500 text-white bg-zinc-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent disabled:opacity-50"
-              placeholder="votre@email.com"
-            />
-          </div>
-
-          <div>
-            <label for="password" class="block text-sm font-medium text-zinc-300 mb-2">
-              Mot de passe
-            </label>
-            <input
-              id="password"
-              v-model="form.password"
-              name="password"
-              type="password"
-              autocomplete="current-password"
-              required
-              :disabled="loading"
-              class="appearance-none relative block w-full px-3 py-2 border border-zinc-700 placeholder-zinc-500 text-white bg-zinc-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent disabled:opacity-50"
-              :placeholder="isLogin ? 'Votre mot de passe' : 'Au moins 6 caractères'"
-            />
-          </div>
+        <!-- Password -->
+        <div class="auth-form__field">
+          <label for="password" class="auth-form__label">Mot de passe</label>
+          <input
+            id="password"
+            v-model="form.password"
+            type="password"
+            class="auth-form__input"
+            placeholder="••••••••"
+            required
+          />
         </div>
 
-        <div>
-          <button
-            type="submit"
-            :disabled="loading"
-            class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-violet-700 hover:bg-violet-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span v-if="loading" class="mr-2">
-              <Icon name="heroicons:arrow-path" class="w-4 h-4 animate-spin" />
-            </span>
-            {{ loading ? 'Chargement...' : (isLogin ? 'Se connecter' : 'Créer le compte') }}
-          </button>
+        <!-- Error Message -->
+        <div v-if="error" class="auth-form__error">
+          {{ error }}
         </div>
 
-        <div class="text-center">
-          <button
-            type="button"
-            @click="toggleMode"
-            :disabled="loading"
-            class="text-sm text-violet-400 hover:text-violet-300 disabled:opacity-50"
-          >
-            {{ isLogin ? 'Pas encore de compte ? Inscrivez-vous' : 'Déjà un compte ? Connectez-vous' }}
-          </button>
-        </div>
+        <!-- Submit Button -->
+        <button
+          type="submit"
+          :disabled="loading"
+          class="auth-form__submit"
+        >
+          <span v-if="loading" class="auth-form__loading">Chargement...</span>
+          <span v-else>{{ isLogin ? 'Se connecter' : 'S\'inscrire' }}</span>
+        </button>
       </form>
+
+      <!-- Toggle Mode -->
+      <div class="auth-form__toggle">
+        <button
+          @click="toggleMode"
+          class="auth-form__toggle-btn"
+        >
+          {{ isLogin ? 'Pas de compte ? S\'inscrire' : 'Déjà un compte ? Se connecter' }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, computed } from 'vue'
 import { useAuth } from '~/composables/useAuth'
 
 interface Props {
@@ -117,66 +97,96 @@ const emit = defineEmits<{
   success: [user: any]
 }>()
 
-const { login, register, loading, error, clearError } = useAuth()
-
 const isLogin = ref(props.initialMode === 'login')
-const form = reactive({
+const form = ref({
   email: '',
   username: '',
   password: ''
 })
 
-const handleSubmit = async () => {
-  console.log('📝 [AUTH_FORM] Form submitted')
-  console.log('📝 [AUTH_FORM] Mode:', isLogin.value ? 'LOGIN' : 'REGISTER')
-  console.log('📝 [AUTH_FORM] Form data:', {
-    email: form.email,
-    username: form.username,
-    hasPassword: !!form.password
-  })
+const { login, register, loading, error, clearError } = useAuth()
 
+const handleSubmit = async () => {
   clearError()
 
   if (isLogin.value) {
-    console.log('📝 [AUTH_FORM] Calling login function...')
-    const result = await login(form.email, form.password)
-    console.log('📝 [AUTH_FORM] Login result:', result)
-
+    const result = await login(form.value.email, form.value.password)
     if (result.success) {
-      console.log('✅ [AUTH_FORM] Login successful, emitting success event')
       emit('success', result.user)
-    } else {
-      console.log('❌ [AUTH_FORM] Login failed')
     }
   } else {
-    console.log('📝 [AUTH_FORM] Calling register function...')
-    const result = await register(form.email, form.username, form.password)
-    console.log('📝 [AUTH_FORM] Register result:', result)
-
+    const result = await register(form.value.email, form.value.username, form.value.password)
     if (result.success) {
-      console.log('✅ [AUTH_FORM] Registration successful, emitting success event')
       emit('success', result.user)
-    } else {
-      console.log('❌ [AUTH_FORM] Registration failed')
     }
   }
 }
 
 const toggleMode = () => {
-  const oldMode = isLogin.value ? 'LOGIN' : 'REGISTER'
-  const newMode = !isLogin.value ? 'LOGIN' : 'REGISTER'
-
-  console.log('📝 [AUTH_FORM] Toggling mode from', oldMode, 'to', newMode)
-
   isLogin.value = !isLogin.value
+  form.value = {
+    email: '',
+    username: '',
+    password: ''
+  }
   clearError()
-
-  // Reset form when switching modes
-  console.log('📝 [AUTH_FORM] Resetting form data')
-  form.email = ''
-  form.username = ''
-  form.password = ''
-
-  console.log('📝 [AUTH_FORM] Mode toggle completed')
 }
 </script>
+
+<style scoped>
+.auth-form {
+  @apply min-h-screen flex items-center justify-center bg-zinc-900 px-4;
+}
+
+.auth-form__container {
+  @apply w-full max-w-md bg-zinc-800 rounded-lg p-8 shadow-xl;
+}
+
+.auth-form__header {
+  @apply text-center mb-8;
+}
+
+.auth-form__title {
+  @apply text-2xl font-bold text-white mb-2;
+}
+
+.auth-form__subtitle {
+  @apply text-zinc-400;
+}
+
+.auth-form__form {
+  @apply space-y-6;
+}
+
+.auth-form__field {
+  @apply space-y-2;
+}
+
+.auth-form__label {
+  @apply block text-sm font-medium text-zinc-300;
+}
+
+.auth-form__input {
+  @apply w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent;
+}
+
+.auth-form__error {
+  @apply text-red-400 text-sm text-center bg-red-900/20 border border-red-800 rounded-md p-3;
+}
+
+.auth-form__submit {
+  @apply w-full bg-violet-600 hover:bg-violet-700 disabled:bg-zinc-600 disabled:cursor-not-allowed text-white font-medium py-2 px-4 rounded-md transition-colors duration-200;
+}
+
+.auth-form__loading {
+  @apply flex items-center justify-center;
+}
+
+.auth-form__toggle {
+  @apply text-center mt-6;
+}
+
+.auth-form__toggle-btn {
+  @apply text-violet-400 hover:text-violet-300 text-sm underline;
+}
+</style>
