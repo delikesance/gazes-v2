@@ -25,7 +25,7 @@ RUN PNPM_IGNORE_SCRIPTS=true pnpm install
 COPY . .
 
 # Build Nuxt pour server/export
-RUN --mount=type=cache,target=/app/.nuxt pnpm run build
+RUN pnpm run build
 
 EXPOSE 3000
 

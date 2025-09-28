@@ -150,6 +150,9 @@ export default defineEventHandler(async (event) => {
   // Set status accordingly (200/206/3xx/4xx)
   setResponseStatus(event, res.status, res.statusText)
 
+  // Clone the response to allow reading body multiple times if needed
+  const resClone = res.clone()
+
   // If it's an HLS playlist and rewrite enabled, fetch as text and transform segment URIs
   const contentType = res.headers.get('Content-Type') || ''
   const isM3U8 = /application\/(vnd\.apple\.mpegurl|x-mpegURL)|text\/plain.*\.m3u8/i.test(contentType) || /\.m3u8($|\?)/i.test(target.toString())
@@ -166,7 +169,7 @@ export default defineEventHandler(async (event) => {
 
   if (isM3U8 && rewrite && res.ok) {
     try {
-      const playlist = await res.text()
+      const playlist = await resClone.text()
       console.log('[proxy] Original playlist length:', playlist.length)
       console.log('[proxy] First 500 chars of playlist:', playlist.substring(0, 500))
       
