@@ -118,10 +118,11 @@ const fetchContinueWatching = async () => {
       }
 
       // Calculate progress percentage and add anime data
-      items.value = response.progress.map((item: WatchingProgress) => {
+      items.value = response.progress.map((item: any) => {
         const animeData = animeDataMap.get(item.animeId)
         return {
           ...item,
+          lastWatchedAt: new Date(item.lastWatchedAt),
           progressPercent: item.duration > 0 ? (item.currentTime / item.duration) * 100 : 0,
           title: animeData?.title || item.animeId,
           image: animeData?.cover || '',

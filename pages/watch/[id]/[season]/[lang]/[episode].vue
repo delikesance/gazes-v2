@@ -488,7 +488,7 @@ function togglePlay() {
     if (isPlaying.value) {
       player.pause()
     } else {
-      player.play().catch(e => {
+      player.play().catch((e: any) => {
         console.log('Play failed:', e)
       })
     }
@@ -861,11 +861,11 @@ function handleLoadedMetadata() {
         // For continue watching, try to autoplay after seeking
         setTimeout(() => {
           if (player && !player.playing()) {
-            player.play().catch(e => {
+            player.play().catch((e: any) => {
               console.log('Continue watching autoplay failed, user interaction required')
             })
           } else if (videoRef.value && videoRef.value.paused) {
-            videoRef.value.play().catch(e => {
+            videoRef.value.play().catch((e: any) => {
               console.log('Continue watching autoplay failed, user interaction required')
             })
           }
@@ -1070,8 +1070,8 @@ async function setupVideo() {
       handleVideoEvents()
 
        // Set up video.js event handlers
-       player.on('error', (e) => {
-         console.error('Video.js error:', e)
+       player.on('error', (e: any) => {
+          console.error('Video.js error:', e)
          const error = player.error()
          if (error) {
            videoError.value = `Erreur vidéo: ${error.message || 'Unknown error'}`
@@ -1111,7 +1111,7 @@ async function setupVideo() {
       player.load()
 
       // Try to play with autoplay
-      player.play().catch(e => {
+      player.play().catch((e: any) => {
         console.log('Autoplay prevented by browser, video will start paused')
         videoLoading.value = false // Allow user interaction
         // Don't show error for autoplay prevention - it's expected
@@ -1633,26 +1633,6 @@ async function resolveEpisode() {
         console.warn(`❌ Candidate ${i + 1} error: ${errorMsg}`)
         lastError = errorMsg
       }
-    }
-    try {
-      const results = await Promise.allSettled(resolvePromises)
-      for (const result of results) {
-        if (result.status === 'fulfilled' && result.value) {
-          resolvedUrls = result.value
-          break // Use the first successful result
-        }
-      }
-
-      // If no candidates succeeded, collect error messages
-      if (resolvedUrls.length === 0) {
-        const errors = results
-          .filter(r => r.status === 'rejected')
-          .map(r => r.reason?.message || 'Unknown error')
-        lastError = errors.length > 0 ? errors.join(', ') : 'All candidates failed'
-      }
-    } catch (error: any) {
-      lastError = error?.message || 'Parallel resolution failed'
-      console.error('❌ Parallel resolution error:', error)
     }
     
     if (resolvedUrls.length === 0) {

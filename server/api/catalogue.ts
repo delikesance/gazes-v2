@@ -59,7 +59,7 @@
           id: item.id,
           title: item.title,
           image: item.image,
-          type: item.type || 'Anime' // Search results are typically anime
+          type: 'Anime' // Search results are typically anime
         })).filter(item => item.type !== 'Scans')
 
         return { items, count: items.length, status: searchResponse.status }

@@ -127,6 +127,9 @@ async function fetchSkipTimes(malId: string, episodeNumber: number, episodeLengt
 export default defineEventHandler(async (event) => {
   try {
     const { id: animeId, episode: episodeNumber } = getRouterParams(event)
+    if (!animeId || !episodeNumber) {
+      throw createError({ statusCode: 400, statusMessage: 'Missing anime ID or episode number' })
+    }
     const query = getQuery(event)
     const episodeLength = query.episodeLength ? parseFloat(query.episodeLength as string) : undefined
 
@@ -142,7 +145,7 @@ export default defineEventHandler(async (event) => {
     console.log(`⏭️ [API] Found anime: "${anime.title}"`)
 
     // Get MAL ID
-    const malId = await fetchMalId(anime.title)
+    const malId = await fetchMalId(anime.title) as string
     if (!malId) {
       console.log(`⏭️ [API] Could not find MAL ID for: "${anime.title}"`)
       throw createError({ statusCode: 404, statusMessage: 'MAL ID not found' })

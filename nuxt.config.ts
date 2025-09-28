@@ -47,8 +47,7 @@ export default defineNuxtConfig({
           'bcryptjs',
           '@supabase/supabase-js',
           '@supabase/postgrest-js',
-          'pg',
-          'cheerio'
+          'pg'
         ]
       },
       sourcemap: false,
@@ -102,6 +101,9 @@ export default defineNuxtConfig({
     prerender: {
       routes: ['/']
     },
+    externals: {
+      inline: ['cheerio']
+    },
     routeRules: {
       '/api/**': {
         cors: true,
@@ -114,13 +116,11 @@ export default defineNuxtConfig({
       '/favicon.ico': { cache: { maxAge: 86400 * 30 } },
       '/robots.txt': { cache: { maxAge: 86400 * 7 } },
       '/sw.js': { cache: { maxAge: 0 } },
-      '/_nuxt/**': { cache: { maxAge: 86400 * 30, immutable: true } }
+      '/_nuxt/**': { cache: { maxAge: 86400 * 30 } }
     }
   },
 
   ssr: true,
-
-
 
   // Performance optimizations
   experimental: {
