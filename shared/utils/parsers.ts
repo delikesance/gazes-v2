@@ -165,8 +165,8 @@ export interface CatalogueItem {
 export function parseCataloguePage(html: string): CatalogueItem[] {
   const items: CatalogueItem[] = [];
 
-  // Regex to match catalogue items: <a href="/catalogue/slug"> ... <img src="image"> ... <h3>title</h3> ... </a>
-  const itemRegex = /<a[^>]*href="\/catalogue\/([^"]*)"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([^<]*)<\/h3>/gi;
+  // Regex to match catalogue items: <a href="/catalogue/slug"> or <a href="https://anime-sama.fr/catalogue/slug"> ... <img src="image"> ... <h1>title</h1> ... </a>
+  const itemRegex = /<a[^>]*href="(?:https?:\/\/[^\/]+)?\/catalogue\/([^"\/]+)[^"]*"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h1[^>]*>([^<]*)<\/h1>/gi;
 
   let match;
   while ((match = itemRegex.exec(html)) !== null) {
