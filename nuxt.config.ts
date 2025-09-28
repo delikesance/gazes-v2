@@ -27,12 +27,12 @@ export default defineNuxtConfig({
     jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
     jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
     // Supabase configuration
-    supabaseUrl: process.env.SUPABASE_URL,
-    supabaseKey: process.env.SUPABASE_KEY,
+    supabaseUrl: process.env.SUPABASE_URL || 'https://znhwphabiefwnxzfgxjw.supabase.co',
+    supabaseKey: process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpuaHdwaGFiaWVmd254emZneGp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkwNDgzMjcsImV4cCI6MjA3NDYyNDMyN30.r3QOo29KoEKnTMpJhSEPRnbp0RNirLBJAN3VOL4ByTs',
     // Public configuration (exposed to client-side)
     public: {
-      supabaseUrl: process.env.SUPABASE_URL,
-      supabaseKey: process.env.SUPABASE_KEY,
+      supabaseUrl: process.env.SUPABASE_URL || 'https://znhwphabiefwnxzfgxjw.supabase.co',
+      supabaseKey: process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpuaHdwaGFiaWVmd254emZneGp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkwNDgzMjcsImV4cCI6MjA3NDYyNDMyN30.r3QOo29KoEKnTMpJhSEPRnbp0RNirLBJAN3VOL4ByTs',
     }
   },
 

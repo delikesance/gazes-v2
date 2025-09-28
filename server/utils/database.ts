@@ -36,20 +36,25 @@ export class DatabaseService {
   private constructor() {
     console.log('📁 [DATABASE] Initializing Supabase connection...')
 
-    const config = useRuntimeConfig()
+    try {
+      const config = useRuntimeConfig()
 
-    const supabaseUrl = config.supabaseUrl as string
-    const supabaseKey = config.supabaseKey as string
+      const supabaseUrl = config.supabaseUrl as string
+      const supabaseKey = config.supabaseKey as string
 
-    if (!supabaseUrl || !supabaseKey) {
-      const errorMsg = 'Missing required Supabase environment variables'
-      console.error('❌ [DATABASE] ' + errorMsg)
-      throw new Error(errorMsg)
+      if (!supabaseUrl || !supabaseKey) {
+        const errorMsg = 'Missing required Supabase environment variables'
+        console.error('❌ [DATABASE] ' + errorMsg)
+        throw new Error(errorMsg)
+      }
+
+      this.supabase = createClient(supabaseUrl, supabaseKey)
+
+      this.initDatabase()
+    } catch (error) {
+      console.error('❌ [DATABASE] Failed to initialize:', error)
+      throw error
     }
-
-    this.supabase = createClient(supabaseUrl, supabaseKey)
-
-    this.initDatabase()
   }
 
   public static getInstance(): DatabaseService {

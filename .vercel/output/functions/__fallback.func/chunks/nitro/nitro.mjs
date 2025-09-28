@@ -4541,7 +4541,7 @@ function _expandFromEnv(value) {
 const _inlineRuntimeConfig = {
   "app": {
     "baseURL": "/",
-    "buildId": "3e73dc92-e9a4-4ce5-83ec-b3d9e37c8655",
+    "buildId": "a8d2b24d-3818-42da-a4cb-0c0281871d39",
     "buildAssetsDir": "/_nuxt/",
     "cdnURL": ""
   },
@@ -5037,16 +5037,21 @@ const _DatabaseService = class _DatabaseService {
   constructor() {
     __publicField$1(this, "supabase");
     console.log("\u{1F4C1} [DATABASE] Initializing Supabase connection...");
-    const config = useRuntimeConfig();
-    const supabaseUrl = config.supabaseUrl;
-    const supabaseKey = config.supabaseKey;
-    if (!supabaseUrl || !supabaseKey) {
-      const errorMsg = "Missing required Supabase environment variables";
-      console.error("\u274C [DATABASE] " + errorMsg);
-      throw new Error(errorMsg);
+    try {
+      const config = useRuntimeConfig();
+      const supabaseUrl = config.supabaseUrl;
+      const supabaseKey = config.supabaseKey;
+      if (!supabaseUrl || !supabaseKey) {
+        const errorMsg = "Missing required Supabase environment variables";
+        console.error("\u274C [DATABASE] " + errorMsg);
+        throw new Error(errorMsg);
+      }
+      this.supabase = createClient(supabaseUrl, supabaseKey);
+      this.initDatabase();
+    } catch (error) {
+      console.error("\u274C [DATABASE] Failed to initialize:", error);
+      throw error;
     }
-    this.supabase = createClient(supabaseUrl, supabaseKey);
-    this.initDatabase();
   }
   static getInstance() {
     if (!_DatabaseService.instance) {
@@ -5337,18 +5342,29 @@ __publicField$1(_DatabaseService, "instance");
 let DatabaseService = _DatabaseService;
 
 const _bh7oFSOjbh99cPq5VuWvlfZbycRci3qYoYtjcWEXNA = defineNitroPlugin(async (nitroApp) => {
-  var _a, _b, _c;
+  var _a, _b, _c, _d, _e;
   console.log("\u{1F680} [PLUGIN] Database plugin initializing...");
   try {
+    const config = useRuntimeConfig();
+    if (!config.supabaseUrl || !config.supabaseKey) {
+      console.warn("\u26A0\uFE0F [PLUGIN] Missing Supabase environment variables - skipping database initialization");
+      return;
+    }
     const db = DatabaseService.getInstance();
     console.log("\u{1F680} [INIT] Checking database schema...");
     const supabase = db.getSupabaseClient();
     let tablesExist = true;
     try {
-      await supabase.from("users").select("id").limit(1);
+      const timeoutPromise = new Promise(
+        (_, reject) => setTimeout(() => reject(new Error("Database check timeout")), 5e3)
+      );
+      const checkPromise = supabase.from("users").select("id").limit(1);
+      await Promise.race([checkPromise, timeoutPromise]);
       console.log("\u2705 [INIT] Users table exists");
     } catch (error) {
-      if (((_a = error.message) == null ? void 0 : _a.includes('relation "public.users" does not exist')) || ((_b = error.message) == null ? void 0 : _b.includes("Could not find the table 'public.users' in the schema cache"))) {
+      if ((_a = error.message) == null ? void 0 : _a.includes("timeout")) {
+        console.warn("\u26A0\uFE0F [INIT] Database check timed out - continuing without verification");
+      } else if (((_b = error.message) == null ? void 0 : _b.includes('relation "public.users" does not exist')) || ((_c = error.message) == null ? void 0 : _c.includes("Could not find the table 'public.users' in the schema cache"))) {
         console.warn("\u26A0\uFE0F [INIT] Users table does not exist - running auto migration...");
         tablesExist = false;
       } else {
@@ -5357,10 +5373,16 @@ const _bh7oFSOjbh99cPq5VuWvlfZbycRci3qYoYtjcWEXNA = defineNitroPlugin(async (nit
       }
     }
     try {
-      await supabase.from("watching_progress").select("id").limit(1);
+      const timeoutPromise = new Promise(
+        (_, reject) => setTimeout(() => reject(new Error("Database check timeout")), 5e3)
+      );
+      const checkPromise = supabase.from("watching_progress").select("id").limit(1);
+      await Promise.race([checkPromise, timeoutPromise]);
       console.log("\u2705 [INIT] Watching progress table exists");
     } catch (error) {
-      if ((_c = error.message) == null ? void 0 : _c.includes('relation "public.watching_progress" does not exist')) {
+      if ((_d = error.message) == null ? void 0 : _d.includes("timeout")) {
+        console.warn("\u26A0\uFE0F [INIT] Database check timed out - continuing without verification");
+      } else if ((_e = error.message) == null ? void 0 : _e.includes('relation "public.watching_progress" does not exist')) {
         console.warn("\u26A0\uFE0F [INIT] Watching progress table does not exist - running auto migration...");
         tablesExist = false;
       }
@@ -5375,6 +5397,7 @@ const _bh7oFSOjbh99cPq5VuWvlfZbycRci3qYoYtjcWEXNA = defineNitroPlugin(async (nit
     console.log("\u2705 [PLUGIN] Database plugin initialized successfully");
   } catch (error) {
     console.error("\u274C [PLUGIN] Database plugin failed to initialize:", error);
+    console.log("\u26A0\uFE0F [PLUGIN] Continuing without database initialization");
   }
 });
 
