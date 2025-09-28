@@ -39,40 +39,25 @@ export default defineNuxtConfig({
   // Advanced Vite optimizations
   vite: {
     resolve: {
-      dedupe: ['vue', 'vue-router', '@vue/runtime-core', '@vue/runtime-dom'],
-      alias: {
-        // Node.js polyfills for browser compatibility
-        util: 'util',
-        stream: 'stream-browserify',
-        buffer: 'buffer',
-        process: 'process/browser',
-        events: 'events',
-        crypto: 'crypto-browserify',
-        path: 'path-browserify',
-        os: 'os-browserify/browser',
-        fs: false,
-        net: false,
-        tls: false
-      }
-    },
-    define: {
-      // Define global variables for Node.js compatibility
-      global: 'globalThis',
-      'process.env': {}
+      dedupe: ['vue', 'vue-router', '@vue/runtime-core', '@vue/runtime-dom']
     },
     build: {
       rollupOptions: {
+        external: [
+          'bcryptjs', // Exclude bcryptjs from client bundle
+          '@supabase/supabase-js', // Exclude Supabase from client bundle
+          '@supabase/postgrest-js', // Exclude PostgREST from client bundle
+          'pg', // Exclude PostgreSQL client from client bundle
+          'cheerio' // Exclude Cheerio from client bundle
+        ],
         output: {
           manualChunks: (id) => {
             // Split large libraries into separate chunks
             if (id.includes('video.js') || id.includes('hls.js')) {
               return 'video-player'
             }
-            if (id.includes('@supabase') || id.includes('jsonwebtoken')) {
+            if (id.includes('jsonwebtoken')) {
               return 'auth'
-            }
-            if (id.includes('cheerio') || id.includes('pg')) {
-              return 'server-utils'
             }
             if (id.includes('@nuxt/icon')) {
               return 'icons'
@@ -109,16 +94,7 @@ export default defineNuxtConfig({
         'hls.js',
         '@videojs/http-streaming',
         'vue',
-        'vue-router',
-        // Include Node.js polyfills
-        'util',
-        'stream-browserify',
-        'buffer',
-        'process/browser',
-        'events',
-        'crypto-browserify',
-        'path-browserify',
-        'os-browserify/browser'
+        'vue-router'
       ],
       exclude: ['@nuxt/devtools'] // Exclude dev tools from optimization
     },
