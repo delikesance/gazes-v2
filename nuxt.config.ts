@@ -101,9 +101,6 @@ export default defineNuxtConfig({
     prerender: {
       routes: ['/']
     },
-    externals: {
-      inline: ['cheerio']
-    },
     routeRules: {
       '/api/**': {
         cors: true,
