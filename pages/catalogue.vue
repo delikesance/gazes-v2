@@ -57,7 +57,7 @@ const {
     executeSearch,
     clearSearch,
 } = useSearch(searchFn, {
-    debounceMs: 300,
+    debounceMs: 800,
     minLength: 2,
 });
 

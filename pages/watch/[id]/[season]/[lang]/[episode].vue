@@ -237,6 +237,9 @@ const showSkipButtons = ref(false)
 const currentSkipType = ref<'op' | 'ed' | null>(null)
 const skipTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
 
+// Track which skips have been dismissed for the current episode
+const dismissedSkips = ref<Set<'op' | 'ed'>>(new Set())
+
 // Progress tracking functions
 async function loadSavedProgress() {
   try {
@@ -378,6 +381,12 @@ function handleVideoClick(event: MouseEvent) {
 }
 
 function seek(time: number) {
+  // Prevent rapid seeking that can cause audio desynchronization
+  if (isSeeking.value) {
+    console.log('Seek blocked - already seeking')
+    return
+  }
+  
   if (player) {
     player.currentTime(time)
     currentTime.value = time
@@ -390,6 +399,12 @@ function seek(time: number) {
 }
 
 function seekBy(seconds: number) {
+  // Prevent rapid seeking that can cause audio desynchronization
+  if (isSeeking.value) {
+    console.log('SeekBy blocked - already seeking')
+    return
+  }
+  
   if (player) {
     const newTime = Math.max(0, Math.min(player.duration(), player.currentTime() + seconds))
     player.currentTime(newTime)
@@ -471,6 +486,12 @@ function handleMouseMove() {
 }
 
 function handleProgressClick(event: MouseEvent) {
+  // Prevent rapid seeking that can cause audio desynchronization
+  if (isSeeking.value) {
+    console.log('Progress click seek blocked - already seeking')
+    return
+  }
+  
   const el = videoRef.value
   const progressBar = event.currentTarget as HTMLElement
   if (!el || !progressBar) return
@@ -791,7 +812,15 @@ function skipToEnd(skipType: 'op' | 'ed') {
 function hideSkipButtons() {
   console.log('⏭️ [SKIP] Hiding skip buttons')
   showSkipButtons.value = false
+  const skipType = currentSkipType.value
   currentSkipType.value = null
+  
+  // Mark the current skip type as dismissed for this episode
+  if (skipType) {
+    dismissedSkips.value.add(skipType)
+    console.log(`⏭️ [SKIP] Marked ${skipType.toUpperCase()} as dismissed for this episode`)
+  }
+  
   if (skipTimeout.value) {
     clearTimeout(skipTimeout.value)
     skipTimeout.value = null
@@ -806,6 +835,12 @@ function checkSkipAvailability() {
   let activeSkipType: 'op' | 'ed' | null = null
 
   for (const skipTime of skipTimes.value) {
+    // Skip if this skip type has already been dismissed for this episode
+    if (dismissedSkips.value.has(skipTime.type)) {
+      console.log(`⏭️ [SKIP] Skipping ${skipTime.type.toUpperCase()} - already dismissed for this episode`)
+      continue
+    }
+
     const timeUntilStart = skipTime.startTime - currentVideoTime
     const timeUntilEnd = skipTime.endTime - currentVideoTime
 
@@ -1680,6 +1715,10 @@ watch([season, lang, episodeNum], () => {
     // Only re-resolve if params actually changed
     if (currentParams !== lastResolvedParams) {
       lastResolvedParams = currentParams
+      
+      // Reset dismissed skips when changing episodes
+      dismissedSkips.value.clear()
+      console.log('⏭️ [SKIP] Cleared dismissed skips for new episode')
       
       // When switching episodes or languages, we need to re-check language availability
       // for the new episode, so don't reset availableLanguages here - let resolveEpisode handle it
