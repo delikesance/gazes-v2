@@ -1838,9 +1838,6 @@ watch([episodeNum, episodesList], () => {
                     <h4 class="text-white font-medium text-base">
                       {{ ep.title || `Épisode ${ep.episode.toString().padStart(2, '0')}` }}
                     </h4>
-                    <span v-if="ep.episode === episodeNum" class="text-xs bg-violet-600 text-white px-2 py-1 rounded-full font-medium">
-                      En cours
-                    </span>
                   </div>
                   <p class="text-zinc-400 text-sm">
                     {{ ep.episode === episodeNum ? 'Vous regardez actuellement cet épisode' : (ep.title ? `Épisode ${ep.episode.toString().padStart(2, '0')} • ${season}` : `Épisode ${ep.episode.toString().padStart(2, '0')} de la saison ${season}`) }}
