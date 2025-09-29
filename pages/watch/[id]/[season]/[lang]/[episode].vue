@@ -133,141 +133,6 @@ const showEpisodes = ref(false)
 const episodesList = ref<Array<{ episode: number; title?: string; url: string; urls?: string[] }>>([])
 const loadingEpisodes = ref(false)
 
-// Optimized caching with LRU-like behavior and memory limits
-const urlCache = ref<Record<string, { urls: any[]; timestamp: number; accessCount: number }>>({})
-const CACHE_DURATION = 30 * 60 * 1000 // 30 minutes
-const MAX_CACHE_ENTRIES = 20 // Limit cache size to prevent memory bloat
-
-// Cache for anime metadata and episodes
-const metadataCache = ref<Record<string, { data: any; timestamp: number; accessCount: number }>>({})
-const episodesCache = ref<Record<string, { data: any; timestamp: number; accessCount: number }>>({})
-const skipCache = ref<Record<string, { data: any; timestamp: number; accessCount: number }>>({})
-
-// Cache management functions
-function getCacheKey(animeId: string, season: string, lang: string, episode: number): string {
-  return `${animeId}-${season}-${lang}-${episode}`
-}
-
-// Optimized cache with LRU eviction
-function getCachedUrls(cacheKey: string): any[] | null {
-  const cached = urlCache.value[cacheKey]
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    cached.accessCount++
-    console.log('🎯 Using cached URLs for:', cacheKey, `(accessed ${cached.accessCount} times)`)
-    return cached.urls
-  }
-  return null
-}
-
-function setCachedUrls(cacheKey: string, urls: any[]): void {
-  // Evict least recently used entries if cache is full
-  const entries = Object.entries(urlCache.value)
-  if (entries.length >= MAX_CACHE_ENTRIES) {
-    // Find entry with lowest access count, then oldest timestamp
-    const toEvict = entries.reduce((min, [key, value]) => {
-      if (value.accessCount < min.accessCount ||
-          (value.accessCount === min.accessCount && value.timestamp < min.timestamp)) {
-        return { key, ...value }
-      }
-      return min
-    }, { key: '', accessCount: Infinity, timestamp: Infinity })
-
-    if (toEvict.key) {
-      delete urlCache.value[toEvict.key]
-      console.log('🗑️ Evicted cache entry:', toEvict.key)
-    }
-  }
-
-  urlCache.value[cacheKey] = {
-    urls,
-    timestamp: Date.now(),
-    accessCount: 1
-  }
-  console.log('💾 Cached URLs for:', cacheKey)
-}
-
-// Load cache from sessionStorage on mount
-function loadUrlCache(): void {
-  try {
-    const cached = sessionStorage.getItem('video-url-cache')
-    if (cached) {
-      urlCache.value = JSON.parse(cached)
-      console.log('📥 Loaded URL cache from sessionStorage')
-    }
-  } catch (error) {
-    console.warn('Failed to load URL cache:', error)
-  }
-}
-
-// Save cache to sessionStorage
-function saveUrlCache(): void {
-  try {
-    sessionStorage.setItem('video-url-cache', JSON.stringify(urlCache.value))
-  } catch (error) {
-    console.warn('Failed to save URL cache:', error)
-  }
-}
-
-// Cache management for metadata
-function getCachedMetadata(animeId: string): any | null {
-  const cached = metadataCache.value[animeId]
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    cached.accessCount++
-    console.log('📋 Using cached metadata for:', animeId, `(accessed ${cached.accessCount} times)`)
-    return cached.data
-  }
-  return null
-}
-
-function setCachedMetadata(animeId: string, data: any): void {
-  metadataCache.value[animeId] = {
-    data,
-    timestamp: Date.now(),
-    accessCount: 1
-  }
-  console.log('💾 Cached metadata for:', animeId)
-}
-
-// Cache management for episodes
-function getCachedEpisodes(cacheKey: string): any | null {
-  const cached = episodesCache.value[cacheKey]
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    cached.accessCount++
-    console.log('📋 Using cached episodes for:', cacheKey, `(accessed ${cached.accessCount} times)`)
-    return cached.data
-  }
-  return null
-}
-
-function setCachedEpisodes(cacheKey: string, data: any): void {
-  episodesCache.value[cacheKey] = {
-    data,
-    timestamp: Date.now(),
-    accessCount: 1
-  }
-  console.log('💾 Cached episodes for:', cacheKey)
-}
-
-// Cache management for skip times
-function getCachedSkipTimes(cacheKey: string): any | null {
-  const cached = skipCache.value[cacheKey]
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    cached.accessCount++
-    console.log('⏭️ Using cached skip times for:', cacheKey, `(accessed ${cached.accessCount} times)`)
-    return cached.data
-  }
-  return null
-}
-
-function setCachedSkipTimes(cacheKey: string, data: any): void {
-  skipCache.value[cacheKey] = {
-    data,
-    timestamp: Date.now(),
-    accessCount: 1
-  }
-  console.log('⏭️ Cached skip times for:', cacheKey)
-}
-
 // Progress tracking state
 const savedProgress = ref<{ currentTime: number; duration: number } | null>(null)
 const progressSaveInterval = ref<ReturnType<typeof setInterval> | null>(null)
@@ -894,15 +759,6 @@ function handleEnded() {
 
 // Skip functionality functions
 async function loadSkipTimes() {
-  const cacheKey = `${id.value}-${episodeNum.value}`
-
-  // Check cache first
-  const cached = getCachedSkipTimes(cacheKey)
-  if (cached) {
-    skipTimes.value = cached.skipTimes || []
-    return
-  }
-
   try {
     console.log('⏭️ [SKIP] Loading skip times for anime:', id.value, 'episode:', episodeNum.value, 'duration:', duration.value)
     const params = duration.value > 0 ? { episodeLength: duration.value } : {}
@@ -911,9 +767,6 @@ async function loadSkipTimes() {
       skipTimes.value = response.skipTimes
       console.log('⏭️ [SKIP] Successfully loaded skip times:', skipTimes.value.length, 'entries')
       console.log('⏭️ [SKIP] Skip times details:', skipTimes.value)
-
-      // Cache the skip times
-      setCachedSkipTimes(cacheKey, response)
     } else {
       skipTimes.value = []
       console.log('⏭️ [SKIP] No skip times found for this episode')
@@ -1304,16 +1157,6 @@ function switchToSource(source: { type: string; url: string; proxiedUrl: string;
 
 // Episode selector functions
 async function loadAnimeMetadata() {
-  // Check cache first
-  const cached = getCachedMetadata(id.value)
-  if (cached) {
-    animeTitle.value = cached.title || cached.name || `Anime ${id.value}`
-    if (cached.languageFlags) {
-      dynamicLanguageFlags.value = cached.languageFlags
-    }
-    return
-  }
-
   try {
     const response = await $fetch(`/api/anime/${id.value}`) as any
     animeTitle.value = response?.title || response?.name || `Anime ${id.value}`
@@ -1323,9 +1166,6 @@ async function loadAnimeMetadata() {
       dynamicLanguageFlags.value = response.languageFlags
       console.log('Loaded dynamic language flags:', dynamicLanguageFlags.value)
     }
-
-    // Cache the metadata
-    setCachedMetadata(id.value, response)
   } catch (error) {
     console.error('Failed to load anime metadata:', error)
     animeTitle.value = `Anime ${id.value}`
@@ -1334,17 +1174,6 @@ async function loadAnimeMetadata() {
 
 async function loadEpisodesList() {
   if (episodesList.value.length > 0) return // Already loaded
-
-  const cacheKey = `${id.value}-${season.value}-${lang.value}`
-
-  // Check cache first
-  const cached = getCachedEpisodes(cacheKey)
-  if (cached) {
-    episodesList.value = cached.episodes || []
-    const currentEp = episodesList.value.find(ep => ep.episode === episodeNum.value)
-    currentEpisodeTitle.value = currentEp?.title || formattedEpisodeDisplay.value
-    return
-  }
 
   loadingEpisodes.value = true
   try {
@@ -1357,9 +1186,6 @@ async function loadEpisodesList() {
     // Update current episode title
     const currentEp = episodesList.value.find(ep => ep.episode === episodeNum.value)
     currentEpisodeTitle.value = currentEp?.title || formattedEpisodeDisplay.value
-
-    // Cache the episodes
-    setCachedEpisodes(cacheKey, response)
   } catch (error) {
     console.error('Failed to load episodes:', error)
     episodesList.value = []
@@ -1488,92 +1314,53 @@ async function resolveEpisode() {
   currentSourceRetries = 0
   lastErrorType = ''
 
-  const cacheKey = getCacheKey(id.value, season.value, lang.value, episodeNum.value)
   console.log(`🎬 Resolving episode: ${id.value}/${season.value}/${lang.value}/${episodeNum.value}`)
 
-  // Check cache first
-  const cachedUrls = getCachedUrls(cacheKey)
-  if (cachedUrls) {
-    console.log('✅ Using cached resolved URLs')
-    resolvedList.value = cachedUrls
-    currentSourceIndex.value = 0
-    const hlsFirst = cachedUrls.find((u: any) => u.type === "hls") || cachedUrls[0];
-    playUrl.value = hlsFirst.proxiedUrl || hlsFirst.url;
-    resolving.value = false
-    return
-  }
-
   try {
-    // Optimize: Only check priority languages first, then expand if needed
-    const priorityLanguages: ('vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj')[] = 
-      [lang.value as any, 'vostfr', 'vf', 'va'] // Start with requested language and most common ones
+    // Check all languages for the current episode availability
+    const allLanguages: ('vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj')[] = 
+      ['vostfr', 'vf', 'va', 'var', 'vkr', 'vcn', 'vqc', 'vf1', 'vf2', 'vj']
     
-    // Start fetching for priority languages first
-    const priorityPromises = priorityLanguages.map(langCode => 
-      fetchEpisodesFor(langCode, 2).then(episodes => ({ lang: langCode, episodes })).catch(() => ({ lang: langCode, episodes: [] }))
+    // Start fetching for all languages to check episode availability
+    const languagePromises = allLanguages.map(langCode => 
+      fetchEpisodesFor(langCode, 1).then(episodes => ({ 
+        lang: langCode, 
+        episodes,
+        hasCurrentEpisode: episodes.some(ep => Number(ep.episode) === episodeNum.value)
+      })).catch(() => ({ lang: langCode, episodes: [], hasCurrentEpisode: false }))
     )
     
-    const priorityResults = await Promise.all(priorityPromises)
+    const languageResults = await Promise.all(languagePromises)
     
-    // Update available languages based on priority results
-    priorityResults.forEach(({ lang, episodes }) => {
-      availableLanguages.value[lang as keyof typeof availableLanguages.value] = episodes.length > 0
+    // Update available languages based on whether they have the current episode
+    languageResults.forEach(({ lang, hasCurrentEpisode }) => {
+      availableLanguages.value[lang as keyof typeof availableLanguages.value] = hasCurrentEpisode
     })
     
+    console.log(`🎯 Episode ${episodeNum.value} availability:`, Object.fromEntries(
+      Object.entries(availableLanguages.value).filter(([_, available]) => available)
+    ))
+    
     // Try requested language first
-    const currentLangResult = priorityResults.find(r => r.lang === lang.value)
+    const currentLangResult = languageResults.find(r => r.lang === lang.value)
     let ep = currentLangResult?.episodes.find(e => Number(e.episode) === episodeNum.value)
     console.log(`🎯 Looking for episode ${episodeNum.value} in ${lang.value}, found:`, ep ? `Episode ${ep.episode}` : 'Not found')
 
-    // If not found in priority languages, check remaining languages
+    // If not found in requested language, check other available languages
     if (!ep) {
-      const remainingLanguages = ['var', 'vkr', 'vcn', 'vqc', 'vf1', 'vf2', 'vj'].filter(l => !priorityLanguages.includes(l as any))
-      const remainingPromises = remainingLanguages.map(langCode =>
-        fetchEpisodesFor(langCode as any, 2).then(episodes => ({ lang: langCode, episodes })).catch(() => ({ lang: langCode, episodes: [] }))
-      )
-
-      const remainingResults = await Promise.all(remainingPromises)
-
-      // Update available languages for remaining results
-      remainingResults.forEach(({ lang, episodes }) => {
-        availableLanguages.value[lang as keyof typeof availableLanguages.value] = episodes.length > 0
-      })
-
-      // Check remaining languages for the episode
-      for (const { lang: altLang, episodes: altEpisodes } of remainingResults) {
-        if (altLang !== lang.value && altEpisodes.length > 0) {
-          const altEp = altEpisodes.find((e: any) => Number(e.episode) === episodeNum.value)
-          if (altEp) {
-            console.log(`🔄 Found episode ${episodeNum.value} in ${altLang}, switching...`)
-            notice.value = `Langue ${lang.value.toUpperCase()} indisponible. Basculement en ${altLang.toUpperCase()}.`
-            await navigateTo({
-              path: `/watch/${id.value}/${season.value}/${altLang}/${episodeNum.value}`,
-              query: { fallback: '1' },
-              replace: true,
-            })
-            return
-          }
-        }
-      }
-
-      // If requested language has no episodes at all, try to find ANY available language
-      if (currentLangResult && currentLangResult.episodes.length === 0) {
-        console.log(`⚠️ Language ${lang.value} has no episodes, checking for any available language...`)
-        const allResults = [...priorityResults, ...remainingResults]
-        for (const { lang: altLang, episodes: altEpisodes } of allResults) {
-          if (altLang !== lang.value && altEpisodes.length > 0) {
-            const altEp = altEpisodes.find((e: any) => Number(e.episode) === episodeNum.value)
-            if (altEp) {
-              console.log(`🔄 Switching from unavailable ${lang.value} to available ${altLang}`)
-              notice.value = `Langue ${lang.value.toUpperCase()} indisponible. Basculement en ${altLang.toUpperCase()}.`
-              await navigateTo({
-                path: `/watch/${id.value}/${season.value}/${altLang}/${episodeNum.value}`,
-                query: { fallback: '1' },
-                replace: true,
-              })
-              return
-            }
-          }
+      const availableLangResults = languageResults.filter(r => r.hasCurrentEpisode && r.lang !== lang.value)
+      
+      for (const { lang: altLang, episodes: altEpisodes } of availableLangResults) {
+        const altEp = altEpisodes.find((e: any) => Number(e.episode) === episodeNum.value)
+        if (altEp) {
+          console.log(`🔄 Found episode ${episodeNum.value} in ${altLang}, switching...`)
+          notice.value = `Langue ${lang.value.toUpperCase()} indisponible. Basculement en ${altLang.toUpperCase()}.`
+          await navigateTo({
+            path: `/watch/${id.value}/${season.value}/${altLang}/${episodeNum.value}`,
+            query: { fallback: '1' },
+            replace: true,
+          })
+          return
         }
       }
 
@@ -1682,10 +1469,6 @@ async function resolveEpisode() {
     currentSourceIndex.value = 0
     const hlsFirst = resolvedUrls.find((u: any) => u.type === "hls") || resolvedUrls[0];
     playUrl.value = hlsFirst.proxiedUrl || hlsFirst.url;
-
-    // Cache the resolved URLs
-    setCachedUrls(cacheKey, resolvedUrls)
-    saveUrlCache()
   } catch (e: any) {
     resolveError.value = e?.message || 'Erreur de résolution'
   } finally {
@@ -1703,14 +1486,6 @@ watch([showPlayer, playUrl], async () => {
 async function preloadNextEpisode() {
   try {
     const nextEpisodeNum = episodeNum.value + 1
-    const cacheKey = getCacheKey(id.value, season.value, lang.value, nextEpisodeNum)
-
-    // Check if already cached
-    if (getCachedUrls(cacheKey)) {
-      console.log(`🚀 Next episode ${nextEpisodeNum} already cached`)
-      return
-    }
-
     const nextEpisodeUrl = `/api/anime/episodes/${id.value}/${season.value}/${lang.value}`
 
     // Prefetch the episodes list for next episode
@@ -1734,13 +1509,6 @@ async function preloadNextEpisode() {
 
 // Background episode resolution for preloading
 async function resolveEpisodeInBackground(animeId: string, season: string, lang: string, episodeNum: number, candidateUrls: string[]) {
-  const cacheKey = getCacheKey(animeId, season, lang, episodeNum)
-
-  // Check cache again in case it was resolved while we were waiting
-  if (getCachedUrls(cacheKey)) {
-    return
-  }
-
   console.log(`🔄 Background resolving episode: ${animeId}/${season}/${lang}/${episodeNum}`)
 
   // Sort candidates by provider reliability
@@ -1829,9 +1597,7 @@ async function resolveEpisodeInBackground(animeId: string, season: string, lang:
         })
 
         if (finalUrls.length > 0) {
-          setCachedUrls(cacheKey, finalUrls)
-          saveUrlCache()
-          console.log(`✅ Background resolved episode ${animeId}/${season}/${lang}/${episodeNum}: ${finalUrls.length} URLs cached`)
+          console.log(`✅ Background resolved episode ${animeId}/${season}/${lang}/${episodeNum}: ${finalUrls.length} URLs found`)
         }
         break
       }
@@ -1843,9 +1609,6 @@ async function resolveEpisodeInBackground(animeId: string, season: string, lang:
 
   // Initial setup after component mounts
   onMounted(async () => {
-    // Load URL cache from sessionStorage
-    loadUrlCache()
-
     // Small delay to ensure route params are fully reactive
     await nextTick()
     await new Promise(resolve => setTimeout(resolve, 100))
@@ -1912,24 +1675,14 @@ let resolveTimeout: ReturnType<typeof setTimeout> | null = null
 let lastResolvedParams = ''
 watch([season, lang, episodeNum], () => {
   if (resolveTimeout) clearTimeout(resolveTimeout)
-  resolveTimeout = setTimeout(() => {
+  resolveTimeout = setTimeout(async () => {
     const currentParams = `${id.value}-${season.value}-${lang.value}-${episodeNum.value}`
     // Only re-resolve if params actually changed
     if (currentParams !== lastResolvedParams) {
       lastResolvedParams = currentParams
-      // Reset language availability when switching episodes/languages
-      availableLanguages.value = {
-        vostfr: false,
-        vf: false,
-        va: false,
-        var: false,
-        vkr: false,
-        vcn: false,
-        vqc: false,
-        vf1: false,
-        vf2: false,
-        vj: false
-      }
+      
+      // When switching episodes or languages, we need to re-check language availability
+      // for the new episode, so don't reset availableLanguages here - let resolveEpisode handle it
       resolveEpisode()
       // Skip times will be loaded automatically when video metadata loads
     }

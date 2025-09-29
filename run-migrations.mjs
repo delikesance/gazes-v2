@@ -28,6 +28,8 @@ async function runMigrations() {
     // Read migration files
     const migration1Path = path.join(__dirname, 'database/migrations/001_initial_schema.sql');
     const migration2Path = path.join(__dirname, 'database/migrations/002_rls_policies.sql');
+    const migration3Path = path.join(__dirname, 'database/migrations/003_aggregated_series_progress_function.sql');
+    const migration4Path = path.join(__dirname, 'database/migrations/004_watched_episodes_table.sql');
 
     // Execute first migration
     const migration1Sql = fs.readFileSync(migration1Path, 'utf-8');
@@ -38,6 +40,16 @@ async function runMigrations() {
     const migration2Sql = fs.readFileSync(migration2Path, 'utf-8');
     console.log('📋 Executing migration 2...');
     await client.query(migration2Sql);
+
+    // Execute third migration
+    const migration3Sql = fs.readFileSync(migration3Path, 'utf-8');
+    console.log('📋 Executing migration 3...');
+    await client.query(migration3Sql);
+
+    // Execute fourth migration
+    const migration4Sql = fs.readFileSync(migration4Path, 'utf-8');
+    console.log('📋 Executing migration 4...');
+    await client.query(migration4Sql);
 
     console.log('✅ Migrations executed successfully');
 

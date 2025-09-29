@@ -1,3 +1,5 @@
+// Simple in-memory cache with TTL for server-side use
+
 interface CacheEntry<T> {
   data: T
   timestamp: number
@@ -77,6 +79,14 @@ export function getCache(): MemoryCache {
     cache = new MemoryCache()
   }
   return cache
+}
+
+export function clearGlobalCache(): void {
+  if (cache) {
+    cache.clear()
+    cache.destroy()
+    cache = null
+  }
 }
 
 // Cache key generators

@@ -29,8 +29,8 @@ export default defineEventHandler(async (event) => {
 
       // Get progress for this specific anime
       const db = DatabaseService.getInstance()
-      const result = await db.getUserContinueWatching(user.id, 1000, 0) // Get all for filtering
-      const animeProgress = result.items.filter((p: any) => p.animeId === animeId)
+      const allProgress = await db.getAllUserWatchingProgress(user.id)
+      const animeProgress = allProgress.filter((p: any) => p.animeId === animeId)
 
       console.log('✅ [LOAD_PROGRESS] Found', animeProgress.length, 'progress items for anime:', animeId)
       return {
@@ -85,7 +85,7 @@ export default defineEventHandler(async (event) => {
       throw error
     }
    } else if (method === 'DELETE') {
-     // DELETE: Remove progress for a specific anime episode
+     // DELETE: Remove progress for a specific anime episode or entire series
      console.log('🗑️ [DELETE_PROGRESS] DELETE request received')
 
      try {
@@ -106,19 +106,32 @@ export default defineEventHandler(async (event) => {
        console.log('🗑️ [DELETE_PROGRESS] Deleting progress:', { userId: user.id, animeId, season, episode })
 
        // Validate input
-       if (!animeId || season === undefined || episode === undefined) {
-         console.log('❌ [DELETE_PROGRESS] Missing required fields')
+       if (!animeId) {
+         console.log('❌ [DELETE_PROGRESS] Missing animeId')
          throw createError({
            statusCode: 400,
-           statusMessage: 'Champs requis manquants'
+           statusMessage: 'Anime ID manquant'
          })
        }
 
-       // Delete progress
        const db = DatabaseService.getInstance()
-       await db.deleteWatchingProgress(user.id, animeId, season, episode)
 
-       console.log('✅ [DELETE_PROGRESS] Progress deleted successfully for user:', user.username)
+       if (season !== undefined && episode !== undefined) {
+         // Delete specific episode progress
+         await db.deleteWatchingProgress(user.id, animeId, season, episode)
+         console.log('✅ [DELETE_PROGRESS] Episode progress deleted successfully for user:', user.username)
+       } else {
+         // Delete all progress for this anime series
+         const allProgress = await db.getAllUserWatchingProgress(user.id)
+         const animeProgress = allProgress.filter((p: any) => p.animeId === animeId)
+
+         for (const progress of animeProgress) {
+           await db.deleteWatchingProgress(user.id, animeId, progress.season, progress.episode)
+         }
+
+         console.log('✅ [DELETE_PROGRESS] Series progress deleted successfully for user:', user.username, '- removed', animeProgress.length, 'episodes')
+       }
+
        return {
          success: true
        }

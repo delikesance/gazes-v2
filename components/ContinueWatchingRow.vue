@@ -18,11 +18,11 @@
     <div v-else class="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pl-5 md:pl-20 pr-5 md:pr-20 scroll-pl-5 md:scroll-pl-20 scroll-pr-5 md:scroll-pr-20">
       <div
         v-for="item in items"
-        :key="`${item.animeId}-${item.season}-${item.episode}`"
+        :key="item.animeId"
         class="snap-start shrink-0 group relative rounded-xl overflow-hidden border border-zinc-800 hover:border-zinc-600 transition-all duration-300 w-[200px] h-[320px] flex flex-col cursor-pointer"
         @click="handleItemClick(item)"
       >
-        <!-- Remove button -->
+        <!-- Remove button - moved to left -->
         <button
           @click.stop="removeItem(item)"
           class="absolute top-2 left-2 bg-red-500/90 hover:bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
@@ -31,16 +31,16 @@
           <Icon name="heroicons:x-mark" class="w-4 h-4" />
         </button>
 
-        <!-- Percentage viewed badge -->
+        <!-- Combined episode and progress badge -->
         <div class="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded z-10">
-          {{ Math.round(item.progressPercent) }}% vu
+          {{ formatSeasonEpisode(item.lastWatchedEpisode) }}
         </div>
 
         <!-- Poster image -->
         <div class="h-[240px] relative overflow-hidden">
           <img
-            :src="getPosterUrl(item)"
-            :alt="`Poster for ${item.title || item.animeId}`"
+            :src="item.image"
+            :alt="`Poster for ${item.title}`"
             class="w-[200px] h-[240px] object-cover group-hover:scale-105 transition-transform duration-300"
           />
 
@@ -48,8 +48,8 @@
           <div class="absolute bottom-0 left-0 right-0 h-1 bg-zinc-600">
             <div
               class="h-full transition-all duration-300"
-              :class="getProgressColor(item.progressPercent)"
-              :style="{ width: item.progressPercent + '%' }"
+              :class="getProgressColor(item.overallProgress)"
+              :style="{ width: item.overallProgress + '%' }"
             ></div>
           </div>
 
@@ -65,10 +65,10 @@
         <div class="flex-1 p-3 bg-zinc-900 flex flex-col justify-between">
           <div>
             <p class="text-zinc-400 text-xs mb-1">
-              {{ formatSeason(item.season) }} • Épisode {{ item.episode }}
+              {{ item.completedEpisodes }}/{{ item.totalEpisodes }} épisodes
             </p>
             <h4 class="font-medium text-white text-sm group-hover:text-violet-400 transition-colors line-clamp-3">
-              {{ item.title || item.animeId }}
+              {{ item.title }}
             </h4>
           </div>
         </div>
@@ -80,66 +80,35 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 
-interface WatchingProgress {
-  id: string
-  userId: string
+interface SeriesProgress {
   animeId: string
-  season: string
-  episode: number
-  currentTime: number
-  duration: number
-  lastWatchedAt: Date
-  completed: boolean
-  progressPercent: number
-  title?: string
-  image?: string
+  title: string
+  image: string
+  lastWatchedEpisode: {
+    season: string
+    episode: number
+    currentTime: number
+    duration: number
+    progressPercent: number
+  }
+  completedEpisodes: number // Actually represents watched episodes (episodes with progress > 0)
+  totalEpisodes: number
+  overallProgress: number
+  lastWatchedAt: string
   defaultLang?: string
 }
 
-const items = ref<WatchingProgress[]>([])
+const items = ref<SeriesProgress[]>([])
 const loading = ref(true)
 const error = ref('')
 
 const fetchContinueWatching = async () => {
   try {
     loading.value = true
-    const response = await $fetch('/api/watch/progress')
+    const response = await $fetch('/api/watch/progress/series')
 
     if (response.success) {
-      // Get unique anime IDs
-      const animeIds = [...new Set(response.progress.map((item: any) => item.animeId))]
-
-      // Fetch anime data for images, titles, and language information
-      const animeDataMap = new Map<string, { title: string; cover: string; defaultLang?: string }>()
-      for (const animeId of animeIds) {
-        try {
-          const animeData = await $fetch(`/api/anime/${animeId}`)
-          if (animeData?.title && animeData?.cover) {
-            // Get the first available language from languageFlags, default to 'vostfr'
-            const defaultLang = animeData.languageFlags ? Object.keys(animeData.languageFlags)[0] : 'vostfr'
-            animeDataMap.set(animeId, {
-              title: animeData.title,
-              cover: animeData.cover,
-              defaultLang: defaultLang || 'vostfr'
-            })
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch anime data for ${animeId}:`, err)
-        }
-      }
-
-      // Calculate progress percentage and add anime data
-      items.value = response.progress.map((item: any) => {
-        const animeData = animeDataMap.get(item.animeId)
-        return {
-          ...item,
-          lastWatchedAt: new Date(item.lastWatchedAt),
-          progressPercent: item.duration > 0 ? (item.currentTime / item.duration) * 100 : 0,
-          title: animeData?.title || item.animeId,
-          image: animeData?.cover || '',
-          defaultLang: animeData?.defaultLang || 'vostfr'
-        }
-      })
+      items.value = response.series
     } else {
       error.value = 'Failed to load continue watching items'
     }
@@ -151,42 +120,46 @@ const fetchContinueWatching = async () => {
   }
 }
 
-const getPosterUrl = (item: WatchingProgress) => {
-  return item.image || '/placeholder-poster.jpg' // Fallback to placeholder if no image
-}
-
 const getProgressColor = (percent: number) => {
   if (percent >= 90) return 'bg-green-500'
   if (percent >= 50) return 'bg-yellow-500'
   return 'bg-blue-500'
 }
 
-const formatSeason = (season: string) => {
-  // Only format if it starts with "saison" (case insensitive)
-  if (season.toLowerCase().startsWith('saison')) {
-    const match = season.match(/saison(\d+)/i)
-    if (match) {
-      return `Saison ${match[1]}`
-    }
+const formatSeasonEpisode = (episode: SeriesProgress['lastWatchedEpisode']) => {
+  const seasonNum = episode.season.match(/(\d+)/)?.[1] || '1'
+  return `S${seasonNum.padStart(2, '0')}E${episode.episode.toString().padStart(2, '0')}`
+}
+
+const handleItemClick = (item: SeriesProgress) => {
+  // Navigate to the appropriate episode in the series
+  // If the last watched episode is not fully watched, resume it
+  // Otherwise, go to the next episode
+  const lastEpisode = item.lastWatchedEpisode
+  let targetEpisode = lastEpisode.episode
+
+  if (lastEpisode.progressPercent < 90) {
+    // Resume current episode
+    targetEpisode = lastEpisode.episode
+  } else {
+    // Go to next episode
+    targetEpisode = lastEpisode.episode + 1
   }
-  return season
-}
 
-const handleItemClick = (item: WatchingProgress) => {
-  // Navigate to the watch page with proper URL structure: /watch/{anime-slug}/{season}/{lang}/{episode}
-  // Add a query parameter to indicate this is a continue watching action
   const lang = item.defaultLang || 'vostfr'
-  navigateTo(`/watch/${item.animeId}/${item.season}/${lang}/${item.episode}?continue=true`)
+  const season = lastEpisode.season
+
+  navigateTo(`/watch/${item.animeId}/${season}/${lang}/${targetEpisode}?continue=true`)
 }
 
-const removeItem = async (item: WatchingProgress) => {
+const removeItem = async (item: SeriesProgress) => {
   try {
+    // Remove all progress for this anime series (no season/episode specified)
     await $fetch(`/api/watch/progress/${item.animeId}`, {
-      method: 'DELETE',
-      body: { season: item.season, episode: item.episode }
+      method: 'DELETE'
     })
     // Remove from local items
-    const index = items.value.findIndex(i => i.id === item.id)
+    const index = items.value.findIndex(i => i.animeId === item.animeId)
     if (index > -1) {
       items.value.splice(index, 1)
     }

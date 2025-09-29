@@ -111,8 +111,6 @@ export default defineNuxtConfig({
             'access-control-allow-credentials': 'true'
           }
         },
-        '/api/catalogue': { cache: { maxAge: 300 } }, // Cache catalogue for 5 minutes
-        '/api/search': { cache: { maxAge: 300 } }, // Cache search for 5 minutes
         '/favicon.ico': { cache: { maxAge: 86400 * 30 } },
         '/robots.txt': { cache: { maxAge: 86400 * 7 } },
         '/sw.js': { cache: { maxAge: 0 } },

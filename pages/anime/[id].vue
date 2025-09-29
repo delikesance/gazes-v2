@@ -41,13 +41,119 @@ const selectedSeasonUrl = ref<string>("");
 const episodes = ref<Episode[]>([]);
 const loadingEps = ref(false);
 
+// Track available languages for the current anime/season
+const availableLanguages = ref<Record<LanguageCode, boolean>>({
+  vostfr: false,
+  vf: false,
+  va: false,
+  var: false,
+  vkr: false,
+  vcn: false,
+  vqc: false,
+  vf1: false,
+  vf2: false,
+  vj: false,
+  vo: false,
+  raw: false,
+  vq: false
+});
+
+// Track completed episodes for this anime (from progress data)
+const episodeProgress = ref<{ season: string; episode: number; progressPercent: number; completed: boolean }[]>([]);
+
+// Computed property to check if an episode is watched
+const isEpisodeWatched = computed(() => {
+  return (episode: Episode, seasonSlug: string) => {
+    const progress = episodeProgress.value.find(p => 
+      p.season === seasonSlug && p.episode === episode.episode
+    );
+    return progress ? progress.progressPercent > 0 : false;
+  };
+});
+
+// Computed property to get episode progress percentage
+const getEpisodeProgress = computed(() => {
+  return (episode: Episode, seasonSlug: string) => {
+    const progress = episodeProgress.value.find(p => 
+      p.season === seasonSlug && p.episode === episode.episode
+    );
+    return progress ? progress.progressPercent : 0;
+  };
+});
+
+// Computed property to get episode button classes
+const getEpisodeClasses = computed(() => {
+  return (episode: Episode) => {
+    const progressPercent = getEpisodeProgress.value(episode, extractSeasonSlug(selectedSeason.value?.url || ''))
+    
+    if (progressPercent > 0) {
+      // Watched episode with progress indicator
+      const progressWidth = Math.max(10, progressPercent); // Minimum 10% for visibility
+      return `inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition lg:text-base lg:px-5 lg:py-2 relative overflow-hidden ${
+        progressPercent >= 90 
+          ? 'border-green-600 text-green-400' // Fully watched
+          : 'border-zinc-700 text-zinc-200'   // Partially watched
+      }`
+    }
+    
+    // Unwatched episode
+    return 'inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/40 px-3 py-1.5 text-sm text-zinc-200 hover:border-zinc-700 transition lg:text-base lg:px-5 lg:py-2'
+  }
+})
+
+// Computed property to get episode button styles (for progress gradient)
+const getEpisodeStyles = computed(() => {
+  return (episode: Episode) => {
+    const progressPercent = getEpisodeProgress.value(episode, extractSeasonSlug(selectedSeason.value?.url || ''))
+    
+    if (progressPercent > 0) {
+      const progressWidth = Math.max(10, progressPercent); // Minimum 10% for visibility
+      
+      if (progressPercent >= 90) {
+        // Fully watched - solid green background
+        return {
+          background: 'rgba(22, 163, 74, 0.2)' // green-600/20
+        }
+      } else {
+        // Partially watched - gradient from green to zinc
+        return {
+          background: `linear-gradient(to right, rgba(22, 163, 74, 0.2) 0%, rgba(22, 163, 74, 0.2) ${progressWidth}%, rgba(39, 39, 42, 0.4) ${progressWidth}%, rgba(39, 39, 42, 0.4) 100%)`
+        }
+      }
+    }
+    
+    return {}
+  }
+})
+
+// Fetch completed episodes for this anime from progress data
+async function fetchWatchedEpisodes() {
+  try {
+    const response = await $fetch(`/api/watch/progress/${id.value}`) as any;
+    if (response.success && response.progress) {
+      // Store all progress data with calculated percentages
+      episodeProgress.value = response.progress.map((p: any) => ({
+        season: p.season,
+        episode: p.episode,
+        progressPercent: p.duration > 0 ? Math.min(100, Math.round((p.currentTime / p.duration) * 100)) : 0,
+        completed: p.completed
+      }));
+    } else {
+      episodeProgress.value = [];
+    }
+  } catch (error) {
+    console.error('❌ Failed to fetch watched episodes:', error);
+    episodeProgress.value = [];
+  }
+}
+
 
 // Computed property for anime seasons to ensure consistency
 const animeSeasons = computed(() => {
     return info.value?.seasons?.filter(season => season.type?.toLowerCase() === 'anime') || [];
 });
 
-// Language options computed property - same as player
+// Language options computed property - only show available languages
 const languageOptions = computed(() => {
   const options: Array<{code: LanguageCode; label: string; fullLabel: string}> = []
 
@@ -88,24 +194,71 @@ const languageOptions = computed(() => {
   // All possible languages
   const allLanguages: LanguageCode[] = ['vostfr', 'vf', 'va', 'var', 'vkr', 'vcn', 'vqc', 'vf1', 'vf2', 'vj', 'vo', 'raw', 'vq']
 
-  // Build options for all languages
+  // Build options only for available languages
   allLanguages.forEach(langCode => {
-    // Use dynamic flag from API or fall back to default
-    const emoji = info.value?.languageFlags?.[langCode] || defaultFlags[langCode] || '🏳️'
-    const shortLabel = langCode.toUpperCase()
-    const fullLabel = languageLabels[langCode] || langCode.toUpperCase()
+    if (availableLanguages.value[langCode]) {
+      // Use dynamic flag from API or fall back to default
+      const emoji = info.value?.languageFlags?.[langCode] || defaultFlags[langCode] || '🏳️'
+      const shortLabel = langCode.toUpperCase()
+      const fullLabel = languageLabels[langCode] || langCode.toUpperCase()
 
-    options.push({
-      code: langCode,
-      label: `${emoji} ${shortLabel}`,
-      fullLabel
-    })
+      options.push({
+        code: langCode,
+        label: `${emoji} ${shortLabel}`,
+        fullLabel
+      })
+    }
   })
 
   return options
 })
 
 
+
+async function checkLanguageAvailability(seasonSlug: string) {
+    debugLog('🔍 Checking language availability for season:', seasonSlug);
+    
+    // Reset all languages to unavailable
+    Object.keys(availableLanguages.value).forEach(lang => {
+        availableLanguages.value[lang as LanguageCode] = false;
+    });
+    
+    // Check all languages for availability
+    const allLanguages: LanguageCode[] = ['vostfr', 'vf', 'va', 'var', 'vkr', 'vcn', 'vqc', 'vf1', 'vf2', 'vj', 'vo', 'raw', 'vq'];
+    
+    // Check languages in parallel for faster loading
+    const languageChecks = allLanguages.map(async (langCode) => {
+        try {
+            const response = await $fetch<{ episodes: Episode[] }>(
+                `/api/anime/episodes/${id.value}/${seasonSlug}/${langCode}`,
+                { timeout: 3000 } // Shorter timeout for availability checks
+            );
+            const hasEpisodes = (response?.episodes || []).filter(ep => ep.episode > 0).length > 0;
+            return { lang: langCode, available: hasEpisodes };
+        } catch (error) {
+            debugLog(`❌ Language ${langCode} check failed:`, error);
+            return { lang: langCode, available: false };
+        }
+    });
+    
+    try {
+        const results = await Promise.all(languageChecks);
+        
+        // Update available languages
+        results.forEach(({ lang, available }) => {
+            availableLanguages.value[lang] = available;
+        });
+        
+        const availableLangs = Object.entries(availableLanguages.value)
+            .filter(([_, available]) => available)
+            .map(([lang, _]) => lang.toUpperCase());
+            
+        debugLog(`✅ Language availability checked: ${availableLangs.join(', ')} available`);
+    } catch (error) {
+        debugLog('❌ Error checking language availability:', error);
+        // If checking fails, keep all languages as unavailable (false)
+    }
+}
 
 async function pickSeason(s: Season) {
     // Prevent loading if already loading or same season
@@ -124,6 +277,9 @@ async function pickSeason(s: Season) {
         const seasonSlug = extractSeasonSlug(s.url);
 
         debugLog('🎯 Season selected:', { name: s.name, url: s.url, seasonSlug });
+
+        // Check all languages for availability first
+        await checkLanguageAvailability(seasonSlug);
 
         // Try to load episodes for the selected language first
         try {
@@ -206,6 +362,7 @@ async function switchLanguage(newLang: LanguageCode) {
         const prevLang = selectedLang.value;
         selectedLang.value = prevLang;
         try {
+            const seasonSlug = extractSeasonSlug(selectedSeason.value.url, Object.keys(info.value?.languageFlags || {}));
             await loadEpisodesForLanguage(seasonSlug, prevLang);
         } catch (e) {
             episodes.value = [];
@@ -223,6 +380,8 @@ onMounted(() => {
             pickSeason(first);
         }
     }
+    // Fetch watched episodes for this anime
+    fetchWatchedEpisodes();
 });
 
 const showPlayer = ref(false);
@@ -551,8 +710,11 @@ const getVideoErrorMessage = (errorCode: number): string => {
                     <div v-if="debug" class="bg-zinc-800 p-3 rounded mb-4 text-xs">
                         <div><strong>Debug Info:</strong></div>
                         <div>Selected Season: {{ selectedSeason?.name || 'None' }}</div>
+                        <div>Selected Season URL: {{ selectedSeason?.url || 'None' }}</div>
+                        <div>Extracted Season Slug: {{ extractSeasonSlug(selectedSeason?.url || '') }}</div>
                         <div>Selected Lang: {{ selectedLang }}</div>
                         <div>Episodes Count: {{ episodes.length }}</div>
+                        <div>Progress Data: {{ episodeProgress.length }} episodes</div>
                         <div>Loading: {{ loadingEps }}</div>
                     </div>
                     <div
@@ -597,16 +759,20 @@ const getVideoErrorMessage = (errorCode: number): string => {
                         <button
                             v-for="e in episodes"
                             :key="e.episode"
-                            class="pill pill-lg hover:border-zinc-600 text-left"
+                            :class="getEpisodeClasses(e)"
+                            :style="getEpisodeStyles(e)"
+                            :title="`${e.title || `Épisode ${e.episode}`}${getEpisodeProgress(e, extractSeasonSlug(selectedSeason?.url || '')) > 0 ? ` (${getEpisodeProgress(e, extractSeasonSlug(selectedSeason?.url || ''))}%)` : ''}`"
                             @click="play(e)"
-                            :title="e.title || `Épisode ${e.episode}`"
                         >
-                            <div class="flex flex-col items-start">
+                            <div class="flex flex-col items-start relative z-10">
                                 <span class="text-sm font-medium">
                                     {{ e.title || `Épisode ${e.episode}` }}
                                 </span>
                                 <span v-if="!e.title" class="text-xs opacity-70">
                                     {{ selectedSeason?.name || 'Episode' }}
+                                </span>
+                                <span v-if="getEpisodeProgress(e, extractSeasonSlug(selectedSeason?.url || '')) > 0" class="text-xs opacity-75 mt-0.5">
+                                    {{ getEpisodeProgress(e, extractSeasonSlug(selectedSeason?.url || '')) }}%
                                 </span>
                             </div>
                         </button>

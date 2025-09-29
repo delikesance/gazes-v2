@@ -421,49 +421,24 @@ export class DatabaseService {
     }
   }
 
-  async getUserContinueWatching(userId: string, limit: number = 20, offset: number = 0): Promise<{ items: WatchingProgress[], total: number }> {
-    console.log('📁 [DATABASE] Getting continue watching for user:', userId, 'limit:', limit, 'offset:', offset)
+  async getUserSeriesProgress(userId: string, limit: number = 20, offset: number = 0): Promise<{ items: any[], total: number }> {
+    console.log('📁 [DATABASE] Getting series progress for user:', userId, 'limit:', limit, 'offset:', offset)
 
-    // Get total count
-    const { count: totalCount, error: countError } = await this.supabase
-      .from('watching_progress')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('completed', false)
-
-    if (countError) {
-      console.error('📁 [DATABASE] Error getting continue watching count:', countError)
-      throw countError
-    }
-
-    // Get paginated data
+    // Get aggregated series progress in a single query
     const { data, error } = await this.supabase
-      .from('watching_progress')
-      .select('id, user_id, anime_id, season, episode, current_time, duration, last_watched_at, completed')
-      .eq('user_id', userId)
-      .eq('completed', false)
-      .order('last_watched_at', { ascending: false })
-      .range(offset, offset + limit - 1)
+      .rpc('get_user_series_progress', {
+        p_user_id: userId,
+        p_limit: limit,
+        p_offset: offset
+      })
 
     if (error) {
-      console.error('📁 [DATABASE] Error getting continue watching:', error)
+      console.error('📁 [DATABASE] Error getting series progress:', error)
       throw error
     }
 
-    const progress: WatchingProgress[] = data.map((row: any) => ({
-      id: String(row.id),
-      userId: String(row.user_id),
-      animeId: String(row.anime_id),
-      season: String(row.season),
-      episode: Number(row.episode),
-      currentTime: Number(row.current_time),
-      duration: Number(row.duration),
-      lastWatchedAt: new Date(row.last_watched_at),
-      completed: Boolean(row.completed)
-    }))
-
-    console.log('📁 [DATABASE] Found', progress.length, 'continue watching items (total:', totalCount, ')')
-    return { items: progress, total: totalCount || 0 }
+    console.log('📁 [DATABASE] Found', data.length, 'series progress items')
+    return { items: data, total: data.length > 0 ? data[0].total_count : 0 }
   }
 
   async deleteWatchingProgress(userId: string, animeId: string, season: string, episode: number): Promise<boolean> {
@@ -486,35 +461,269 @@ export class DatabaseService {
     return true
   }
 
-  async markAsCompleted(userId: string, animeId: string, season: string, episode: number): Promise<boolean> {
-    console.log('📁 [DATABASE] Marking episode as completed:', { userId, animeId, season, episode })
+  async getAllUserWatchingProgress(userId: string): Promise<WatchingProgress[]> {
+    console.log('📁 [DATABASE] Getting all watching progress for user:', userId)
+
+    const { data, error } = await this.supabase
+      .from('watching_progress')
+      .select('id, user_id, anime_id, season, episode, current_time, duration, last_watched_at, completed')
+      .eq('user_id', userId)
+      .order('last_watched_at', { ascending: false })
+
+    if (error) {
+      console.error('📁 [DATABASE] Error getting all watching progress:', error)
+      throw error
+    }
+
+    const progress = data.map((row: any) => ({
+      id: row.id,
+      userId: row.user_id,
+      animeId: row.anime_id,
+      season: row.season,
+      episode: row.episode,
+      currentTime: row.current_time,
+      duration: row.duration,
+      lastWatchedAt: new Date(row.last_watched_at),
+      completed: row.completed
+    }))
+
+    console.log('📁 [DATABASE] Found', progress.length, 'watching progress items')
+    return progress
+  }
+
+  async getAggregatedUserSeriesProgress(userId: string): Promise<any[]> {
+    console.log('📁 [DATABASE] Getting aggregated series progress for user:', userId)
+
+    // Use a single query with aggregation to get series progress
+    const { data, error } = await this.supabase
+      .rpc('get_aggregated_series_progress', {
+        p_user_id: userId
+      })
+
+    if (error) {
+      console.error('📁 [DATABASE] Error getting aggregated series progress:', error)
+      // Fallback to application-level aggregation if RPC fails
+      console.log('📁 [DATABASE] Falling back to application-level aggregation')
+      return this.getAggregatedSeriesProgressFallback(userId)
+    }
+
+    console.log('📁 [DATABASE] Found', data.length, 'aggregated series progress items')
+    return data
+  }
+
+  private async getAggregatedSeriesProgressFallback(userId: string): Promise<any[]> {
+    console.log('📁 [DATABASE] Using fallback aggregation method')
+
+    const allProgress = await this.getAllUserWatchingProgress(userId)
+    console.log('📁 [DATABASE] Found', allProgress.length, 'raw progress items for fallback aggregation')
+
+    // Group and aggregate in application code - return same format as database function
+    const seriesMap = new Map<string, any>()
+
+    for (const progress of allProgress) {
+      if (!seriesMap.has(progress.animeId)) {
+        seriesMap.set(progress.animeId, {
+          anime_id: progress.animeId,
+          total_episodes_watched: 0, // This will be count of progress entries with current_time > 0
+          completed_episodes: 0,
+          last_watched_at: progress.lastWatchedAt,
+          latest_season: progress.season,
+          latest_episode: progress.episode,
+          latest_current_time: progress.currentTime,
+          latest_duration: progress.duration
+        })
+      }
+
+      const series = seriesMap.get(progress.animeId)!
+
+      // Count episodes watched (episodes that have been started - current_time > 0)
+      if (progress.currentTime > 0) {
+        series.total_episodes_watched++
+      }
+
+      // Count completed episodes (90%+ watched)
+      if (progress.completed) {
+        series.completed_episodes++
+      }
+
+      // Track the most recent episode by time (for last_watched_at)
+      if (new Date(progress.lastWatchedAt) > new Date(series.last_watched_at)) {
+        series.last_watched_at = progress.lastWatchedAt
+      }
+
+      // Track the highest episode number (not most recent by time)
+      const currentSeasonNum = this.parseSeasonNumber(progress.season)
+      const latestSeasonNum = this.parseSeasonNumber(series.latest_season)
+
+      if (currentSeasonNum > latestSeasonNum ||
+          (currentSeasonNum === latestSeasonNum && progress.episode > series.latest_episode)) {
+        series.latest_season = progress.season
+        series.latest_episode = progress.episode
+        series.latest_current_time = progress.currentTime
+        series.latest_duration = progress.duration
+      }
+    }
+
+    const result = Array.from(seriesMap.values())
+    console.log('📁 [DATABASE] Fallback aggregation produced', result.length, 'series items')
+    return result
+  }
+
+  // Watched episodes operations
+  async markEpisodeWatched(userId: string, animeId: string, season: string, episode: number): Promise<void> {
+    console.log('📁 [DATABASE] Marking episode as watched:', { userId, animeId, season, episode })
+
+    const id = crypto.randomUUID()
+    const now = new Date()
 
     const { error } = await this.supabase
-      .from('watching_progress')
-      .update({
-        completed: true,
-        last_watched_at: new Date().toISOString()
+      .from('watched_episodes')
+      .upsert({
+        id,
+        user_id: userId,
+        anime_id: animeId,
+        season,
+        episode,
+        watched_at: now.toISOString()
+      }, {
+        onConflict: 'user_id,anime_id,season,episode'
       })
+
+    if (error) {
+      console.error('📁 [DATABASE] Error marking episode as watched:', error)
+      throw error
+    }
+
+    console.log('📁 [DATABASE] Episode marked as watched successfully')
+  }
+
+  async unmarkEpisodeWatched(userId: string, animeId: string, season: string, episode: number): Promise<boolean> {
+    console.log('📁 [DATABASE] Unmarking episode as watched:', { userId, animeId, season, episode })
+
+    const { error } = await this.supabase
+      .from('watched_episodes')
+      .delete()
       .eq('user_id', userId)
       .eq('anime_id', animeId)
       .eq('season', season)
       .eq('episode', episode)
 
     if (error) {
-      console.error('📁 [DATABASE] Error marking episode as completed:', error)
+      console.error('📁 [DATABASE] Error unmarking episode as watched:', error)
       return false
     }
 
-    console.log('📁 [DATABASE] Episode marked as completed successfully')
+    console.log('📁 [DATABASE] Episode unmarked as watched successfully')
     return true
   }
 
-  // Execute raw SQL (for migrations)
-  async executeSql(sql: string): Promise<void> {
-    console.log('📁 [DATABASE] Executing SQL:', sql.substring(0, 100) + '...')
-    const { error } = await this.supabase.rpc('exec_sql', { sql })
+  async getWatchedEpisodes(userId: string, animeId: string): Promise<{ season: string; episode: number; watchedAt: Date }[]> {
+    console.log('📁 [DATABASE] Getting watched episodes for series:', { userId, animeId })
+
+    const { data, error } = await this.supabase
+      .from('watched_episodes')
+      .select('season, episode, watched_at')
+      .eq('user_id', userId)
+      .eq('anime_id', animeId)
+      .order('season')
+      .order('episode')
+
     if (error) {
+      console.error('📁 [DATABASE] Error getting watched episodes:', error)
       throw error
     }
+
+    const watchedEpisodes = data.map((row: any) => ({
+      season: row.season,
+      episode: row.episode,
+      watchedAt: new Date(row.watched_at)
+    }))
+
+    console.log('📁 [DATABASE] Found', watchedEpisodes.length, 'watched episodes')
+    return watchedEpisodes
+  }
+
+  async getLatestWatchedEpisode(userId: string, animeId: string): Promise<{ season: string; episode: number; watchedAt: Date } | null> {
+    console.log('📁 [DATABASE] Getting latest watched episode for series (highest episode number):', { userId, animeId })
+
+    // Get all watched episodes and find the one with highest episode number
+    const allWatched = await this.getWatchedEpisodes(userId, animeId)
+
+    if (allWatched.length === 0) {
+      return null
+    }
+
+    // Find the episode with the highest season and episode number
+    let latestEpisode = allWatched[0]
+
+    for (const episode of allWatched) {
+      const currentSeasonNum = this.parseSeasonNumber(episode.season)
+      const latestSeasonNum = this.parseSeasonNumber(latestEpisode.season)
+
+      if (currentSeasonNum > latestSeasonNum ||
+          (currentSeasonNum === latestSeasonNum && episode.episode > latestEpisode.episode)) {
+        latestEpisode = episode
+      }
+    }
+
+    console.log('📁 [DATABASE] Found latest watched episode (highest number):', latestEpisode.episode)
+    return latestEpisode
+  }
+
+  private parseSeasonNumber(season: string): number {
+    // Try to parse season number from various formats
+    const patterns = [
+      /saison(\d+)/i,
+      /season(\d+)/i,
+      /s(\d+)/i
+    ]
+
+    for (const pattern of patterns) {
+      const match = season.match(pattern)
+      if (match) {
+        return parseInt(match[1])
+      }
+    }
+
+    return 0 // Default for unrecognized season formats
+  }
+
+  async isEpisodeWatched(userId: string, animeId: string, season: string, episode: number): Promise<boolean> {
+    console.log('📁 [DATABASE] Checking if episode is watched:', { userId, animeId, season, episode })
+
+    const { data, error } = await this.supabase
+      .from('watched_episodes')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('anime_id', animeId)
+      .eq('season', season)
+      .eq('episode', episode)
+
+    if (error) {
+      console.error('📁 [DATABASE] Error checking if episode is watched:', error)
+      throw error
+    }
+
+    const isWatched = (data || 0) > 0
+    console.log('📁 [DATABASE] Episode watched status:', isWatched)
+    return isWatched
+  }
+
+  async clearWatchedEpisodesForSeries(userId: string, animeId: string): Promise<boolean> {
+    console.log('📁 [DATABASE] Clearing all watched episodes for series:', { userId, animeId })
+
+    const { error } = await this.supabase
+      .from('watched_episodes')
+      .delete()
+      .eq('user_id', userId)
+      .eq('anime_id', animeId)
+
+    if (error) {
+      console.error('📁 [DATABASE] Error clearing watched episodes:', error)
+      return false
+    }
+
+    console.log('📁 [DATABASE] Watched episodes cleared successfully')
+    return true
   }
 }

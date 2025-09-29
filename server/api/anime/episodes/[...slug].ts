@@ -1,6 +1,5 @@
 import { preferNonBlacklisted, isBlacklisted, hostnameOf } from '~/shared/utils/hosts'
 import { defineEventHandler, getQuery, createError } from 'h3'
-import { cachedFetch, CACHE_TTL } from '~/server/utils/cache'
 // Function to scrape episode titles from anime-sama main page
 async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, lang: string): Promise<Record<number, string>> {
     console.log('Starting title scraping for:', animeId, season, lang)
@@ -18,25 +17,21 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
 
     // For films, only fetch the language-specific page where newSPF() calls are located
     console.log('Fetching film titles from lang page:', `https://anime-sama.fr/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`)
-    const titlesCacheKey = `anime-episodes-titles:${animeId}:${season}:${lang}`
 
-    const langPageRes = await cachedFetch(titlesCacheKey, async () => {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 4000) // 4 second timeout
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 4000) // 4 second timeout
 
-        const res = await fetch(`https://anime-sama.fr/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`, {
-            headers: {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-            },
-            redirect: 'follow',
-            referrerPolicy: 'strict-origin-when-cross-origin',
-            signal: controller.signal
-        })
+    const langPageRes = await fetch(`https://anime-sama.fr/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`, {
+        headers: {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+        },
+        redirect: 'follow',
+        referrerPolicy: 'strict-origin-when-cross-origin',
+        signal: controller.signal
+    })
 
-        clearTimeout(timeoutId)
-        return res
-    }, CACHE_TTL.GENERAL)
+    clearTimeout(timeoutId)
 
     if (langPageRes.ok) {
         const langPageHtml = await langPageRes.text()
@@ -289,26 +284,22 @@ export default defineEventHandler(async (event) => {
     // First, try to fetch episode lists from the episodes.js file
     const jsUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(seasonFormatted)}/${encodeURIComponent(lang)}/episodes.js`
     let sourceText = ''
-    const jsCacheKey = `anime-episodes-js:${id}:${seasonFormatted}:${lang}`
 
     try {
-        const jsRes = await cachedFetch(jsCacheKey, async () => {
-            const controller = new AbortController()
-            const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
 
-            const res = await fetch(jsUrl, {
-                headers: {
-                    'Accept': '*/*',
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-                },
-                redirect: 'follow',
-                referrerPolicy: 'strict-origin-when-cross-origin',
-                signal: controller.signal
-            })
+        const jsRes = await fetch(jsUrl, {
+            headers: {
+                'Accept': '*/*',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+            },
+            redirect: 'follow',
+            referrerPolicy: 'strict-origin-when-cross-origin',
+            signal: controller.signal
+        })
 
-            clearTimeout(timeoutId)
-            return res
-        }, CACHE_TTL.GENERAL)
+        clearTimeout(timeoutId)
 
         if (jsRes.ok) {
             const jsText = await jsRes.text()
@@ -321,26 +312,22 @@ export default defineEventHandler(async (event) => {
     // If episodes.js didn't work, try the main season page
     if (!sourceText) {
         const seasonUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(seasonFormatted)}/${encodeURIComponent(lang)}/`
-        const seasonCacheKey = `anime-episodes-page:${id}:${seasonFormatted}:${lang}`
 
         try {
-            const res = await cachedFetch(seasonCacheKey, async () => {
-                const controller = new AbortController()
-                const timeoutId = setTimeout(() => controller.abort(), 4000) // 4 second timeout
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 4000) // 4 second timeout
 
-                const response = await fetch(seasonUrl, {
-                    headers: {
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-                    },
-                    redirect: 'follow',
-                    referrerPolicy: 'strict-origin-when-cross-origin',
-                    signal: controller.signal
-                })
+            const res = await fetch(seasonUrl, {
+                headers: {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+                },
+                redirect: 'follow',
+                referrerPolicy: 'strict-origin-when-cross-origin',
+                signal: controller.signal
+            })
 
-                clearTimeout(timeoutId)
-                return response
-            }, CACHE_TTL.GENERAL)
+            clearTimeout(timeoutId)
 
             if (res.ok) {
                 sourceText = await res.text()

@@ -2,6 +2,8 @@
 // Usage: /api/proxy?url=<encodedRemoteUrl>&referer=<optional>&ua=<optional>&origin=<optional>&rewrite=1
 // - If the target is an m3u8, we rewrite segment URIs and EXT-X-KEY URIs to go back through this proxy.
 
+import { getVideoCache } from '~/server/utils/videoCache'
+
 // Portable base64url decode without relying on Node typings
 function b64urlDecodeToUtf8(input: string): string {
   const base64 = input.replace(/-/g, '+').replace(/_/g, '/')
@@ -122,6 +124,22 @@ export default defineEventHandler(async (event) => {
     ;(event as any).node?.req?.on?.('close', () => controller.abort())
   } catch {}
 
+  const videoCache = getVideoCache()
+  const isM3U8 = /\.m3u8($|\?)/i.test(rawUrl)
+  const isVideoContent = isM3U8 || /\.mp4($|\?)/i.test(rawUrl) || /\.webm($|\?)/i.test(rawUrl)
+
+  // Check cache for video content (but not for range requests)
+  if (isVideoContent && !range) {
+    const cached = videoCache.get(rawUrl)
+    if (cached) {
+      console.log('[proxy] Serving from video cache:', rawUrl)
+      setResponseHeader(event, 'Content-Type', cached.contentType)
+      setResponseHeader(event, 'X-Cache-Status', 'HIT')
+      setResponseStatus(event, 200)
+      return cached.data
+    }
+  }
+
   let res: Response
   try {
     res = await fetch(target.toString(), { headers, redirect: 'follow', signal: controller.signal as any })
@@ -155,24 +173,30 @@ export default defineEventHandler(async (event) => {
 
   // If it's an HLS playlist and rewrite enabled, fetch as text and transform segment URIs
   const contentType = res.headers.get('Content-Type') || ''
-  const isM3U8 = /application\/(vnd\.apple\.mpegurl|x-mpegURL)|text\/plain.*\.m3u8/i.test(contentType) || /\.m3u8($|\?)/i.test(target.toString())
+  const isM3U8Response = /application\/(vnd\.apple\.mpegurl|x-mpegURL)|text\/plain.*\.m3u8/i.test(contentType) || /\.m3u8($|\?)/i.test(target.toString())
 
-  console.log('[proxy] Content-Type:', contentType, 'Is M3U8:', isM3U8, 'Rewrite enabled:', rewrite)
+  console.log('[proxy] Content-Type:', contentType, 'Is M3U8:', isM3U8Response, 'Rewrite enabled:', rewrite)
 
   // Check if we got HTML instead of media - this indicates the URL is not a valid media file
-  if (!isM3U8 && /text\/html|application\/xhtml\+xml/i.test(contentType)) {
+  if (!isM3U8Response && /text\/html|application\/xhtml\+xml/i.test(contentType)) {
     console.warn('[proxy] Received HTML response instead of media for URL:', target.toString(), 'Content-Type:', contentType)
     setResponseStatus(event, 502, 'Bad Gateway')
     setResponseHeader(event, 'Content-Type', 'application/json; charset=utf-8')
     return JSON.stringify({ ok: false, message: 'Invalid media URL - received HTML instead of video content' })
   }
 
-  if (isM3U8 && rewrite && res.ok) {
+  if (isM3U8Response && rewrite && res.ok) {
     try {
       const playlist = await resClone.text()
       console.log('[proxy] Original playlist length:', playlist.length)
       console.log('[proxy] First 500 chars of playlist:', playlist.substring(0, 500))
-      
+
+      // Cache the original playlist content
+      if (isVideoContent && !range) {
+        videoCache.set(rawUrl, playlist, contentType)
+        setResponseHeader(event, 'X-Cache-Status', 'MISS')
+      }
+
       const base = target
 
       // Helper to build proxied URL preserving spoof headers
@@ -195,7 +219,7 @@ export default defineEventHandler(async (event) => {
         .map((line) => {
           // Skip empty lines
           if (!line.trim()) return line
-          
+
           if (line.startsWith('#')) {
             // Rewrite any URI="..." attribute in HLS tags (KEY, MAP, MEDIA, PART, PRELOAD-HINT, I-FRAME-STREAM-INF, SESSION-KEY, RENDITION-REPORT)
             return line.replace(/URI="([^"]+)"/ig, (_m, p1) => `URI="${buildProxy(p1)}"`)
@@ -213,6 +237,31 @@ export default defineEventHandler(async (event) => {
       console.warn('[proxy] HLS rewrite failed:', error)
       // Fall back to streaming the original content
     }
+  }
+
+  // For non-HLS content, cache if it's video content and successful response
+  if (isVideoContent && !range && res.ok && res.status === 200) {
+    try {
+      const contentLength = res.headers.get('Content-Length')
+      const maxCacheSize = 50 * 1024 * 1024 // 50MB limit
+
+      // Only cache if content length is known and reasonable
+      if (contentLength && parseInt(contentLength) <= maxCacheSize) {
+        const buffer = await res.arrayBuffer()
+        videoCache.set(rawUrl, Buffer.from(buffer), contentType)
+        setResponseHeader(event, 'X-Cache-Status', 'MISS')
+
+        // Return the cached buffer
+        return Buffer.from(buffer)
+      } else {
+        setResponseHeader(event, 'X-Cache-Status', 'SKIP')
+      }
+    } catch (error) {
+      console.warn('[proxy] Failed to cache video content:', error)
+      setResponseHeader(event, 'X-Cache-Status', 'ERROR')
+    }
+  } else if (isVideoContent) {
+    setResponseHeader(event, 'X-Cache-Status', range ? 'SKIP-RANGE' : 'SKIP')
   }
 
   // Stream body as-is for all other content types
