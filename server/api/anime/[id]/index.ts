@@ -15,30 +15,23 @@ export default defineEventHandler(async (event) => {
 
     // Try to fetch directly first
     const animeCacheKey = `anime:${id}`
-    let html: string
-    try {
-        html = await cachedFetch(animeCacheKey, async () => {
-            const response = await fetch(`https://anime-sama.fr/catalogue/${id}/`, {
-                headers: {
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'User-Agent': USER_AGENT,
-                },
-                redirect: 'follow',
-            })
+    let response = await cachedFetch(animeCacheKey, async () => {
+        return await fetch(`https://anime-sama.fr/catalogue/${id}/`, {
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'User-Agent': USER_AGENT,
+            },
+            redirect: 'follow',
+        })
+    }, CACHE_TTL.GENERAL)
 
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`)
-            }
-
-            return await response.text()
-        }, 60 * 1000) // 1 minute TTL
-    } catch (error) {
-        // If direct fetch fails, try to search for the anime
+    // If direct fetch fails, try to search for the anime
+    if (!response.ok) {
         const searchTerm = id.replace(/[-_]/g, ' ')
         const searchCacheKey = `anime-search:${searchTerm}`
 
         const searchResponse = await cachedFetch(searchCacheKey, async () => {
-            const res = await fetch("https://anime-sama.fr/template-php/defaut/fetch.php", {
+            return await fetch("https://anime-sama.fr/template-php/defaut/fetch.php", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -46,47 +39,48 @@ export default defineEventHandler(async (event) => {
                 },
                 body: "query=" + encodeURIComponent(searchTerm),
             })
-
-            if (!res.ok) {
-                throw new Error(`HTTP ${res.status}`)
-            }
-
-            return await res.text()
         }, CACHE_TTL.SEARCH)
 
-        const searchResults = parseAnimeResults(searchResponse)
+        const searchResults = parseAnimeResults(await searchResponse.text())
 
-        if (!searchResults || searchResults.length === 0) {
+        if (!searchResponse.ok || !searchResults || searchResults.length === 0) {
             throw createError({
                 statusCode: 404,
                 statusMessage: 'Not Found',
-                message: `Anime not found: ${id}`
+                message: `No anime found for id: ${id}`
             })
         }
 
+        // Use the first result's real ID
+        if (!searchResults[0]?.id) {
+            throw createError({
+                statusCode: 404,
+                statusMessage: 'Not Found',
+                message: `No valid anime found for id: ${id}`
+            })
+        }
         const realAnimeId = searchResults[0].id
         const realAnimeCacheKey = `anime:${realAnimeId}`
-        html = await cachedFetch(realAnimeCacheKey, async () => {
-            const response = await fetch(`https://anime-sama.fr/catalogue/${realAnimeId}/`, {
+        response = await cachedFetch(realAnimeCacheKey, async () => {
+            return await fetch(`https://anime-sama.fr/catalogue/${realAnimeId}/`, {
                 headers: {
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                     'User-Agent': USER_AGENT,
                 },
                 redirect: 'follow',
             })
+        }, CACHE_TTL.GENERAL)
 
-            if (!response.ok) {
-                throw createError({
-                    statusCode: response.status,
-                    statusMessage: response.statusText,
-                    message: `Failed to fetch anime details for id: ${id}`
-                })
-            }
-
-            return await response.text()
-        }, 60 * 1000) // 1 minute TTL
+        if (!response.ok) {
+            throw createError({
+                statusCode: response.status,
+                statusMessage: response.statusText,
+                message: `Failed to fetch anime details for id: ${id}`
+            })
+        }
     }
 
+    const html = await response.text()
     const animeData = parseAnimePage(html)
 
     // Scrape language flags from the first available season (with timeout for speed)
@@ -105,7 +99,7 @@ export default defineEventHandler(async (event) => {
 
         try {
             const flagsCacheKey = `anime-flags:${id}`
-            const seasonHtml = await cachedFetch(flagsCacheKey, async () => {
+            const seasonResponse = await cachedFetch(flagsCacheKey, async () => {
                 // Add timeout for language flags scraping to avoid slow loading
                 const controller = new AbortController()
                 const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
@@ -120,16 +114,14 @@ export default defineEventHandler(async (event) => {
                 })
 
                 clearTimeout(timeoutId)
+                return res
+            }, CACHE_TTL.GENERAL)
 
-                if (!res.ok) {
-                    throw new Error(`HTTP ${res.status}`)
-                }
-
-                return await res.text()
-            }, 60 * 1000) // 1 minute TTL
-
-            const languageFlags = parseLanguageFlags(seasonHtml)
-            return { ...animeData, languageFlags }
+            if (seasonResponse.ok) {
+                const seasonHtml = await seasonResponse.text()
+                const languageFlags = parseLanguageFlags(seasonHtml)
+                return { ...animeData, languageFlags }
+            }
         } catch (error) {
             // Silent fail for language flags - don't let this slow down the main response
         }

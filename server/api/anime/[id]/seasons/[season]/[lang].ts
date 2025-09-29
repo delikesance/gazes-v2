@@ -18,7 +18,7 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
                 redirect: 'follow',
                 referrerPolicy: 'strict-origin-when-cross-origin',
             })
-        }, 60 * 1000) // 1 minute TTL
+        }, CACHE_TTL.GENERAL)
 
         if (mainPageRes.ok) {
             const mainPageHtml = await mainPageRes.text()
@@ -86,7 +86,7 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
                 redirect: 'follow',
                 referrerPolicy: 'strict-origin-when-cross-origin',
             })
-        }, 60 * 1000) // 1 minute TTL
+        }, CACHE_TTL.GENERAL)
 
         if (seasonPageRes.ok) {
             const seasonPageHtml = await seasonPageRes.text()
@@ -113,7 +113,7 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
                 redirect: 'follow',
                 referrerPolicy: 'strict-origin-when-cross-origin',
             })
-        }, 60 * 1000) // 1 minute TTL
+        }, CACHE_TTL.GENERAL)
 
         if (langPageRes.ok) {
             const langPageHtml = await langPageRes.text()
@@ -380,7 +380,7 @@ export default defineEventHandler(async (event) => {
                 referrerPolicy: 'strict-origin-when-cross-origin',
                 signal: AbortSignal.timeout(10000), // 10 second timeout
             })
-        }, 60 * 1000) // 1 minute TTL
+        }, CACHE_TTL.GENERAL)
 
         if (jsRes.ok) {
             const jsText = await jsRes.text()
@@ -408,7 +408,7 @@ export default defineEventHandler(async (event) => {
                     redirect: 'follow',
                     referrerPolicy: 'strict-origin-when-cross-origin',
                 })
-            }, 60 * 1000) // 1 minute TTL
+            }, CACHE_TTL.GENERAL)
 
             if (res.ok) {
                 sourceText = await res.text()
