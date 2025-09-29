@@ -2000,6 +2000,11 @@ watch([episodeNum, episodesList], () => {
                   <Icon name="heroicons:cog-6-tooth" class="w-5 h-5" />
                 </button>
                 
+                <!-- Episodes -->
+                <button @click="toggleEpisodesPanel" class="p-2 hover:bg-white/10 rounded-full transition-colors" title="Épisodes">
+                  <Icon name="heroicons:list-bullet" class="w-5 h-5" />
+                </button>
+                
                 <!-- Fullscreen -->
                 <button @click="toggleFullscreen" class="p-2 hover:bg-white/10 rounded-full transition-colors">
                   <Icon :name="isFullscreen ? 'heroicons:arrows-pointing-in' : 'heroicons:arrows-pointing-out'" class="w-5 h-5" />
