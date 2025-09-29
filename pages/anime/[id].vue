@@ -40,36 +40,7 @@ const selectedSeason = ref<Season | null>(null);
 const selectedSeasonUrl = ref<string>("");
 const episodes = ref<Episode[]>([]);
 const loadingEps = ref(false);
-const availableLanguages = ref<{ 
-  vostfr: boolean; 
-  vf: boolean; 
-  va: boolean; 
-  var: boolean; 
-  vkr: boolean; 
-  vcn: boolean; 
-  vqc: boolean; 
-  vf1: boolean; 
-  vf2: boolean; 
-  vj: boolean;
-  vo: boolean;
-  raw: boolean;
-  vq: boolean;
-}>({
-  vostfr: false,
-  vf: false,
-  va: false,
-  var: false,
-  vkr: false,
-  vcn: false,
-  vqc: false,
-  vf1: false,
-  vf2: false,
-  vj: false,
-  vo: false,
-  raw: false,
-  vq: false
-});
-const checkingLanguages = ref(false);
+
 
 // Computed property for anime seasons to ensure consistency
 const animeSeasons = computed(() => {
@@ -79,7 +50,7 @@ const animeSeasons = computed(() => {
 // Language options computed property - same as player
 const languageOptions = computed(() => {
   const options: Array<{code: LanguageCode; label: string; fullLabel: string}> = []
-  
+
   // Language display names
   const languageLabels: Record<LanguageCode, string> = {
     'vostfr': 'Version Originale Sous-Titrée Français',
@@ -97,7 +68,7 @@ const languageOptions = computed(() => {
     'vq': 'Version Québécoise'
   }
 
-  // Default flag fallbacks 
+  // Default flag fallbacks
   const defaultFlags: Record<LanguageCode, string> = {
     'vostfr': '🇯🇵',
     'vf': '🇫🇷',
@@ -114,73 +85,27 @@ const languageOptions = computed(() => {
     'vq': '🇨🇦'
   }
 
-  // Build options only for available languages
-  Object.keys(availableLanguages.value).forEach(lang => {
-    const langCode = lang as LanguageCode
-    if (availableLanguages.value[langCode]) {
-      // Use dynamic flag from API or fall back to default
-      const emoji = info.value?.languageFlags?.[langCode] || defaultFlags[langCode] || '🏳️'
-      const shortLabel = langCode.toUpperCase()
-      const fullLabel = languageLabels[langCode] || langCode.toUpperCase()
-      
-      options.push({ 
-        code: langCode, 
-        label: `${emoji} ${shortLabel}`, 
-        fullLabel 
-      })
-    }
+  // All possible languages
+  const allLanguages: LanguageCode[] = ['vostfr', 'vf', 'va', 'var', 'vkr', 'vcn', 'vqc', 'vf1', 'vf2', 'vj', 'vo', 'raw', 'vq']
+
+  // Build options for all languages
+  allLanguages.forEach(langCode => {
+    // Use dynamic flag from API or fall back to default
+    const emoji = info.value?.languageFlags?.[langCode] || defaultFlags[langCode] || '🏳️'
+    const shortLabel = langCode.toUpperCase()
+    const fullLabel = languageLabels[langCode] || langCode.toUpperCase()
+
+    options.push({
+      code: langCode,
+      label: `${emoji} ${shortLabel}`,
+      fullLabel
+    })
   })
 
   return options
 })
 
-async function checkLanguageAvailability(seasonSlug: string): Promise<typeof availableLanguages.value> {
-    debugLog('🔍 Checking language availability for season:', seasonSlug);
-    checkingLanguages.value = true;
-    
-    // Test ALL common languages available on anime-sama.fr - matching player approach
-    const commonLanguages: LanguageCode[] = ['vostfr', 'vf', 'vo', 'raw', 'vj', 'va', 'var', 'vkr', 'vcn', 'vqc', 'vf1', 'vf2', 'vq'];
-    
-    const results = {
-        vostfr: false,
-        vf: false,
-        va: false,
-        var: false,
-        vkr: false,
-        vcn: false,
-        vqc: false,
-        vf1: false,
-        vf2: false,
-        vj: false,
-        vo: false,
-        raw: false,
-        vq: false
-    };
-    
-    debugLog('🌐 Testing all common language codes:', commonLanguages);
-    
-    // Test all languages in parallel (same approach as player)
-    debugLog('� Testing all languages in parallel...');
-    
-    // Start fetching for all languages in parallel - matching player pattern
-    const languagePromises = commonLanguages.map(langCode => 
-        $fetch<{ episodes: Episode[] }>(`/api/anime/episodes/${id.value}/${seasonSlug}/${langCode}`)
-            .then(response => ({ lang: langCode, episodes: response?.episodes || [] }))
-            .catch(() => ({ lang: langCode, episodes: [] }))
-    );
-    
-    const languageResults = await Promise.all(languagePromises);
-    
-    // Update available languages based on results
-    languageResults.forEach(({ lang, episodes }) => {
-        results[lang] = episodes.length > 0;
-        debugLog(`✅ ${lang.toUpperCase()} available:`, episodes.length > 0, `(${episodes.length} episodes)`);
-    });
-    
-    checkingLanguages.value = false;
-    debugLog('🎯 Final language availability:', results);
-    return results;
-}
+
 
 async function pickSeason(s: Season) {
     // Prevent loading if already loading or same season
@@ -188,52 +113,53 @@ async function pickSeason(s: Season) {
         debugLog('🔄 Already loading or same season selected, skipping...');
         return;
     }
-    
+
     debugLog('🎯 pickSeason called with:', s);
     selectedSeason.value = s;
     selectedSeasonUrl.value = s.url;
     loadingEps.value = true;
     episodes.value = [];
-    
+
     try {
         const seasonSlug = extractSeasonSlug(s.url);
-        
+
         debugLog('🎯 Season selected:', { name: s.name, url: s.url, seasonSlug });
-        
-        // Check which languages are available for this season (slower path)
-        debugLog('🔄 Checking language availability...');
-        // Check which languages are available for this season
-        availableLanguages.value = await checkLanguageAvailability(seasonSlug);
-        debugLog('🌐 Available languages:', availableLanguages.value);
-        
-        // Determine which language to use with better priority logic
-        let targetLang = selectedLang.value;
-        
-        // If current language is not available, find the best available one
-        if (!availableLanguages.value[selectedLang.value]) {
-            const availableLangKeys = (Object.keys(availableLanguages.value) as LanguageCode[]).filter(lang => availableLanguages.value[lang]);
-            if (availableLangKeys.length > 0) {
-                // Prefer vostfr, then vf, then any available language
-                targetLang = availableLangKeys.includes('vostfr') ? 'vostfr' : 
-                           availableLangKeys.includes('vf') ? 'vf' : 
-                           availableLangKeys[0]!;
-                debugLog(`🔄 Switching to ${targetLang.toUpperCase()} (${selectedLang.value} not available)`);
-            } else {
+
+        // Try to load episodes for the selected language first
+        try {
+            debugLog(`� Loading episodes in ${selectedLang.value.toUpperCase()}...`);
+            await loadEpisodesForLanguage(seasonSlug, selectedLang.value);
+            debugLog(`✅ Successfully loaded ${episodes.value.length} episodes for ${selectedLang.value.toUpperCase()}`);
+        } catch (error) {
+            debugLog(`❌ Failed to load ${selectedLang.value.toUpperCase()}, trying fallback languages...`);
+
+            // Try fallback languages in order of preference
+            const fallbackLangs: LanguageCode[] = ['vostfr', 'vf', 'vo', 'raw', 'vj', 'va'];
+            let success = false;
+
+            for (const lang of fallbackLangs) {
+                if (lang === selectedLang.value) continue; // Already tried
+
+                try {
+                    debugLog(`🔄 Trying ${lang.toUpperCase()}...`);
+                    await loadEpisodesForLanguage(seasonSlug, lang);
+                    if (episodes.value.length > 0) {
+                        selectedLang.value = lang;
+                        debugLog(`✅ Successfully loaded ${episodes.value.length} episodes for ${lang.toUpperCase()}`);
+                        success = true;
+                        break;
+                    }
+                } catch (e) {
+                    debugLog(`❌ ${lang.toUpperCase()} also failed`);
+                }
+            }
+
+            if (!success) {
                 debugLog('❌ No languages available for this season');
                 episodes.value = [];
-                loadingEps.value = false;
-                return;
             }
-            selectedLang.value = targetLang;
         }
-        
-        debugLog(`� Loading episodes in ${targetLang.toUpperCase()}...`);
-        
-        // Load episodes for the determined language
-        await loadEpisodesForLanguage(seasonSlug, targetLang);
-        
-        debugLog(`✅ Successfully loaded ${episodes.value.length} episodes for ${targetLang.toUpperCase()}`);
-        
+
     } catch (error) {
         console.error('❌ Error in pickSeason:', error);
         episodes.value = [];
@@ -262,18 +188,28 @@ async function loadEpisodesForLanguage(seasonSlug: string, lang: LanguageCode) {
 }
 
 async function switchLanguage(newLang: LanguageCode) {
-    if (!selectedSeason.value || !availableLanguages.value[newLang] || selectedLang.value === newLang || loadingEps.value) {
-        debugLog(`❌ Cannot switch to ${newLang}: not available, already selected, or loading in progress`);
+    if (!selectedSeason.value || selectedLang.value === newLang || loadingEps.value) {
+        debugLog(`❌ Cannot switch to ${newLang}: already selected or loading in progress`);
         return;
     }
-    
+
     selectedLang.value = newLang;
     loadingEps.value = true;
     episodes.value = [];
-    
+
     try {
         const seasonSlug = extractSeasonSlug(selectedSeason.value.url, Object.keys(info.value?.languageFlags || {}));
         await loadEpisodesForLanguage(seasonSlug, newLang);
+    } catch (error) {
+        debugLog(`❌ Failed to switch to ${newLang}, reverting...`);
+        // If switching fails, try to go back to previous language
+        const prevLang = selectedLang.value;
+        selectedLang.value = prevLang;
+        try {
+            await loadEpisodesForLanguage(seasonSlug, prevLang);
+        } catch (e) {
+            episodes.value = [];
+        }
     } finally {
         loadingEps.value = false;
     }
@@ -580,20 +516,17 @@ const getVideoErrorMessage = (errorCode: number): string => {
                             v-for="option in languageOptions"
                             :key="option.code"
                             class="tab"
-                            :disabled="checkingLanguages"
-                            :class="{ 
+                            :disabled="loadingEps"
+                            :class="{
                                 active: selectedLang === option.code,
-                                'opacity-50': checkingLanguages
+                                'opacity-50': loadingEps
                             }"
                             @click="switchLanguage(option.code)"
                             :title="option.fullLabel"
                         >
-                            <span v-if="checkingLanguages" class="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin mr-1"></span>
+                            <span v-if="loadingEps" class="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin mr-1"></span>
                             {{ option.label }}
                         </button>
-                        <div v-if="checkingLanguages && languageOptions.length === 0" class="text-sm text-zinc-400">
-                            Checking languages...
-                        </div>
                     </div>
                 </div>
 
@@ -621,7 +554,6 @@ const getVideoErrorMessage = (errorCode: number): string => {
                         <div>Selected Lang: {{ selectedLang }}</div>
                         <div>Episodes Count: {{ episodes.length }}</div>
                         <div>Loading: {{ loadingEps }}</div>
-                        <div>Available Languages: {{ JSON.stringify(availableLanguages) }}</div>
                     </div>
                     <div
                         v-if="loadingEps"
