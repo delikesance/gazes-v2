@@ -36,7 +36,7 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
 
         clearTimeout(timeoutId)
         return res
-    }, CACHE_TTL.GENERAL)
+    }, 60 * 1000) // 1 minute TTL for titles
 
     if (langPageRes.ok) {
         const langPageHtml = await langPageRes.text()
@@ -308,7 +308,7 @@ export default defineEventHandler(async (event) => {
 
             clearTimeout(timeoutId)
             return res
-        }, CACHE_TTL.GENERAL)
+        }, 60 * 1000) // 1 minute TTL
 
         if (jsRes.ok) {
             const jsText = await jsRes.text()
@@ -340,7 +340,7 @@ export default defineEventHandler(async (event) => {
 
                 clearTimeout(timeoutId)
                 return response
-            }, CACHE_TTL.GENERAL)
+            }, 60 * 1000) // 1 minute TTL
 
             if (res.ok) {
                 sourceText = await res.text()
