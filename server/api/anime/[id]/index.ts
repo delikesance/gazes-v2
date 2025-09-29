@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
             }
 
             return await response.text()
-        }, CACHE_TTL.GENERAL)
+        }, 60 * 1000) // 1 minute TTL
     } catch (error) {
         // If direct fetch fails, try to search for the anime
         const searchTerm = id.replace(/[-_]/g, ' ')
@@ -84,7 +84,7 @@ export default defineEventHandler(async (event) => {
             }
 
             return await response.text()
-        }, CACHE_TTL.GENERAL)
+        }, 60 * 1000) // 1 minute TTL
     }
 
     const animeData = parseAnimePage(html)
@@ -126,7 +126,7 @@ export default defineEventHandler(async (event) => {
                 }
 
                 return await res.text()
-            }, CACHE_TTL.GENERAL)
+            }, 60 * 1000) // 1 minute TTL
 
             const languageFlags = parseLanguageFlags(seasonHtml)
             return { ...animeData, languageFlags }
