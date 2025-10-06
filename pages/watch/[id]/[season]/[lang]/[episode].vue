@@ -472,14 +472,43 @@ function formatTime(seconds: number): string {
 
 function showControlsTemporarily() {
   showControls.value = true
+  updateCursorVisibility()
   if (controlsTimeout.value) {
     clearTimeout(controlsTimeout.value)
   }
   controlsTimeout.value = setTimeout(() => {
     if (isPlaying.value && !isDragging.value) {
       showControls.value = false
+      updateCursorVisibility()
     }
   }, 3000)
+}
+
+function updateCursorVisibility() {
+  const playerContainer = document.querySelector('.fixed.inset-0.bg-black.z-50') as HTMLElement
+  const videoElement = videoRef.value as HTMLElement
+  
+  if (isFullscreen.value) {
+    // In fullscreen, hide cursor when controls are hidden
+    const cursorStyle = showControls.value ? 'default' : 'none'
+    if (playerContainer) {
+      playerContainer.style.cursor = cursorStyle
+    }
+    if (videoElement) {
+      videoElement.style.cursor = cursorStyle
+    }
+    // Also set on body as fallback
+    document.body.style.cursor = cursorStyle
+  } else {
+    // Outside fullscreen, always show cursor
+    if (playerContainer) {
+      playerContainer.style.cursor = 'default'
+    }
+    if (videoElement) {
+      videoElement.style.cursor = 'pointer' // Restore pointer cursor for video element
+    }
+    document.body.style.cursor = 'default'
+  }
 }
 
 function handleMouseMove() {
@@ -579,6 +608,7 @@ function onVideoPlay() {
   startProgressUpdates() // Start smooth progress updates
   startProgressSaving() // Start automatic progress saving
   showControlsTemporarily()
+  updateCursorVisibility()
 }
 function onVideoPause() { 
   isPlaying.value = false
@@ -589,6 +619,7 @@ function onVideoPause() {
     saveProgress(currentTime.value, duration.value)
   }
   showControls.value = true
+  updateCursorVisibility()
 }
 function onVideoTimeUpdate() { handleTimeUpdate() }
 function onVideoLoadedMetadata() { handleLoadedMetadata() }
@@ -637,6 +668,7 @@ let hlsManifestParsedHandler: (() => void) | null = null
 // --- Stable handler references for global events ---
 function handleFullscreenChange() {
   isFullscreen.value = !!document.fullscreenElement
+  updateCursorVisibility()
 }
 
 function removeVideoEventListeners(el: any) {
@@ -1317,6 +1349,17 @@ onBeforeUnmount(() => {
     clearTimeout(skipTimeout.value)
     skipTimeout.value = null
   }
+
+  // Reset cursor visibility
+  const playerContainer = document.querySelector('.fixed.inset-0.bg-black.z-50') as HTMLElement
+  const videoElement = videoRef.value as HTMLElement
+  if (playerContainer) {
+    playerContainer.style.cursor = 'default'
+  }
+  if (videoElement) {
+    videoElement.style.cursor = 'pointer'
+  }
+  document.body.style.cursor = 'default'
 
   // Remove global event listeners to prevent memory leaks
   document.removeEventListener('keydown', handleKeyPress)
