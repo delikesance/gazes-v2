@@ -132,6 +132,7 @@ function stopProgressUpdates() {
 const showEpisodes = ref(false)
 const episodesList = ref<Array<{ episode: number; title?: string; url: string; urls?: string[] }>>([])
 const loadingEpisodes = ref(false)
+const episodesScrollContainer = ref<HTMLElement | null>(null)
 
 // Progress tracking state
 const savedProgress = ref<{ currentTime: number; duration: number } | null>(null)
@@ -1221,6 +1222,8 @@ async function loadEpisodesList() {
     // Update current episode title
     const currentEp = episodesList.value.find(ep => ep.episode === episodeNum.value)
     currentEpisodeTitle.value = currentEp?.title || formattedEpisodeDisplay.value
+
+    // Scroll will be handled by the watcher below
   } catch (error) {
     console.error('Failed to load episodes:', error)
     episodesList.value = []
@@ -1240,10 +1243,29 @@ function selectEpisode(episodeNumber: number) {
   })
 }
 
+function scrollToCurrentEpisode() {
+  if (!episodesScrollContainer.value) return
+  
+  // Find the current episode element
+  const currentEpisodeElement = episodesScrollContainer.value.querySelector(`[data-episode="${episodeNum.value}"]`) as HTMLElement
+  if (currentEpisodeElement) {
+    // Scroll the element into view with smooth behavior
+    currentEpisodeElement.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center'
+    })
+  }
+}
+
 function toggleEpisodesPanel() {
   showEpisodes.value = !showEpisodes.value
   if (showEpisodes.value && episodesList.value.length === 0 && !loadingEpisodes.value) {
     loadEpisodesList()
+  } else if (showEpisodes.value && episodesList.value.length > 0) {
+    // Episodes already loaded, scroll immediately after DOM update
+    nextTick(() => {
+      scrollToCurrentEpisode()
+    })
   }
 }
 
@@ -1736,6 +1758,16 @@ watch([episodeNum, episodesList], () => {
     currentEpisodeTitle.value = newTitle
   }
 }, { immediate: true })
+
+// Watch for when both panel is visible and episodes are loaded to scroll to current episode
+watch([showEpisodes, episodesList, loadingEpisodes], () => {
+  if (showEpisodes.value && episodesList.value.length > 0 && !loadingEpisodes.value) {
+    // Both panel is visible and episodes are loaded, scroll to current episode
+    nextTick(() => {
+      scrollToCurrentEpisode()
+    })
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -1841,7 +1873,7 @@ watch([episodeNum, episodesList], () => {
           </div>
           
           <!-- Episodes List -->
-          <div class="max-h-80 overflow-y-auto custom-scrollbar">
+          <div ref="episodesScrollContainer" class="max-h-80 overflow-y-auto custom-scrollbar">
             <div v-if="loadingEpisodes" class="p-6 text-center text-zinc-400">
               <div class="w-8 h-8 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
               <p>Chargement des épisodes...</p>
@@ -1856,6 +1888,7 @@ watch([episodeNum, episodesList], () => {
               <button 
                 v-for="(ep, index) in episodesList" 
                 :key="ep.episode"
+                :data-episode="ep.episode"
                 @click="selectEpisode(ep.episode)"
                 class="w-full p-4 text-left hover:bg-zinc-800/50 transition-all duration-200 flex items-center gap-4 group relative"
                 :class="ep.episode === episodeNum ? 'bg-violet-600/10 border-l-4 border-violet-500' : 'hover:border-l-4 hover:border-zinc-600'"
