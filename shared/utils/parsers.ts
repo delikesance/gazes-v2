@@ -17,6 +17,33 @@ export interface AnimeInfo {
   seasons: AnimeSeason[];
 }
 
+// Helper function to extract season number from name or URL
+function extractSeasonNumber(text: string): number | null {
+  if (!text) return null;
+
+  // Look for patterns like "Saison 1", "Season 1", "S1", etc.
+  const patterns = [
+    /saison\s*(\d+)/i,
+    /season\s*(\d+)/i,
+    /\bs(\d+)\b/i,
+    /(\d+)(?:st|nd|rd|th)?\s*(?:saison|season)/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      return parseInt(match[1]);
+    }
+  }
+
+  // If no season number found, check if it's a special case like "Film" or "OAV"
+  if (text.toLowerCase().includes('film') || text.toLowerCase().includes('oav')) {
+    return 0; // Special season number for movies/OAVs
+  }
+
+  return null;
+}
+
 export function parseAnimePage(html: string): AnimeInfo {
   // Extract title
   const titleMatch = html.match(/id="titreOeuvre"[^>]*>([^<]+)</i);
@@ -45,10 +72,13 @@ export function parseAnimePage(html: string): AnimeInfo {
   const seasons: AnimeSeason[] = [];
   const manga: { name: string; url: string }[] = [];
 
-  // Find all panneauAnime calls
-  const panneauAnimeRegex = /panneauAnime\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g;
+  // Parse panneauAnime calls - exclude commented ones
+  // Remove all comments (/* ... */) from HTML first
+  const uncommentedHtml = html.replace(/\/\*[\s\S]*?\*\//g, '');
+
   let match;
-  while ((match = panneauAnimeRegex.exec(html)) !== null) {
+  const panneauAnimeRegex = /panneauAnime\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g;
+  while ((match = panneauAnimeRegex.exec(uncommentedHtml)) !== null) {
     const name = (match[1] || "").trim();
     const url = (match[2] || "").trim();
     if (name && url && name.toLowerCase() !== "nom" && !url.includes("/catalogue/naruto/url")) {
@@ -63,22 +93,41 @@ export function parseAnimePage(html: string): AnimeInfo {
   }
 
   // Find all panneauScan calls for manga
-  const panneauScanRegex = /panneauScan\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g;
-  while ((match = panneauScanRegex.exec(html)) !== null) {
-    const name = (match[1] || "").trim();
-    const url = (match[2] || "").trim();
+  const mangaLinkRegex = /<a[^>]*href="([^"]*)"[^>]*class="[^"]*shrink-0[^"]*grid[^"]*items-center[^"]*grayscale[^"]*"[^>]*>[\s\S]*?<div[^>]*>([^<]*)<\/div><\/a>/gi;
+  while ((match = mangaLinkRegex.exec(html)) !== null) {
+    const url = (match[1] || "").trim();
+    const name = (match[2] || "").trim();
     if (name && url) {
       manga.push({ name, url });
     }
   }
 
-  // Deduplicate seasons
-  const seenSeason = new Set<string>();
+  // Fallback for manga: if no manga found with the new method, try the old JavaScript parsing method
+  if (manga.length === 0) {
+    const panneauScanRegex = /panneauScan\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g;
+    while ((match = panneauScanRegex.exec(html)) !== null) {
+      const name = (match[1] || "").trim();
+      const url = (match[2] || "").trim();
+      if (name && url) {
+        manga.push({ name, url });
+      }
+    }
+  }
+
+  // Deduplicate seasons - group by season number to avoid duplicates for different languages
+  const seasonMap = new Map<number, AnimeSeason>();
   const uniqueSeasons = seasons.filter(s => {
-    const key = `${s.type}|${s.url}`;
-    if (seenSeason.has(key)) return false;
-    seenSeason.add(key);
-    return true;
+    // Extract season number from name or URL
+    const seasonNumber = extractSeasonNumber(s.name) || extractSeasonNumber(s.url) || 1;
+
+    // If we haven't seen this season number yet, or if this is a "real" season (not just a language variant)
+    if (!seasonMap.has(seasonNumber)) {
+      seasonMap.set(seasonNumber, s);
+      return true;
+    }
+
+    // Keep the first occurrence of each season number
+    return false;
   });
 
   // Deduplicate manga
