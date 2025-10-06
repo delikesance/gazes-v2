@@ -68,19 +68,59 @@ const videoRef = ref<HTMLVideoElement | null>(null)
 const videoError = ref('')
 const videoLoading = ref(false)
 
-// Custom controls state
-const isPlaying = ref(false)
+// Video player state
 const currentTime = ref(0)
 const duration = ref(0)
+const buffered = ref(0)
 const volume = ref(1)
 const isMuted = ref(false)
+const isPlaying = ref(false)
 const isFullscreen = ref(false)
 const showControls = ref(true)
-const controlsTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
-const isDragging = ref(false)
-const buffered = ref(0)
 const isSeeking = ref(false)
-const wasPlayingBeforeSeek = ref(false) // Track if video was playing before seek
+const isDragging = ref(false)
+const controlsTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
+const wasPlayingBeforeSeek = ref(false)
+
+// Volume localStorage functions
+const VOLUME_STORAGE_KEY = 'gazes-player-volume'
+
+function saveVolumeSettings() {
+  try {
+    const settings = {
+      volume: volume.value,
+      isMuted: isMuted.value,
+      timestamp: Date.now()
+    }
+    localStorage.setItem(VOLUME_STORAGE_KEY, JSON.stringify(settings))
+    console.log('🔊 Volume settings saved:', settings)
+  } catch (error) {
+    console.warn('Failed to save volume settings:', error)
+  }
+}
+
+function loadVolumeSettings() {
+  try {
+    const stored = localStorage.getItem(VOLUME_STORAGE_KEY)
+    if (stored) {
+      const settings = JSON.parse(stored)
+      // Only load if settings are recent (within 30 days)
+      const isRecent = settings.timestamp && (Date.now() - settings.timestamp) < (30 * 24 * 60 * 60 * 1000)
+      
+      if (isRecent) {
+        volume.value = settings.volume ?? 1
+        isMuted.value = settings.isMuted ?? false
+        console.log('🔊 Volume settings loaded:', settings)
+        return true
+      } else {
+        console.log('🔊 Volume settings expired, using defaults')
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to load volume settings:', error)
+  }
+  return false
+}
 
 // Animation frame for smooth progress updates
 let progressAnimationFrame: number | null = null
@@ -241,9 +281,44 @@ const skipTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
 // Track which skips have been dismissed for the current episode
 const dismissedSkips = ref<Set<'op' | 'ed'>>(new Set())
 
-// Progress tracking functions
+// Sync localStorage progress to server (call this when user logs in)
+async function syncLocalProgressToServer() {
+  try {
+    // Find all localStorage progress keys
+    const progressKeys = Object.keys(localStorage).filter(key => key.startsWith('progress_'))
+    
+    for (const key of progressKeys) {
+      try {
+        const stored = localStorage.getItem(key)
+        if (!stored) continue
+        
+        const progressData = JSON.parse(stored)
+        
+        // Try to save to server
+        await $fetch(`/api/watch/progress/${progressData.animeId}`, {
+          method: 'POST',
+          body: {
+            season: progressData.season,
+            episode: progressData.episode,
+            currentTime: progressData.currentTime,
+            duration: progressData.duration
+          }
+        })
+        
+        // Remove from localStorage after successful sync
+        localStorage.removeItem(key)
+        console.log('✅ Synced progress to server and removed from localStorage:', progressData)
+      } catch (error) {
+        console.warn('Failed to sync progress for key:', key, error)
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to sync local progress to server:', error)
+  }
+}
 async function loadSavedProgress() {
   try {
+    // First try to load from server
     const response = await $fetch(`/api/watch/progress/${id.value}`)
     if (response?.success && 'progress' in response) {
       // Handle both array and single object responses
@@ -258,12 +333,41 @@ async function loadSavedProgress() {
             currentTime: (episodeProgress as any).currentTime,
             duration: (episodeProgress as any).duration
           }
-          console.log('📺 Loaded saved progress:', savedProgress.value)
+          console.log('📺 Loaded saved progress from server:', savedProgress.value)
+          return
         }
       }
     }
   } catch (error) {
-    console.warn('Failed to load saved progress:', error)
+    console.warn('Failed to load progress from server, trying localStorage:', error)
+  }
+
+  // Fallback to localStorage
+  try {
+    const progressKey = `progress_${id.value}_${season.value}_${episodeNum.value}`
+    const stored = localStorage.getItem(progressKey)
+    
+    if (stored) {
+      const progressData = JSON.parse(stored)
+      
+      // Check if data is recent (within 30 days)
+      const isRecent = progressData.timestamp && (Date.now() - progressData.timestamp) < (30 * 24 * 60 * 60 * 1000)
+      
+      if (isRecent && progressData.currentTime && progressData.duration) {
+        savedProgress.value = {
+          currentTime: progressData.currentTime,
+          duration: progressData.duration
+        }
+        console.log('📺 Loaded saved progress from localStorage:', savedProgress.value)
+        return
+      } else {
+        // Clean up expired data
+        localStorage.removeItem(progressKey)
+        console.log('📺 Removed expired progress data from localStorage')
+      }
+    }
+  } catch (localStorageError) {
+    console.warn('Failed to load progress from localStorage:', localStorageError)
   }
 }
 
@@ -276,7 +380,8 @@ async function saveProgress(currentTime: number, duration: number) {
   if (now - lastSavedTime.value < 5000) return
 
   try {
-    await $fetch(`/api/watch/progress/${id.value}`, {
+    // Try to save to server first (if authenticated)
+    const response = await $fetch(`/api/watch/progress/${id.value}`, {
       method: 'POST',
       body: {
         season: season.value,
@@ -285,10 +390,33 @@ async function saveProgress(currentTime: number, duration: number) {
         duration
       }
     })
-    lastSavedTime.value = now
-    console.log('💾 Progress saved:', { currentTime, duration })
+    
+    if (response?.success) {
+      lastSavedTime.value = now
+      console.log('💾 Progress saved to server:', { currentTime, duration })
+      return
+    }
   } catch (error) {
-    console.warn('Failed to save progress:', error)
+    console.warn('Failed to save progress to server, falling back to localStorage:', error)
+    
+    // Fallback to localStorage if server save fails
+    try {
+      const progressKey = `progress_${id.value}_${season.value}_${episodeNum.value}`
+      const progressData = {
+        currentTime,
+        duration,
+        timestamp: now,
+        animeId: id.value,
+        season: season.value,
+        episode: episodeNum.value
+      }
+      
+      localStorage.setItem(progressKey, JSON.stringify(progressData))
+      lastSavedTime.value = now
+      console.log('💾 Progress saved to localStorage:', progressData)
+    } catch (localStorageError) {
+      console.warn('Failed to save progress to localStorage:', localStorageError)
+    }
   }
 }
 
@@ -429,6 +557,7 @@ function toggleMute() {
     el.muted = !el.muted
     isMuted.value = el.muted
   }
+  saveVolumeSettings()
 }
 
 function setVolume(newVolume: number) {
@@ -449,6 +578,7 @@ function setVolume(newVolume: number) {
       isMuted.value = false
     }
   }
+  saveVolumeSettings()
 }
 
 function toggleFullscreen() {
@@ -737,6 +867,14 @@ function handleTimeUpdate() {
 function handleLoadedMetadata() {
   if (player) {
     duration.value = player.duration()
+    // Apply loaded volume settings to the player
+    if (volume.value !== undefined) {
+      player.volume(volume.value)
+    }
+    if (isMuted.value !== undefined) {
+      player.muted(isMuted.value)
+    }
+    // Update reactive refs to match player state
     volume.value = player.volume()
     isMuted.value = player.muted()
     isPlaying.value = !player.paused()
@@ -744,6 +882,14 @@ function handleLoadedMetadata() {
     const el = videoRef.value
     if (!el) return
     duration.value = el.duration
+    // Apply loaded volume settings to the video element
+    if (volume.value !== undefined) {
+      el.volume = volume.value
+    }
+    if (isMuted.value !== undefined) {
+      el.muted = isMuted.value
+    }
+    // Update reactive refs to match element state
     volume.value = el.volume
     isMuted.value = el.muted
     isPlaying.value = !el.paused
@@ -944,6 +1090,11 @@ async function setupVideo() {
   el.removeAttribute('src')
   el.load()
 
+  // Apply saved volume settings to video element before setting up player
+  loadVolumeSettings()
+  el.volume = volume.value
+  el.muted = isMuted.value
+
   console.log(`setupVideo: Attempt ${setupAttempts} - Setting up video with URL:`, playUrl.value)
   console.log('setupVideo: Is M3U8:', isM3U8(playUrl.value))
 
@@ -1022,6 +1173,10 @@ async function setupVideo() {
         videoLoading.value = false
       })
 
+      // Apply volume settings to Video.js player
+      player.volume(volume.value)
+      player.muted(isMuted.value)
+
       // Set the source
       player.src({
         src: playUrl.value,
@@ -1092,12 +1247,6 @@ async function setupVideo() {
           videoLoading.value = false
         }
       }, 10000)
-      onBeforeUnmount(() => {
-        clearTimeout(safetyTimeout)
-        el.removeEventListener('canplay', onCanPlay)
-        el.removeEventListener('loadeddata', onLoadedData)
-        el.removeEventListener('error', onError)
-      })
 
       // Remove the aggressive timeout for native video - let it load naturally
       // Large MP4 files may take time to buffer
@@ -1716,12 +1865,10 @@ async function resolveEpisodeInBackground(animeId: string, season: string, lang:
     // Start ALL API calls in parallel for maximum speed
     const [
       progressResult,
-      metadataResult,
-      skipResult
+      metadataResult
     ] = await Promise.allSettled([
       loadSavedProgress().catch(() => null),
-      loadAnimeMetadata().catch(() => null),
-      loadSkipTimes().catch(() => null)
+      loadAnimeMetadata().catch(() => null)
     ])
 
     // Start resolving episode immediately (most critical)
@@ -1746,6 +1893,9 @@ async function resolveEpisodeInBackground(animeId: string, season: string, lang:
     volume.value = (el as HTMLVideoElement).volume
     isMuted.value = (el as HTMLVideoElement).muted
   }
+  
+  // Load saved volume settings
+  loadVolumeSettings()
   
   // setupVideo() will be called automatically by the watch when playUrl is set
   
@@ -1784,6 +1934,9 @@ watch([season, lang, episodeNum], () => {
       // Reset dismissed skips when changing episodes
       dismissedSkips.value.clear()
       console.log('⏭️ [SKIP] Cleared dismissed skips for new episode')
+      
+      // Reload volume settings when navigating to new episode
+      loadVolumeSettings()
       
       // When switching episodes or languages, we need to re-check language availability
       // for the new episode, so don't reset availableLanguages here - let resolveEpisode handle it
@@ -2033,7 +2186,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
                 <!-- Volume control -->
                 <button @click="toggleMute" class="p-2 hover:bg-white/10 rounded-full transition-colors">
                   <Icon 
-                    :name="isMuted || volume === 0 ? 'heroicons:speaker-x-mark' : volume < 0.5 ? 'heroicons:speaker' : 'heroicons:speaker-wave'" 
+                    :name="isMuted ? 'heroicons:speaker-x-mark' : 'heroicons:speaker-wave'"
                     class="w-5 h-5" 
                   />
                 </button>
@@ -2043,7 +2196,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
                     type="range" 
                     min="0" 
                     max="1" 
-                    step="0.1" 
+                    step="0.01" 
                     :value="volume" 
                     @input="setVolume(parseFloat(($event.target as HTMLInputElement).value))"
                     class="absolute inset-0 w-full opacity-0 cursor-pointer"
