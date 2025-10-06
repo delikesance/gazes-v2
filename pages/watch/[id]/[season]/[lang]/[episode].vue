@@ -2192,6 +2192,11 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
                 </button>
                 <div class="w-16 h-1 bg-white/20 rounded-full relative group">
                   <div class="h-full bg-violet-600 rounded-full" :style="{ width: (volume * 100) + '%' }"></div>
+                  <!-- Volume handle dot -->
+                  <div 
+                    class="absolute top-1/2 transform -translate-y-1/2 w-3 h-3 bg-violet-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 border border-white/50"
+                    :style="{ left: (volume * 100) + '%', marginLeft: '-6px' }"
+                  ></div>
                   <input 
                     type="range" 
                     min="0" 
