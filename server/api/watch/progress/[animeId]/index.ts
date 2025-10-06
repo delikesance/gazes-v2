@@ -100,8 +100,8 @@ export default defineEventHandler(async (event) => {
        }
 
        const animeId = getRouterParam(event, 'animeId')
-       const body = await readBody(event)
-       const { season, episode } = body
+       const body = await readBody(event).catch(() => ({})) // Handle cases where no body is provided
+       const { season, episode } = body || {}
 
        console.log('🗑️ [DELETE_PROGRESS] Deleting progress:', { userId: user.id, animeId, season, episode })
 
