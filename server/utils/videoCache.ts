@@ -1,12 +1,7 @@
 import { getProviderInfo, getProviderReliability } from '~/server/utils/videoProviders'
+import { REDIS_CACHE_TTL } from '~/server/utils/redis-cache'
 
-// Cache TTL constants (in milliseconds) - duplicated from cache.ts to avoid import issues
-const CACHE_TTL = {
-  CATALOGUE: 10 * 60 * 1000, // 10 minutes
-  SEARCH: 15 * 60 * 1000,    // 15 minutes
-  USER_DATA: 5 * 60 * 1000,  // 5 minutes
-  GENERAL: 5 * 60 * 1000     // 5 minutes
-}
+// Cache TTL constants (in milliseconds) - imported from redis-cache.ts
 
 // Video cache entry with size tracking and content type
 interface VideoCacheEntry {
@@ -77,7 +72,7 @@ export class VideoCache {
     const expiresAt = this.detectExpiration(url)
 
     // Base TTL based on content type
-    let baseTTL = contentType.includes('mpegurl') ? CACHE_TTL.GENERAL : CACHE_TTL.USER_DATA
+    let baseTTL = contentType.includes('mpegurl') ? REDIS_CACHE_TTL.GENERAL : REDIS_CACHE_TTL.USER_DATA
 
     // Adjust TTL based on provider reliability
     // More reliable providers get longer cache times

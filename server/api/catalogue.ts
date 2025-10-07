@@ -1,5 +1,6 @@
-  import { parseCataloguePage } from '#shared/utils/parsers'
-  import { parseAnimeResults } from '#shared/utils/parsers'
+ import { parseCataloguePage } from '#shared/utils/parsers'
+ import { parseAnimeResults } from '#shared/utils/parsers'
+ import { cachedApiCall, generateCatalogueCacheKey, generateSearchCacheKey, REDIS_CACHE_TTL } from '~/server/utils/redis-cache'
 
  export default defineEventHandler(async (event) => {
   const q = getQuery(event)
@@ -16,6 +17,37 @@
 
   const debug = q.debug === '1' || q.debug === 'true'
 
+  // Generate cache key for this request
+  const cacheKey = generateCatalogueCacheKey({
+    genres,
+    search,
+    page,
+    random,
+    categories: [] // We'll add categories below
+  })
+
+  // Use Redis caching with background refresh
+  return cachedApiCall(cacheKey, async () => {
+    return performCatalogueSearch({ genres, search, page, random, debug, q })
+  }, REDIS_CACHE_TTL.CATALOGUE)
+})
+
+// Extract the actual search logic into a separate function
+async function performCatalogueSearch({
+  genres,
+  search,
+  page,
+  random,
+  debug,
+  q
+}: {
+  genres: string[]
+  search: string
+  page?: string
+  random?: string
+  debug: boolean
+  q: any
+}) {
   // If there's a search query, use the search API which has better results
   if (search && search.trim()) {
     // Regular search using anime-sama.fr search API
@@ -235,4 +267,4 @@
   // If all attempts failed, return empty with debug info
   const fallback = { items: [] as ReturnType<typeof parseCataloguePage>, count: 0, status: 0 }
   return debug ? { ...fallback, _debug: { tried } } : fallback
-})
+}

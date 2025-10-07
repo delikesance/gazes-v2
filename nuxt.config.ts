@@ -49,10 +49,37 @@ export default defineNuxtConfig({
           '@supabase/supabase-js',
           '@supabase/postgrest-js',
           'pg'
-        ]
+        ],
+        output: {
+          manualChunks(id) {
+            // Video libraries chunk
+            if (id.includes('video.js') || 
+                id.includes('hls.js') || 
+                id.includes('@videojs/http-streaming') ||
+                id.includes('videojs')) {
+              return 'video-vendor';
+            }
+            // Large libraries that should be separated
+            if (id.includes('node_modules')) {
+              // Group common large libraries
+              if (id.includes('vue') || id.includes('vue-router')) {
+                return 'vue-vendor';
+              }
+              if (id.includes('@nuxt') || id.includes('nuxt')) {
+                return 'nuxt-vendor';
+              }
+              if (id.includes('tailwindcss') || id.includes('autoprefixer')) {
+                return 'css-vendor';
+              }
+              // Other node_modules in a general vendor chunk
+              return 'vendor';
+            }
+          }
+        }
       },
       sourcemap: false,
-      minify: 'terser'
+      minify: 'terser',
+      chunkSizeWarningLimit: 1000
     },
     optimizeDeps: {
       include: [
@@ -111,10 +138,27 @@ export default defineNuxtConfig({
             'access-control-allow-credentials': 'true'
           }
         },
+        // Static assets with aggressive caching
         '/favicon.ico': { cache: { maxAge: 86400 * 30 } },
         '/robots.txt': { cache: { maxAge: 86400 * 7 } },
         '/sw.js': { cache: { maxAge: 0 } },
-        '/_nuxt/**': { cache: { maxAge: 86400 * 30 } }
+        '/_nuxt/**': {
+          cache: {
+            maxAge: 86400 * 30
+          },
+          headers: {
+            'cache-control': 'public, max-age=2592000, immutable'
+          }
+        },
+        // Images with appropriate caching
+        '/_ipx/**': {
+          cache: {
+            maxAge: 86400 * 7
+          },
+          headers: {
+            'cache-control': 'public, max-age=604800'
+          }
+        }
       }
    },
 
@@ -122,7 +166,9 @@ export default defineNuxtConfig({
 
   // Performance optimizations
   experimental: {
-    payloadExtraction: false
+    payloadExtraction: false,
+    // Enable component lazy loading
+    componentIslands: true
   },
 
   // Critical CSS and resource hints

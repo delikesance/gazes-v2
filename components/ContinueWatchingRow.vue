@@ -36,12 +36,17 @@
           {{ formatSeasonEpisode(item.lastWatchedEpisode) }}
         </div>
 
-        <!-- Poster image -->
+        <!-- Poster image with lazy loading -->
         <div class="h-[240px] relative overflow-hidden">
-          <img
+          <NuxtImg
             :src="item.image"
             :alt="`Poster for ${item.title}`"
             class="w-[200px] h-[240px] object-cover group-hover:scale-105 transition-transform duration-300"
+            loading="lazy"
+            decoding="async"
+            fetchpriority="low"
+            :placeholder="[50, 25, 75, 5]"
+            :placeholder-class="'bg-zinc-800 animate-pulse'"
           />
 
           <!-- Progress bar -->

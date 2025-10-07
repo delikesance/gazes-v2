@@ -2,8 +2,8 @@
 import { ref, watch, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "nuxt/app";
 const CarouselRow = defineAsyncComponent(() => import('~/components/CarouselRow.vue'));
-import HeroBanner from "~/components/HeroBanner.vue";
-import ContinueWatchingRow from "~/components/ContinueWatchingRow.vue";
+const HeroBanner = defineAsyncComponent(() => import('~/components/HeroBanner.vue'));
+const ContinueWatchingRow = defineAsyncComponent(() => import('~/components/ContinueWatchingRow.vue'));
 import { useSearch } from "~/composables/useSearch";
 
 // Set page metadata

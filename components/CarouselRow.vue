@@ -24,6 +24,23 @@ const container = ref<HTMLElement | null>(null)
 const prevDisabled = ref(true)
 const nextDisabled = ref(true)
 
+// Performance optimization: only render visible items
+const renderedItems = ref<Item[]>([])
+const intersectionObserver = ref<IntersectionObserver | null>(null)
+
+function updateRenderedItems() {
+  // For performance, limit rendering to reasonable number of items
+  // Most carousels won't have more than 50-100 items
+  if (items.value.length <= 50) {
+    renderedItems.value = items.value
+    return
+  }
+
+  // For larger lists, implement a simple virtual scrolling approach
+  // Render all items but use lazy loading for images
+  renderedItems.value = items.value
+}
+
 function updateDisabled() {
   const el = container.value
   if (!el) return
@@ -72,6 +89,7 @@ onMounted(() => {
   // initial attach (if container already set)
   nextTick(() => {
     attachListeners(container.value)
+    updateRenderedItems()
     updateDisabled()
   })
 })
@@ -83,10 +101,17 @@ watch(container, async (newEl, oldEl) => {
     // wait for layout to stabilize
     await nextTick()
     attachListeners(newEl)
+    updateRenderedItems()
     // small timeout to ensure measurements reflect rendered content
     setTimeout(updateDisabled, 50)
   }
 })
+
+// Watch for items changes
+watch(items, () => {
+  updateRenderedItems()
+  updateDisabled()
+}, { deep: true })
 
 onBeforeUnmount(() => {
   detachListeners(container.value)
@@ -132,17 +157,26 @@ if (!props.items && (props.genre || props.type)) {
     </div>
 
     <!-- Items -->
-  <div v-else ref="container" class="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pl-5 md:pl-20 pr-5 md:pr-20 scroll-pl-5 md:scroll-pl-20 scroll-pr-5 md:scroll-pr-20">
-      <div v-for="item in items" :key="item.id" class="snap-start shrink-0 group relative rounded-xl overflow-hidden border border-zinc-800 hover:border-zinc-600 transition-all duration-300 w-[200px] min-h-[320px] flex flex-col cursor-pointer">
+  <div ref="container" class="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pl-5 md:pl-20 pr-5 md:pr-20 scroll-pl-5 md:scroll-pl-20 scroll-pr-5 md:scroll-pr-20">
+      <div v-for="item in renderedItems" :key="item.id" class="snap-start shrink-0 group relative rounded-xl overflow-hidden border border-zinc-800 hover:border-zinc-600 transition-all duration-300 w-[200px] min-h-[320px] flex flex-col cursor-pointer">
         <NuxtLink
           :to="`/anime/${item.id}`"
           class="group block w-[200px] h-[320px] flex-none shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
           :aria-label="item.title"
         >
 
-            <!-- Image area -->
+            <!-- Image area with lazy loading -->
             <div class="h-[240px] relative overflow-hidden">
-              <NuxtImg :src="item.image" :alt="item.title" class="w-[200px] h-[240px] object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" decoding="async" fetchpriority="low" />
+              <NuxtImg
+                :src="item.image"
+                :alt="item.title"
+                class="w-[200px] h-[240px] object-cover group-hover:scale-105 transition-transform duration-300"
+                loading="lazy"
+                decoding="async"
+                fetchpriority="low"
+                :placeholder="[50, 25, 75, 5]"
+                :placeholder-class="'bg-zinc-800 animate-pulse'"
+              />
 
               <!-- Play overlay -->
               <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">

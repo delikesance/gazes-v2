@@ -424,21 +424,29 @@ export class DatabaseService {
   async getUserSeriesProgress(userId: string, limit: number = 20, offset: number = 0): Promise<{ items: any[], total: number }> {
     console.log('📁 [DATABASE] Getting series progress for user:', userId, 'limit:', limit, 'offset:', offset)
 
-    // Get aggregated series progress in a single query
-    const { data, error } = await this.supabase
-      .rpc('get_user_series_progress', {
-        p_user_id: userId,
-        p_limit: limit,
-        p_offset: offset
-      })
+    try {
+      // Try optimized database function first
+      const { data, error } = await this.supabase
+        .rpc('get_user_series_progress_optimized', {
+          p_user_id: userId,
+          p_limit: limit,
+          p_offset: offset
+        })
 
-    if (error) {
-      console.error('📁 [DATABASE] Error getting series progress:', error)
-      throw error
+      if (!error && data) {
+        console.log('📁 [DATABASE] Used optimized database function, found', data.length, 'series progress items')
+        return { items: data, total: data.length > 0 ? data[0].total_count : 0 }
+      }
+
+      console.log('📁 [DATABASE] Optimized function failed, falling back to application aggregation:', error?.message)
+    } catch (error) {
+      console.log('📁 [DATABASE] Optimized function not available, falling back to application aggregation:', error)
     }
 
-    console.log('📁 [DATABASE] Found', data.length, 'series progress items')
-    return { items: data, total: data.length > 0 ? data[0].total_count : 0 }
+    // Fallback to application-level aggregation if RPC fails
+    const allSeries = await this.getAggregatedSeriesProgressFallback(userId)
+    const paginatedItems = allSeries.slice(offset, offset + limit)
+    return { items: paginatedItems, total: allSeries.length }
   }
 
   async deleteWatchingProgress(userId: string, animeId: string, season: string, episode: number): Promise<boolean> {

@@ -19,17 +19,50 @@ const loadVideoJS = async () => {
 
   videojsPromise = import('video.js').then(async (module) => {
     videojs = module.default
-    // Load CSS separately and optimized
+    // Load minimal video.js CSS only when needed
     if (typeof document !== 'undefined') {
-      await import('video.js/dist/video-js.css')
-      // Add critical video styles immediately
-      const criticalVideoCSS = `
-        .video-js { width: 100%; height: 100%; }
-        .vjs-loading-spinner { display: none; }
-        .vjs-big-play-button { display: none; }
+      // Load only essential video.js styles instead of full CSS bundle
+      const essentialVideoCSS = `
+        .video-js {
+          width: 100%;
+          height: 100%;
+          font-size: 14px;
+          color: #fff;
+          background-color: #000;
+          position: relative;
+        }
+        .vjs-tech {
+          width: 100%;
+          height: 100%;
+          position: absolute;
+          top: 0;
+          left: 0;
+        }
+        .vjs-loading-spinner {
+          display: none !important;
+        }
+        .vjs-big-play-button {
+          display: none !important;
+        }
+        .vjs-text-track-display {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          top: 0;
+          pointer-events: none;
+        }
+        .vjs-modal-dialog {
+          background: rgba(0, 0, 0, 0.8);
+          color: #fff;
+        }
+        .vjs-error-display {
+          background: rgba(0, 0, 0, 0.8);
+          color: #fff;
+        }
       `
       const style = document.createElement('style')
-      style.textContent = criticalVideoCSS
+      style.textContent = essentialVideoCSS
       document.head.appendChild(style)
     }
     return videojs

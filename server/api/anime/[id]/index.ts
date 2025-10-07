@@ -1,4 +1,5 @@
 import { parseAnimePage, parseAnimeResults } from '#shared/utils/parsers'
+import { cachedApiCall, REDIS_CACHE_TTL } from '~/server/utils/redis-cache'
 
 const USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
 
@@ -11,6 +12,18 @@ export default defineEventHandler(async (event) => {
             statusMessage: 'Bad Request',
             message: 'Missing or invalid id parameter'
         })
+
+    // Generate cache key for this anime
+    const cacheKey = `anime:detail:${id}`
+
+    // Use Redis caching with background refresh
+    return cachedApiCall(cacheKey, async () => {
+        return fetchAnimeDetails(id)
+    }, REDIS_CACHE_TTL.ANIME_DETAILS)
+})
+
+// Extract the actual anime fetching logic into a separate function
+async function fetchAnimeDetails(id: string) {
 
     // Try to fetch directly first
     let response = await fetch(`https://anime-sama.fr/catalogue/${id}/`, {
@@ -114,7 +127,7 @@ export default defineEventHandler(async (event) => {
     }
 
     return animeData
-})
+}
 
 // Function to parse language flags from season page HTML
 function parseLanguageFlags(html: string): Record<string, string> {

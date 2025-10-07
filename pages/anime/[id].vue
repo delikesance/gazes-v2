@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from "vue";
-import Hls from "hls.js";
+// import Hls from "hls.js"; // Moved to dynamic import
 import { useFetch, useRoute } from "nuxt/app";
 import { extractSeasonSlug } from "~/shared/utils/season";
 
@@ -390,7 +390,7 @@ const resolving = ref(false);
 const resolvedList = ref<{ type: string; url: string; proxiedUrl: string; quality?: string }[]>([]);
 const resolveError = ref("");
 const videoRef = ref<HTMLVideoElement | null>(null);
-let hls: Hls | null = null;
+let hls: any = null;
 import { isBlacklisted } from "~/shared/utils/hosts";
 
 async function pickPlayableUrl(ep: Episode): Promise<string> {
@@ -466,46 +466,65 @@ async function setupVideo() {
     el.load();
 
     // If the URL is M3U8 and HLS.js is supported, use it
-    if (isM3U8(playUrl.value) && Hls.isSupported()) {
+    if (isM3U8(playUrl.value)) {
         debugLog('📺 Using HLS.js for M3U8 playback');
         destroyHls();
-        hls = new Hls({ 
-            enableWorker: true,
-            debug: false,
-            lowLatencyMode: false,
-            backBufferLength: 90
-        });
         
-        hls.loadSource(playUrl.value);
-        hls.attachMedia(el as HTMLVideoElement);
-        
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            debugLog('✅ HLS manifest parsed, starting playback');
+        try {
+            // Dynamic import of HLS.js
+            const HlsModule = await import('hls.js');
+            const Hls = HlsModule.default;
+            
+            if (Hls.isSupported()) {
+                hls = new Hls({ 
+                    enableWorker: true,
+                    debug: false,
+                    lowLatencyMode: false,
+                    backBufferLength: 90
+                });
+                
+                hls.loadSource(playUrl.value);
+                hls.attachMedia(el as HTMLVideoElement);
+                
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    debugLog('✅ HLS manifest parsed, starting playback');
+                    el.play().catch((err) => {
+                        console.warn('Autoplay blocked:', err);
+                    });
+                });
+                
+                hls.on(Hls.Events.ERROR, (event: any, data: any) => {
+                    console.error('❌ HLS error:', data);
+                    if (data.fatal) {
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                debugLog('🔄 Trying to recover from network error');
+                                hls?.startLoad();
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                debugLog('🔄 Trying to recover from media error');
+                                hls?.recoverMediaError();
+                                break;
+                            default:
+                                debugLog('💥 Fatal error, destroying HLS');
+                                destroyHls();
+                                resolveError.value = `HLS playback error: ${data.details}`;
+                                break;
+                        }
+                    }
+                });
+            } else {
+                throw new Error('HLS not supported');
+            }
+        } catch (error) {
+            console.warn('Failed to load HLS.js, falling back to native playback:', error);
+            // Fallback to native HLS support
+            destroyHls();
+            el.src = playUrl.value;
             el.play().catch((err) => {
                 console.warn('Autoplay blocked:', err);
             });
-        });
-        
-        hls.on(Hls.Events.ERROR, (event, data) => {
-            console.error('❌ HLS error:', data);
-            if (data.fatal) {
-                switch (data.type) {
-                    case Hls.ErrorTypes.NETWORK_ERROR:
-                        debugLog('🔄 Trying to recover from network error');
-                        hls?.startLoad();
-                        break;
-                    case Hls.ErrorTypes.MEDIA_ERROR:
-                        debugLog('🔄 Trying to recover from media error');
-                        hls?.recoverMediaError();
-                        break;
-                    default:
-                        debugLog('💥 Fatal error, destroying HLS');
-                        destroyHls();
-                        resolveError.value = `HLS playback error: ${data.details}`;
-                        break;
-                }
-            }
-        });
+        }
         
     } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
         // Safari and some browsers support HLS natively

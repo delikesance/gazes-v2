@@ -1,6 +1,7 @@
 // New simple resolve endpoint - test with Naruto
 import { Buffer } from 'buffer'
 import { getProviderInfo, getProviderReliability, sortUrlsByProviderReliability } from '~/server/utils/videoProviders'
+import { Agent } from 'https'
 
 // Decode base64url encoded string to UTF-8
 function decodeBase64Url(input: string): string {
@@ -85,6 +86,14 @@ const EXTRACTION_CONFIG = {
   MAX_URLS_PER_TYPE: 5 // Reduce to 5 URLs per type for faster processing
 } as const
 
+// Connection pooling for video provider requests
+const videoProviderAgent = new Agent({
+  keepAlive: true,
+  maxSockets: 10,
+  maxFreeSockets: 5,
+  timeout: 5000
+})
+
 // Helper function to safely strip quotes from URLs
 function stripQuotes(url: string): string {
   return url.replace(/^["']|["']$/g, '')
@@ -133,69 +142,77 @@ function validateUrl(candidate: string): { isValid: boolean; url?: string; error
   }
 }
 
-// Optimized single-pass URL extraction with early termination
-function* iterateMatches(html: string, patterns: typeof VIDEO_URL_PATTERNS) {
+// Optimized single-pass URL extraction with early termination and streaming
+async function* iterateMatches(html: string, patterns: typeof VIDEO_URL_PATTERNS) {
   const urlCounts = new Map<string, number>()
   const startTime = Date.now()
   let totalUrlsFound = 0
   const MAX_TOTAL_URLS = 15 // Early termination after finding enough URLs
 
-  for (const pattern of patterns) {
-    // Reset regex lastIndex to ensure fresh start
-    pattern.regex.lastIndex = 0
-    
-    let match
-    while ((match = pattern.regex.exec(html)) !== null) {
-      // Check timeout to prevent hanging on large documents
-      if (Date.now() - startTime > EXTRACTION_CONFIG.PROCESSING_TIMEOUT) {
-        console.warn('⚠️ URL extraction timeout reached, stopping')
-        return
-      }
+  // Process HTML in chunks to reduce memory pressure
+  const chunks = html.match(/.{1,8192}/g) || [html] // 8KB chunks
 
-      // Early termination if we have enough URLs
-      if (totalUrlsFound >= MAX_TOTAL_URLS) {
-        console.log(`✅ Found ${totalUrlsFound} URLs, stopping early for performance`)
-        return
-      }
+  for (const chunk of chunks) {
+    // Check timeout to prevent hanging on large documents
+    if (Date.now() - startTime > EXTRACTION_CONFIG.PROCESSING_TIMEOUT) {
+      console.warn('⚠️ URL extraction timeout reached, stopping')
+      return
+    }
 
-      // Limit URLs per type to prevent DoS
-      const currentCount = urlCounts.get(pattern.type) || 0
-      if (currentCount >= EXTRACTION_CONFIG.MAX_URLS_PER_TYPE) {
-        console.warn(`⚠️ Max URLs reached for type ${pattern.type}, skipping`)
-        break
-      }
+    // Early termination if we have enough URLs
+    if (totalUrlsFound >= MAX_TOTAL_URLS) {
+      console.log(`✅ Found ${totalUrlsFound} URLs, stopping early for performance`)
+      return
+    }
 
-      const candidate = match[1] || match[0] // Use capture group if available
-      
-      // Convert relative URLs to absolute URLs for specific providers
-      let processedCandidate = candidate
-      if (pattern.type === 'sibnet_relative' && !candidate.startsWith('http')) {
-        // Convert SibNet relative URLs to absolute
-        processedCandidate = `https://video.sibnet.ru${candidate.startsWith('/') ? '' : '/'}${candidate}`
-        console.log(`🔗 Converting SibNet relative URL: ${candidate} -> ${processedCandidate}`)
-      }
-      
-      const validation = validateUrl(processedCandidate)
-      
-      if (validation.isValid && validation.url) {
-        urlCounts.set(pattern.type, currentCount + 1)
-        totalUrlsFound++
-        yield {
-          type: pattern.type,
-          url: validation.url,
-          quality: parseQuality(validation.url)
+    for (const pattern of patterns) {
+      // Reset regex lastIndex to ensure fresh start for each chunk
+      pattern.regex.lastIndex = 0
+
+      let match
+      while ((match = pattern.regex.exec(chunk)) !== null) {
+        // Limit URLs per type to prevent DoS
+        const currentCount = urlCounts.get(pattern.type) || 0
+        if (currentCount >= EXTRACTION_CONFIG.MAX_URLS_PER_TYPE) {
+          console.warn(`⚠️ Max URLs reached for type ${pattern.type}, skipping`)
+          break
         }
-      } else {
-        console.debug(`🚫 Rejected URL: ${candidate} (${validation.error})`)
+
+        const candidate = match[1] || match[0] // Use capture group if available
+
+        // Convert relative URLs to absolute URLs for specific providers
+        let processedCandidate = candidate
+        if (pattern.type === 'sibnet_relative' && !candidate.startsWith('http')) {
+          // Convert SibNet relative URLs to absolute
+          processedCandidate = `https://video.sibnet.ru${candidate.startsWith('/') ? '' : '/'}${candidate}`
+          console.log(`🔗 Converting SibNet relative URL: ${candidate} -> ${processedCandidate}`)
+        }
+
+        const validation = validateUrl(processedCandidate)
+
+        if (validation.isValid && validation.url) {
+          urlCounts.set(pattern.type, currentCount + 1)
+          totalUrlsFound++
+          yield {
+            type: pattern.type,
+            url: validation.url,
+            quality: parseQuality(validation.url)
+          }
+        } else {
+          console.debug(`🚫 Rejected URL: ${candidate} (${validation.error})`)
+        }
       }
     }
-  }
-}
 
-// Main extraction function with size limits and security checks
-function extractVideoUrls(html: string): { type: string; url: string; quality?: string }[] {
+    // Allow event loop to process other operations between chunks
+    if (chunks.length > 1) {
+      await new Promise(resolve => setImmediate(resolve))
+    }
+  }
+}// Main extraction function with size limits and security checks
+async function extractVideoUrls(html: string): Promise<{ type: string; url: string; quality?: string }[]> {
   console.log('🔍 Starting secure URL extraction...')
-  
+
   // Early size check to prevent processing huge documents
   if (html.length > EXTRACTION_CONFIG.MAX_HTML_SIZE) {
     console.warn(`⚠️ HTML too large (${html.length} bytes), truncating to ${EXTRACTION_CONFIG.MAX_HTML_SIZE} bytes`)
@@ -209,10 +226,10 @@ function extractVideoUrls(html: string): { type: string; url: string; quality?: 
 
   const urls: { type: string; url: string; quality?: string }[] = []
   const uniqueUrls = new Set<string>()
-  
+
   try {
-    // Single-pass extraction with iterator for memory efficiency
-    for (const urlData of iterateMatches(html, VIDEO_URL_PATTERNS)) {
+    // Single-pass extraction with async iterator for memory efficiency
+    for await (const urlData of iterateMatches(html, VIDEO_URL_PATTERNS)) {
       // Deduplicate URLs
       if (!uniqueUrls.has(urlData.url)) {
         uniqueUrls.add(urlData.url)
@@ -224,7 +241,7 @@ function extractVideoUrls(html: string): { type: string; url: string; quality?: 
     console.error('❌ Error during URL extraction:', error)
     return []
   }
-  
+
   console.log(`🔗 Extraction complete: ${urls.length} unique URLs found`)
   return urls
 }
@@ -292,10 +309,18 @@ export default defineEventHandler(async (event) => {
     }, timeoutMs)
     
     try {
-      const response = await fetch(url, { 
+      // Use Node.js fetch with connection pooling for better performance
+      const fetchOptions: any = { 
         headers,
         signal: controller.signal
-      })
+      }
+      
+      // Add agent for Node.js environment (server-side)
+      if (typeof globalThis !== 'undefined' && globalThis.process) {
+        fetchOptions.agent = videoProviderAgent
+      }
+      
+      const response = await fetch(url, fetchOptions)
 
       // Clear timeout on successful response
       clearTimeout(timeoutId)
@@ -314,7 +339,7 @@ export default defineEventHandler(async (event) => {
       console.log('📄 First 500 chars:', html.substring(0, 500))
       
       // Extract video URLs from HTML
-      const extractedUrls = extractVideoUrls(html)
+      const extractedUrls = await extractVideoUrls(html)
       console.log('🔗 Found URLs:', extractedUrls)
       
       // Remove duplicates and format for frontend
