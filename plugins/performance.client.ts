@@ -196,7 +196,7 @@ export default defineNuxtPlugin(() => {
     document.head.appendChild(fontLink)
 
     // Preconnect to external domains
-    const domains = ['https://anime-sama.fr', 'https://video.sibnet.ru', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com']
+    const domains = ['https://179.43.149.218', 'https://video.sibnet.ru', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com']
     domains.forEach(domain => {
       const link = document.createElement('link')
       link.rel = 'preconnect'

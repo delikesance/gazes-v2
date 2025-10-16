@@ -1,3 +1,12 @@
+import axios from 'axios'
+import https from 'https'
+
+const axiosInstance = axios.create({
+  httpsAgent: new https.Agent({
+    rejectUnauthorized: false
+  })
+})
+
 export default defineEventHandler(async (event) => {
     const id = event.context.params?.id
 
@@ -9,24 +18,22 @@ export default defineEventHandler(async (event) => {
         })
 
     // Test flag scraping directly
-    const seasonUrl = `https://anime-sama.fr/catalogue/${id}/saison1/vostfr/`
+    const seasonUrl = `https://179.43.149.218/catalogue/${id}/saison1/vostfr/`
 
     console.log('Testing season URL:', seasonUrl)
 
     try {
-        const seasonResponse = await fetch(seasonUrl, {
+        const seasonResponse = await axiosInstance.get(seasonUrl, {
             headers: {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
             },
-            redirect: 'follow',
-            referrerPolicy: 'strict-origin-when-cross-origin',
         })
 
         console.log('Season response status:', seasonResponse.status)
 
-        if (seasonResponse.ok) {
-            const seasonHtml = await seasonResponse.text()
+        if (seasonResponse.status >= 200 && seasonResponse.status < 300) {
+            const seasonHtml = seasonResponse.data
             console.log('Season HTML length:', seasonHtml.length)
 
             const flags = parseLanguageFlags(seasonHtml)

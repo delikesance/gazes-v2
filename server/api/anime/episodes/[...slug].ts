@@ -1,5 +1,13 @@
 import { preferNonBlacklisted, isBlacklisted, hostnameOf } from '~/shared/utils/hosts'
 import { defineEventHandler, getQuery, createError } from 'h3'
+import axios from 'axios'
+import https from 'https'
+
+const axiosInstance = axios.create({
+  httpsAgent: new https.Agent({
+    rejectUnauthorized: false
+  })
+})
 // Function to scrape episode titles from anime-sama main page
 async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, lang: string): Promise<Record<number, string>> {
     console.log('Starting title scraping for:', animeId, season, lang)
@@ -16,25 +24,18 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
     const titles: Record<number, string> = {}
 
     // For films, only fetch the language-specific page where newSPF() calls are located
-    console.log('Fetching film titles from lang page:', `https://anime-sama.fr/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`)
+    console.log('Fetching film titles from lang page:', `https://179.43.149.218/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`)
 
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 4000) // 4 second timeout
-
-    const langPageRes = await fetch(`https://anime-sama.fr/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`, {
+    const langPageRes = await axiosInstance.get(`https://179.43.149.218/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`, {
         headers: {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
         },
-        redirect: 'follow',
-        referrerPolicy: 'strict-origin-when-cross-origin',
-        signal: controller.signal
+        timeout: 4000
     })
 
-    clearTimeout(timeoutId)
-
-    if (langPageRes.ok) {
-        const langPageHtml = await langPageRes.text()
+    if (langPageRes.status >= 200 && langPageRes.status < 300) {
+        const langPageHtml = langPageRes.data
         console.log('Film page HTML length:', langPageHtml.length)
 
         // For films, only look for newSPF() calls - much simpler and faster
@@ -282,27 +283,21 @@ export default defineEventHandler(async (event) => {
     const episodeTitles = await scrapeEpisodeTitlesFromMainPage(id, seasonFormatted, lang)
 
     // First, try to fetch episode lists from the episodes.js file
-    const jsUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(seasonFormatted)}/${encodeURIComponent(lang)}/episodes.js`
+    const jsUrl = `https://179.43.149.218/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(seasonFormatted)}/${encodeURIComponent(lang)}/episodes.js`
     let sourceText = ''
 
     try {
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
-
-        const jsRes = await fetch(jsUrl, {
+        const jsRes = await axiosInstance.get(jsUrl, {
             headers: {
                 'Accept': '*/*',
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
             },
-            redirect: 'follow',
-            referrerPolicy: 'strict-origin-when-cross-origin',
-            signal: controller.signal
+            timeout: 3000
         })
 
-        clearTimeout(timeoutId)
-
-        if (jsRes.ok) {
-            const jsText = await jsRes.text()
+        if (jsRes.status >= 200 && jsRes.status < 300) {
+            const jsText = jsRes.data
             if (jsText && jsText.trim()) {
                 sourceText = jsText
             }
@@ -311,26 +306,19 @@ export default defineEventHandler(async (event) => {
 
     // If episodes.js didn't work, try the main season page
     if (!sourceText) {
-        const seasonUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(seasonFormatted)}/${encodeURIComponent(lang)}/`
+        const seasonUrl = `https://179.43.149.218/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(seasonFormatted)}/${encodeURIComponent(lang)}/`
 
         try {
-            const controller = new AbortController()
-            const timeoutId = setTimeout(() => controller.abort(), 4000) // 4 second timeout
-
-            const res = await fetch(seasonUrl, {
+            const res = await axiosInstance.get(seasonUrl, {
                 headers: {
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
                 },
-                redirect: 'follow',
-                referrerPolicy: 'strict-origin-when-cross-origin',
-                signal: controller.signal
+                timeout: 4000
             })
 
-            clearTimeout(timeoutId)
-
-            if (res.ok) {
-                sourceText = await res.text()
+            if (res.status >= 200 && res.status < 300) {
+                sourceText = res.data
             }
         } catch {}
     }

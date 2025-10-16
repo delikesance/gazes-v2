@@ -1,5 +1,13 @@
 import { parseAnimePage, parseAnimeResults } from '#shared/utils/parsers'
 import { cachedApiCall, REDIS_CACHE_TTL } from '~/server/utils/redis-cache'
+import axios from 'axios'
+import https from 'https'
+
+const axiosInstance = axios.create({
+  httpsAgent: new https.Agent({
+    rejectUnauthorized: false
+  })
+})
 
 const USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
 
@@ -26,30 +34,27 @@ export default defineEventHandler(async (event) => {
 async function fetchAnimeDetails(id: string) {
 
     // Try to fetch directly first
-    let response = await fetch(`https://anime-sama.fr/catalogue/${id}/`, {
+    let response = await axiosInstance.get(`https://179.43.149.218/catalogue/${id}/`, {
         headers: {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'User-Agent': USER_AGENT,
-        },
-        redirect: 'follow',
+        }
     })
 
     // If direct fetch fails, try to search for the anime
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
         const searchTerm = id.replace(/[-_]/g, ' ')
 
-        const searchResponse = await fetch("https://anime-sama.fr/template-php/defaut/fetch.php", {
-            method: "POST",
+        const searchResponse = await axiosInstance.post("https://179.43.149.218/template-php/defaut/fetch.php", "query=" + encodeURIComponent(searchTerm), {
             headers: {
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                 "X-Requested-With": "XMLHttpRequest"
-            },
-            body: "query=" + encodeURIComponent(searchTerm),
+            }
         })
 
-        const searchResults = parseAnimeResults(await searchResponse.text())
+        const searchResults = parseAnimeResults(searchResponse.data)
 
-        if (!searchResponse.ok || !searchResults || searchResults.length === 0) {
+        if (searchResponse.status < 200 || searchResponse.status >= 300 || !searchResults || searchResults.length === 0) {
             throw createError({
                 statusCode: 404,
                 statusMessage: 'Not Found',
@@ -66,15 +71,14 @@ async function fetchAnimeDetails(id: string) {
             })
         }
         const realAnimeId = searchResults[0].id
-        response = await fetch(`https://anime-sama.fr/catalogue/${realAnimeId}/`, {
+        response = await axiosInstance.get(`https://179.43.149.218/catalogue/${realAnimeId}/`, {
             headers: {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'User-Agent': USER_AGENT,
-            },
-            redirect: 'follow',
+            }
         })
 
-        if (!response.ok) {
+        if (response.status < 200 || response.status >= 300) {
             throw createError({
                 statusCode: response.status,
                 statusMessage: response.statusText,
@@ -83,7 +87,7 @@ async function fetchAnimeDetails(id: string) {
         }
     }
 
-    const html = await response.text()
+    const html = response.data
     const animeData = parseAnimePage(html)
 
     // Scrape language flags from the first available season (with timeout for speed)
@@ -95,29 +99,23 @@ async function fetchAnimeDetails(id: string) {
         let seasonUrl = firstSeason.url
 
         if (seasonUrl.startsWith('/')) {
-            seasonUrl = `https://anime-sama.fr/catalogue${seasonUrl}`
+            seasonUrl = `https://179.43.149.218/catalogue${seasonUrl}`
         } else if (!seasonUrl.startsWith('http')) {
-            seasonUrl = `https://anime-sama.fr/catalogue/${id}/${seasonUrl}`
+            seasonUrl = `https://179.43.149.218/catalogue/${id}/${seasonUrl}`
         }
 
         try {
             // Add timeout for language flags scraping to avoid slow loading
-            const controller = new AbortController()
-            const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
-
-            const seasonResponse = await fetch(seasonUrl, {
+            const seasonResponse = await axiosInstance.get(seasonUrl, {
                 headers: {
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                     'User-Agent': USER_AGENT,
                 },
-                redirect: 'follow',
-                signal: controller.signal
+                timeout: 3000
             })
 
-            clearTimeout(timeoutId)
-
-            if (seasonResponse.ok) {
-                const seasonHtml = await seasonResponse.text()
+            if (seasonResponse.status >= 200 && seasonResponse.status < 300) {
+                const seasonHtml = seasonResponse.data
                 const languageFlags = parseLanguageFlags(seasonHtml)
                 return { ...animeData, languageFlags }
             }
