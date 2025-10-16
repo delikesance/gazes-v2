@@ -1,7 +1,7 @@
 # syntax = docker/dockerfile:1
 
-ARG NODE_VERSION=22.2.0
-FROM node:${NODE_VERSION}-slim as base
+ARG NODE_VERSION=22.12.0
+FROM node:${NODE_VERSION}-slim AS base
 
 # Installer les outils nécessaires pour node-gyp (plus besoin de pnpm)
 RUN apt-get update && apt-get install -y \
@@ -18,8 +18,9 @@ WORKDIR /app
 # Copier package.json pour installer les dépendances avec npm
 COPY package.json ./
 
-# Install dependencies with npm (handles native bindings better than pnpm in some cases)
-RUN npm install
+# Install dependencies with npm - force reinstall to avoid native binding issues
+# Add --ignore-engines temporarily since we're on the edge of version compatibility
+RUN npm install --ignore-engines --force || (rm -rf node_modules package-lock.json && npm install --ignore-engines --force)
 # Copier le reste du projet
 COPY . .
 
