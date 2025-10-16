@@ -338,6 +338,7 @@ export default defineEventHandler(async (event) => {
           uniqueUrls.set(urlData.url, {
             type: urlData.type === 'hls' ? 'hls' : urlData.type === 'mp4' ? 'mp4' : 'unknown',
             url: urlData.url,
+            directUrl: urlData.url, // Direct URL for CORS-compatible sources
             proxiedUrl: `/api/proxy?url=${encodeURIComponent(urlData.url)}&referer=${encodeURIComponent(url)}&origin=${encodeURIComponent(new URL(url).origin)}&rewrite=1`,
             quality: urlData.quality,
             provider: providerInfo ? {
