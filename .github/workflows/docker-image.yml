@@ -23,11 +23,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
@@ -60,7 +55,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          platforms: linux/arm64
+          platforms: linux/amd64
           tags: |
             ghcr.io/${{ github.repository_owner }}/gazes-v2:${{ steps.meta.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/gazes-v2:latest
@@ -68,24 +63,15 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/gazes-v2:cache,mode=max
 
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: build
     if: needs.build.result == 'success'
 
     steps:
-      - name: Deploy to VPS via Cloudflare Tunnel
-        uses: and-fm/cloudflared-ssh-action@v3
-        with:
-          host: ${{ secrets.CLOUDFLARE_TUNNEL_HOST }}
-          username: ${{ secrets.SHH_USER }}
-          private_key_filename: id_ed25519
-          private_key_value: ${{ secrets.SSH_PRIVATE_KEY_VALUE }}
-          port: ${{ secrets.SSH_PORT }}
-          service_token_id: ${{ secrets.SERVICE_TOKEN_ID }}
-          service_token_secret: ${{ secrets.SERVICE_TOKEN_SECRET }}
-          commands: |
-            docker pull ghcr.io/${{ github.repository_owner }}/gazes-v2:latest
-            docker stop gazes || true
-            docker rm gazes || true
-            docker run -d --restart=always --name gazes -p 3000:3000 -v gazes-data:/app/data ghcr.io/${{ github.repository_owner }}/gazes-v2:latest
+      - name: Deploy on self-hosted runner (local Docker)
+        run: |
+          docker pull ghcr.io/${{ github.repository_owner }}/gazes-v2:latest
+          docker stop gazes || true
+          docker rm gazes || true
+          docker run -d --restart=always --name gazes -p 3000:3000 -v gazes-data:/app/data ghcr.io/${{ github.repository_owner }}/gazes-v2:latest
 
