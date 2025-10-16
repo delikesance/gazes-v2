@@ -1,5 +1,13 @@
 import { AuthService } from '~/server/utils/auth'
 import { DatabaseService } from '~/server/utils/database'
+import axios from 'axios'
+import https from 'https'
+
+const axiosInstance = axios.create({
+  httpsAgent: new https.Agent({
+    rejectUnauthorized: false
+  })
+})
 
 interface SeriesProgress {
   animeId: string
@@ -76,6 +84,11 @@ export default defineEventHandler(async (event) => {
     const db = DatabaseService.getInstance()
     const aggregatedProgress = await db.getAggregatedUserSeriesProgress(user.id)
 
+    console.log(`[SERIES_PROCESS] Found ${aggregatedProgress.length} series in progress for user ${user.id}`)
+    if (aggregatedProgress.length > 0) {
+      console.log(`[SERIES_PROCESS] Sample series data:`, aggregatedProgress[0])
+    }
+
     if (aggregatedProgress.length === 0) {
       return {
         success: true,
@@ -100,6 +113,11 @@ export default defineEventHandler(async (event) => {
 
         // Get anime data with caching and deduplication
         const animeData = await getAnimeDataCached(seriesData.anime_id)
+        console.log(`[SERIES_PROCESS] Anime data for ${seriesData.anime_id}:`, {
+          title: animeData.title,
+          seasonsCount: animeData.seasons?.length || 0,
+          seasons: animeData.seasons?.map((s: any) => ({ name: s.name, url: s.url }))
+        })
 
         // Get total episodes with caching
         const totalEpisodes = await getTotalEpisodesCached(animeData, seriesData.anime_id)
@@ -107,7 +125,11 @@ export default defineEventHandler(async (event) => {
         // Use aggregated data from database
         const watchedEpisodes = seriesData.total_episodes_watched || 0
         const completedEpisodes = seriesData.completed_episodes || 0
-        const overallProgress = totalEpisodes > 0 ? (completedEpisodes / totalEpisodes) * 100 : 0
+
+        // Fallback: if we can't determine total episodes, use watched episodes as minimum
+        const effectiveTotalEpisodes = totalEpisodes > 0 ? totalEpisodes : Math.max(watchedEpisodes, 1)
+
+        const overallProgress = effectiveTotalEpisodes > 0 ? (completedEpisodes / effectiveTotalEpisodes) * 100 : 0
 
         // Get default language
         const defaultLang = animeData.languageFlags ? Object.keys(animeData.languageFlags)[0] : 'vostfr'
@@ -124,7 +146,7 @@ export default defineEventHandler(async (event) => {
             progressPercent: seriesData.latest_duration > 0 ? (seriesData.latest_current_time / seriesData.latest_duration) * 100 : 0
           },
           completedEpisodes: watchedEpisodes, // Use watched episodes for the X/Y display
-          totalEpisodes,
+          totalEpisodes: effectiveTotalEpisodes,
           overallProgress,
           lastWatchedAt: new Date(seriesData.last_watched_at),
           defaultLang
@@ -166,8 +188,11 @@ export default defineEventHandler(async (event) => {
 // Helper function to get total episodes for an anime with caching
 async function getTotalEpisodesCached(animeData: any, animeId: string): Promise<number> {
   if (!animeData.seasons || animeData.seasons.length === 0) {
+    console.warn(`[EPISODE_COUNT] No seasons found for anime ${animeId}`)
     return 0
   }
+
+  console.log(`[EPISODE_COUNT] Found ${animeData.seasons.length} seasons for anime ${animeId}`)
 
   let totalEpisodes = 0
 
@@ -175,12 +200,14 @@ async function getTotalEpisodesCached(animeData: any, animeId: string): Promise<
     // Count episodes in this season
     try {
       const episodeCount = await countEpisodesInSeasonCached(animeId, season)
+      console.log(`[EPISODE_COUNT] Season ${season.name}: ${episodeCount} episodes`)
       totalEpisodes += episodeCount
     } catch (error) {
       console.warn(`Failed to count episodes for season ${season.name}:`, error)
     }
   }
 
+  console.log(`[EPISODE_COUNT] Total episodes for ${animeId}: ${totalEpisodes}`)
   return totalEpisodes
 }
 
@@ -189,50 +216,76 @@ async function countEpisodesInSeasonCached(animeId: string, season: any): Promis
   // Construct season URL properly
   let seasonUrl = season.url
 
+  console.log(`[SEASON_URL] Original season URL for ${season.name}: ${seasonUrl}`)
+
+  // Try different URL constructions
+  const possibleUrls = []
+
   if (seasonUrl.startsWith('/')) {
-    seasonUrl = `https://179.43.149.218/catalogue${seasonUrl}`
+    possibleUrls.push(`https://179.43.149.218/catalogue${seasonUrl}`)
   } else if (!seasonUrl.startsWith('http')) {
-    seasonUrl = `https://179.43.149.218/catalogue/${animeId}/${seasonUrl}`
+    // Try with animeId
+    possibleUrls.push(`https://179.43.149.218/catalogue/${animeId}/${seasonUrl}`)
+    // Try without animeId
+    possibleUrls.push(`https://179.43.149.218/catalogue/${seasonUrl}`)
+  } else {
+    possibleUrls.push(seasonUrl)
   }
 
-  // Ensure URL ends with slash
-  if (!seasonUrl.endsWith('/')) {
-    seasonUrl += '/'
-  }
-
-  try {
-    // First try to get episodes from the episodes.js file
-    const episodesJsUrl = `${seasonUrl}episodes.js`
-
-    const jsResponse = await fetch(episodesJsUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
-      }
-    })
-
-    if (jsResponse.ok) {
-      const jsContent = await jsResponse.text()
-      const episodeCount = countEpisodesInJs(jsContent)
-      if (episodeCount > 0) {
-        return episodeCount
-      }
+  for (const url of possibleUrls) {
+    let testUrl = url
+    if (!testUrl.endsWith('/')) {
+      testUrl += '/'
     }
 
-    // Fallback to HTML parsing
-    const response = await fetch(seasonUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
-      }
-    })
+    console.log(`[SEASON_URL] Trying URL: ${testUrl}`)
 
-    if (response.ok) {
-      const html = await response.text()
-      return countEpisodesInSeason(html)
+    try {
+      // First try to get episodes from the episodes.js file
+      const episodesJsUrl = `${testUrl}episodes.js`
+      console.log(`[SEASON_URL] Trying episodes.js URL: ${episodesJsUrl}`)
+
+      const jsResponse = await axiosInstance.get(episodesJsUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
+        }
+      })
+
+      if (jsResponse.status >= 200 && jsResponse.status < 300) {
+        const jsContent = jsResponse.data
+        const episodeCount = countEpisodesInJs(jsContent)
+        if (episodeCount > 0) {
+          console.log(`[EPISODE_COUNT] Found ${episodeCount} episodes in JS file for ${season.name} at ${testUrl}`)
+          return episodeCount
+        }
+      } else {
+        console.log(`[SEASON_URL] episodes.js not found at ${episodesJsUrl} (status: ${jsResponse.status})`)
+      }
+
+      // Fallback to HTML parsing
+      console.log(`[SEASON_URL] Falling back to HTML parsing for: ${testUrl}`)
+      const response = await axiosInstance.get(testUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
+        }
+      })
+
+      if (response.status >= 200 && response.status < 300) {
+        const html = response.data
+        const episodeCount = countEpisodesInSeason(html)
+        if (episodeCount > 0) {
+          console.log(`[EPISODE_COUNT] Found ${episodeCount} episodes in HTML for ${season.name} at ${testUrl}`)
+          return episodeCount
+        }
+      } else {
+        console.log(`[SEASON_URL] Season page not accessible at ${testUrl} (status: ${response.status})`)
+      }
+    } catch (error) {
+      console.warn(`Failed to fetch from ${testUrl}:`, error)
     }
-  } catch (error) {
-    console.warn(`Failed to fetch season page for ${animeId}/${season.name}:`, error)
   }
 
+  console.log(`[EPISODE_COUNT] No episodes found for ${season.name} after trying all URLs`)
   return 0
 }
 
@@ -268,6 +321,17 @@ function countEpisodesInSeason(html: string): number {
     maxEpisode = Math.max(maxEpisode, urls.length)
   }
 
+  // Look for numbered episode links
+  const episodeLinkPattern = /href="[^"]*\/(\d+)[^"]*"/g
+  let match
+  while ((match = episodeLinkPattern.exec(html)) !== null) {
+    const num = parseInt(match[1])
+    if (num > 0 && num < 1000) { // Reasonable episode number
+      maxEpisode = Math.max(maxEpisode, num)
+    }
+  }
+
+  console.log(`[EPISODE_COUNT_HTML] Max episode found: ${maxEpisode}`)
   return maxEpisode
 }
 
@@ -287,6 +351,7 @@ function countEpisodesInJs(jsContent: string): number {
     const urls = urlsString.split(',').filter(url => url.trim() && url.trim() !== '')
     const episodeCount = urls.length
 
+    console.log(`[EPISODE_COUNT_JS] Season ${seasonNum}: ${episodeCount} episodes in array`)
 
     // For now, just return the count from the first array we find
     // In the future, we might want to handle multiple seasons
@@ -295,5 +360,25 @@ function countEpisodesInJs(jsContent: string): number {
     }
   }
 
+  // Also try other patterns
+  const altPatterns = [
+    /eps\d*\s*=\s*\[([^\]]+)\]/g,
+    /var\s+\w+\s*=\s*\[([^\]]+)\]/g
+  ]
+
+  for (const pattern of altPatterns) {
+    let match
+    while ((match = pattern.exec(jsContent)) !== null) {
+      const urlsString = match[1]
+      const urls = urlsString.split(',').filter(url => url.trim() && url.trim() !== '')
+      const count = urls.length
+      if (count > 0) {
+        console.log(`[EPISODE_COUNT_JS] Found ${count} episodes with alt pattern`)
+        return count
+      }
+    }
+  }
+
+  console.log(`[EPISODE_COUNT_JS] No episodes found in JS content`)
   return maxEpisode
 }
