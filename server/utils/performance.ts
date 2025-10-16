@@ -118,7 +118,7 @@ class PerformanceMonitor {
 
   private logStats() {
     const stats = this.getStats()
-    console.log('📊 Performance Stats (last 5 minutes):', {
+    console.log({
       totalRequests: stats.totalRequests,
       avgResponseTime: `${stats.averageResponseTime.toFixed(2)}ms`,
       errorRate: `${stats.errorRate.toFixed(2)}%`,

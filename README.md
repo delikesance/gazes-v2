@@ -22,6 +22,22 @@ bun run dev
 
 Dev server will print the URL (e.g. http://localhost:3000 or 3001 if 3000 is busy).
 
+## Environment Setup
+
+Before running the application, you need to set up the required environment variables. Copy `.env.example` to `.env` and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+Required environment variables:
+- `SUPABASE_URL` - Your Supabase project URL
+- `SUPABASE_KEY` - Your Supabase anon key
+- `JWT_SECRET` - Secret key for JWT tokens (minimum 32 characters)
+- `JWT_REFRESH_SECRET` - Secret key for refresh tokens (minimum 32 characters)
+- `SEARCH_API_URL` - External search API URL (default: anime-sama.fr)
+- `CATALOGUE_API_URL` - External catalogue API URL (default: anime-sama.fr)
+
 ## Production
 ```bash
 bun run build

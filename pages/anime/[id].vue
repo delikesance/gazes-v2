@@ -27,7 +27,6 @@ const id = computed(() => String(route.params.id || ""));
 const debug = computed(() => route.query.debug === "1" || route.query.debug === "true");
 const debugLog = (...args: any[]) => {
     if (debug.value) {
-        console.log(...args);
     }
 };
 

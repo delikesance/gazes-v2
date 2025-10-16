@@ -95,13 +95,24 @@ const playUrl = ref('')
 const currentSourceIndex = ref(0)
 const resolving = ref(false)
 const resolveError = ref('')
-const resolvedList = ref<{ type: string; url: string; proxiedUrl: string; quality?: string }[]>([])
+const resolvedList = ref<{ type: string; url: string; directUrl: string; proxiedUrl: string; quality?: string }[]>([])
 const notice = ref('')
 const videoRef = ref<HTMLVideoElement | null>(null)
 const videoError = ref('')
 const videoLoading = ref(false)
 const isBuffering = ref(false)
 const bufferProgress = ref(0)
+
+// Track which languages are currently being resolved
+const resolvingLanguages = ref<Set<string>>(new Set())
+
+// Cache for resolved sources by language to enable instant switching
+const resolvedSourcesByLanguage = ref<Record<string, { sources: Array<{ type: string; url: string; directUrl: string; proxiedUrl: string; quality?: string }>; resolvedAt: number; episode: number; season: string }>>({})
+
+// Language switching state
+const availableLanguages = ref<Array<{ code: string; name: string; available: boolean }>>([])
+const languageOptions = computed(() => availableLanguages.value.filter(lang => lang.available))
+const showLanguageDropdown = ref(false)
 
 // Video player state
 const currentTime = ref(0)
@@ -125,6 +136,10 @@ const showNextEpisodeOverlay = ref(false)
 const nextEpisodeCountdown = ref(10) // 10 second countdown
 const nextEpisodeTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
 
+// CORS and proxy fallback state
+const triedDirectUrl = ref(false)
+const corsFailedSources = ref<Set<string>>(new Set())
+
 // Mobile touch state
 const touchSeekOverlay = ref(false)
 const touchSeekTime = ref(0)
@@ -140,7 +155,6 @@ function saveVolumeSettings() {
       timestamp: Date.now()
     }
     localStorage.setItem(VOLUME_STORAGE_KEY, JSON.stringify(settings))
-    console.log('🔊 Volume settings saved:', settings)
   } catch (error) {
     console.warn('Failed to save volume settings:', error)
   }
@@ -157,10 +171,8 @@ function loadVolumeSettings() {
       if (isRecent) {
         volume.value = settings.volume ?? 1
         isMuted.value = settings.isMuted ?? false
-        console.log('🔊 Volume settings loaded:', settings)
         return true
       } else {
-        console.log('🔊 Volume settings expired, using defaults')
       }
     }
   } catch (error) {
@@ -252,83 +264,12 @@ const savedProgress = ref<{ currentTime: number; duration: number } | null>(null
 const progressSaveInterval = ref<ReturnType<typeof setInterval> | null>(null)
 const lastSavedTime = ref(0)
 
-// Language switcher state
-const availableLanguages = ref<{ 
-  vostfr: boolean; 
-  vf: boolean; 
-  va: boolean; 
-  var: boolean; 
-  vkr: boolean; 
-  vcn: boolean; 
-  vqc: boolean; 
-  vf1: boolean; 
-  vf2: boolean; 
-  vj: boolean 
-}>({
-  vostfr: false,
-  vf: false,
-  va: false,
-  var: false,
-  vkr: false,
-  vcn: false,
-  vqc: false,
-  vf1: false,
-  vf2: false,
-  vj: false
-})
-const switchingLanguage = ref(false)
-const showLanguageDropdown = ref(false)
 
-// Computed for language options
-const languageOptions = computed(() => {
-  const options = []
-  if (availableLanguages.value.vostfr) {
-    const emoji = dynamicLanguageFlags.value['vostfr'] || '��🇳' // Fallback to Chinese flag
-    options.push({ code: 'vostfr', label: `${emoji} VOSTFR`, fullLabel: 'Version Originale Sous-Titrée Français' })
-  }
-  if (availableLanguages.value.vf) {
-    const emoji = dynamicLanguageFlags.value['vf'] || '🇫🇷'
-    options.push({ code: 'vf', label: `${emoji} VF`, fullLabel: 'Version Française' })
-  }
-  if (availableLanguages.value.va) {
-    const emoji = dynamicLanguageFlags.value['va'] || '🇺🇸'
-    options.push({ code: 'va', label: `${emoji} VA`, fullLabel: 'Version Anglaise' })
-  }
-  if (availableLanguages.value.var) {
-    const emoji = dynamicLanguageFlags.value['var'] || '🇸🇦'
-    options.push({ code: 'var', label: `${emoji} VAR`, fullLabel: 'Version Arabe' })
-  }
-  if (availableLanguages.value.vkr) {
-    const emoji = dynamicLanguageFlags.value['vkr'] || '🇰🇷'
-    options.push({ code: 'vkr', label: `${emoji} VKR`, fullLabel: 'Version Coréenne' })
-  }
-  if (availableLanguages.value.vcn) {
-    const emoji = dynamicLanguageFlags.value['vcn'] || '🇨🇳'
-    options.push({ code: 'vcn', label: `${emoji} VCN`, fullLabel: 'Version Chinoise' })
-  }
-  if (availableLanguages.value.vqc) {
-    const emoji = dynamicLanguageFlags.value['vqc'] || '🇨🇦'
-    options.push({ code: 'vqc', label: `${emoji} VQC`, fullLabel: 'Version Québécoise' })
-  }
-  if (availableLanguages.value.vf1) {
-    const emoji = dynamicLanguageFlags.value['vf1'] || '🇫🇷'
-    options.push({ code: 'vf1', label: `${emoji} VF1`, fullLabel: 'Version Française 1' })
-  }
-  if (availableLanguages.value.vf2) {
-    const emoji = dynamicLanguageFlags.value['vf2'] || '🇫🇷'
-    options.push({ code: 'vf2', label: `${emoji} VF2`, fullLabel: 'Version Française 2' })
-  }
-  if (availableLanguages.value.vj) {
-    const emoji = dynamicLanguageFlags.value['vj'] || '🇯🇵'
-    options.push({ code: 'vj', label: `${emoji} VJ`, fullLabel: 'Version Japonaise' })
-  }
-  return options
-})
 
 // Computed for current language display
 const currentLanguageDisplay = computed(() => {
   const current = languageOptions.value.find(opt => opt.code === lang.value)
-  return current || { label: lang.value.toUpperCase(), fullLabel: lang.value.toUpperCase() }
+  return current || { name: lang.value.toUpperCase() }
 })
 
 // Computed for formatted season display
@@ -386,7 +327,6 @@ async function syncLocalProgressToServer() {
         
         // Remove from localStorage after successful sync
         localStorage.removeItem(key)
-        console.log('✅ Synced progress to server and removed from localStorage:', progressData)
       } catch (error) {
         console.warn('Failed to sync progress for key:', key, error)
       }
@@ -412,7 +352,6 @@ async function loadSavedProgress() {
             currentTime: (episodeProgress as any).currentTime,
             duration: (episodeProgress as any).duration
           }
-          console.log('📺 Loaded saved progress from server:', savedProgress.value)
           return
         }
       }
@@ -437,12 +376,10 @@ async function loadSavedProgress() {
           currentTime: progressData.currentTime,
           duration: progressData.duration
         }
-        console.log('📺 Loaded saved progress from localStorage:', savedProgress.value)
         return
       } else {
         // Clean up expired data
         localStorage.removeItem(progressKey)
-        console.log('📺 Removed expired progress data from localStorage')
       }
     }
   } catch (localStorageError) {
@@ -472,7 +409,6 @@ async function saveProgress(currentTime: number, duration: number) {
     
     if (response?.success) {
       lastSavedTime.value = now
-      console.log('💾 Progress saved to server:', { currentTime, duration })
       return
     }
   } catch (error) {
@@ -492,7 +428,6 @@ async function saveProgress(currentTime: number, duration: number) {
       
       localStorage.setItem(progressKey, JSON.stringify(progressData))
       lastSavedTime.value = now
-      console.log('💾 Progress saved to localStorage:', progressData)
     } catch (localStorageError) {
       console.warn('Failed to save progress to localStorage:', localStorageError)
     }
@@ -565,7 +500,6 @@ function togglePlay() {
       player.pause()
     } else {
       player.play().catch((e: any) => {
-        console.log('Play failed:', e)
       })
     }
   } else {
@@ -576,7 +510,6 @@ function togglePlay() {
       el.pause()
     } else {
       el.play().catch(e => {
-        console.log('Play failed:', e)
       })
     }
   }
@@ -608,7 +541,6 @@ function showSeekFeedback(direction: 'forward' | 'backward', seconds: number) {
 function seek(time: number) {
   // Prevent rapid seeking that can cause audio desynchronization
   if (isSeeking.value) {
-    console.log('Seek blocked - already seeking')
     return
   }
   
@@ -626,7 +558,6 @@ function seek(time: number) {
 function seekBy(seconds: number) {
   // Prevent rapid seeking that can cause audio desynchronization
   if (isSeeking.value) {
-    console.log('SeekBy blocked - already seeking')
     return
   }
   
@@ -862,7 +793,6 @@ function handleMouseMove() {
 function handleProgressClick(event: MouseEvent) {
   // Prevent rapid seeking that can cause audio desynchronization
   if (isSeeking.value) {
-    console.log('Progress click seek blocked - already seeking')
     return
   }
   
@@ -963,7 +893,6 @@ function handleKeyPress(event: KeyboardEvent) {
 
 // --- Stable handler references for video events ---
 function onVideoPlay() {
-  console.log('Video play event - clearing loading state and autoplay error')
   isPlaying.value = true
   isBuffering.value = false
   videoLoading.value = false // Clear loading when video actually starts
@@ -1008,7 +937,6 @@ function onVideoSeeked() {
   const el = videoRef.value
   if (el && wasPlayingBeforeSeek.value && el.paused) {
     el.play().catch(e => {
-      console.log('Auto-resume after seek failed:', e)
     })
   }
 }
@@ -1024,7 +952,6 @@ function onVideoSeeked() {
    showControls.value = true
    // Mark episode as completed when it actually ends
    if (duration.value > 0) {
-     console.log('🎬 Episode ended, marking as completed')
      saveProgress(duration.value, duration.value) // This will mark it as completed
    }
 
@@ -1158,7 +1085,6 @@ function handleLoadedMetadata() {
     const shouldResume = isContinueWatching.value || currentPlaybackTime < 5
 
     if (shouldResume) {
-      console.log('📺 Resuming from saved progress:', resumeTime, 'seconds', isContinueWatching.value ? '(continue watching)' : '(at start)')
       if (player) {
         player.currentTime(resumeTime)
       } else if (videoRef.value) {
@@ -1178,11 +1104,9 @@ function handleLoadedMetadata() {
         setTimeout(() => {
           if (player && !player.playing()) {
             player.play().catch((e: any) => {
-              console.log('Continue watching autoplay failed, user interaction required')
             })
           } else if (videoRef.value && videoRef.value.paused) {
             videoRef.value.play().catch((e: any) => {
-              console.log('Continue watching autoplay failed, user interaction required')
             })
           }
         }, 500) // Small delay to ensure seek is complete
@@ -1211,16 +1135,12 @@ function handleEnded() {
 // Skip functionality functions
 async function loadSkipTimes() {
   try {
-    console.log('⏭️ [SKIP] Loading skip times for anime:', id.value, 'episode:', episodeNum.value, 'duration:', duration.value)
     const params = duration.value > 0 ? { episodeLength: duration.value } : {}
     const response = await $fetch(`/api/anime/${id.value}/skip/${episodeNum.value}`, { params })
     if (response?.skipTimes && Array.isArray(response.skipTimes)) {
       skipTimes.value = response.skipTimes
-      console.log('⏭️ [SKIP] Successfully loaded skip times:', skipTimes.value.length, 'entries')
-      console.log('⏭️ [SKIP] Skip times details:', skipTimes.value)
     } else {
       skipTimes.value = []
-      console.log('⏭️ [SKIP] No skip times found for this episode')
     }
   } catch (error) {
     console.warn('⏭️ [SKIP] Failed to load skip times:', error)
@@ -1231,7 +1151,6 @@ async function loadSkipTimes() {
 function skipToEnd(skipType: 'op' | 'ed') {
   const skipTime = skipTimes.value.find(s => s.type === skipType)
   if (skipTime && videoRef.value) {
-    console.log(`⏭️ [SKIP] Skipping ${skipType.toUpperCase()} from ${currentTime.value}s to ${skipTime.endTime}s`)
     seek(skipTime.endTime)
     hideSkipButtons()
   } else {
@@ -1240,7 +1159,6 @@ function skipToEnd(skipType: 'op' | 'ed') {
 }
 
 function hideSkipButtons() {
-  console.log('⏭️ [SKIP] Hiding skip buttons')
   showSkipButtons.value = false
   const skipType = currentSkipType.value
   currentSkipType.value = null
@@ -1248,7 +1166,6 @@ function hideSkipButtons() {
   // Mark the current skip type as dismissed for this episode
   if (skipType) {
     dismissedSkips.value.add(skipType)
-    console.log(`⏭️ [SKIP] Marked ${skipType.toUpperCase()} as dismissed for this episode`)
   }
   
   if (skipTimeout.value) {
@@ -1267,7 +1184,6 @@ function checkSkipAvailability() {
   for (const skipTime of skipTimes.value) {
     // Skip if this skip type has already been dismissed for this episode
     if (dismissedSkips.value.has(skipTime.type)) {
-      console.log(`⏭️ [SKIP] Skipping ${skipTime.type.toUpperCase()} - already dismissed for this episode`)
       continue
     }
 
@@ -1278,7 +1194,6 @@ function checkSkipAvailability() {
     if (currentVideoTime >= skipTime.startTime && currentVideoTime < skipTime.endTime) {
       shouldShowButtons = true
       activeSkipType = skipTime.type
-      console.log(`⏭️ [SKIP] Currently in ${skipTime.type.toUpperCase()} period (${currentVideoTime.toFixed(1)}s of ${skipTime.startTime.toFixed(1)}s-${skipTime.endTime.toFixed(1)}s)`)
       break
     }
 
@@ -1286,7 +1201,6 @@ function checkSkipAvailability() {
     if (timeUntilStart > 0 && timeUntilStart <= 3) {
       shouldShowButtons = true
       activeSkipType = skipTime.type
-      console.log(`⏭️ [SKIP] Approaching ${skipTime.type.toUpperCase()} start in ${timeUntilStart.toFixed(1)}s`)
       break
     }
   }
@@ -1294,14 +1208,11 @@ function checkSkipAvailability() {
   if (shouldShowButtons && !showSkipButtons.value) {
     showSkipButtons.value = true
     currentSkipType.value = activeSkipType
-    console.log(`⏭️ [SKIP] Showing skip buttons for ${activeSkipType?.toUpperCase()}`)
     // Auto-hide after 10 seconds if not interacted with
     skipTimeout.value = setTimeout(() => {
-      console.log('⏭️ [SKIP] Auto-hiding skip buttons (timeout)')
       hideSkipButtons()
     }, 10000)
   } else if (!shouldShowButtons && showSkipButtons.value) {
-    console.log('⏭️ [SKIP] Hiding skip buttons (no longer in skip period)')
     hideSkipButtons()
   }
 }
@@ -1315,6 +1226,44 @@ const MAX_RETRIES_PER_SOURCE = 2
 let lastErrorType = ''
 let retryTimeout: ReturnType<typeof setTimeout> | null = null
 
+// Test direct URL access with timeout and error detection
+async function testDirectUrl(url: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const testVideo = document.createElement('video')
+    testVideo.crossOrigin = 'anonymous'
+    testVideo.preload = 'metadata'
+    
+    const timeout = setTimeout(() => {
+      testVideo.remove()
+      reject(new Error('Direct URL test timeout'))
+    }, 3000)
+    
+    const cleanup = () => {
+      clearTimeout(timeout)
+      testVideo.remove()
+    }
+    
+    testVideo.addEventListener('loadedmetadata', () => {
+      cleanup()
+      resolve()
+    })
+    
+    testVideo.addEventListener('error', (e) => {
+      cleanup()
+      const error = testVideo.error
+      reject(new Error(`Direct URL failed: ${error?.message || 'Unknown error'}`))
+    })
+    
+    testVideo.addEventListener('abort', () => {
+      cleanup()
+      reject(new Error('Direct URL test aborted'))
+    })
+    
+    testVideo.src = url
+    document.body.appendChild(testVideo)
+  })
+}
+
 async function setupVideo() {
   const el = videoRef.value
   if (!el || !playUrl.value) {
@@ -1322,14 +1271,11 @@ async function setupVideo() {
     return
   }
 
-  // Prevent infinite loops - limit fallback attempts
-  if (setupAttempts > 2) {
-    console.error('setupVideo: Too many attempts, giving up')
-    videoError.value = 'Impossible de charger la vidéo après plusieurs tentatives'
-    videoLoading.value = false
-    return
-  }
-  setupAttempts++
+  // Reset setup attempts and retry counters for new episode
+  setupAttempts = 0
+  currentSourceRetries = 0
+  lastErrorType = ''
+  triedDirectUrl.value = false
 
   videoError.value = ''
   videoLoading.value = true
@@ -1346,12 +1292,35 @@ async function setupVideo() {
   el.volume = volume.value
   el.muted = isMuted.value
 
-  console.log(`setupVideo: Attempt ${setupAttempts} - Setting up video with URL:`, playUrl.value)
-  console.log('setupVideo: Is M3U8:', isM3U8(playUrl.value))
-
+  // Determine if we should try direct URL first
+  const currentSource = resolvedList.value[currentSourceIndex.value]
+  const shouldTryDirect = currentSource?.directUrl && !corsFailedSources.value.has(currentSource.url)
+  
   try {
     if (isM3U8(playUrl.value)) {
-      // Use Video.js for HLS streams
+      // For HLS streams, we need to check if direct access works
+      if (shouldTryDirect && !triedDirectUrl.value) {
+        console.log('🎯 Trying direct HLS URL first:', currentSource.directUrl)
+        triedDirectUrl.value = true
+        
+        // Try direct URL with timeout
+        const directTestPromise = testDirectUrl(currentSource.directUrl)
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Direct URL timeout')), 3000)
+        )
+        
+        try {
+          await Promise.race([directTestPromise, timeoutPromise])
+          console.log('✅ Direct HLS URL works, using it')
+          playUrl.value = currentSource.directUrl
+        } catch (directError) {
+          console.log('❌ Direct HLS URL failed, falling back to proxy:', (directError as Error).message)
+          corsFailedSources.value.add(currentSource.url)
+          playUrl.value = currentSource.proxiedUrl
+        }
+      }
+
+      // Use Video.js for HLS streams (direct or proxied)
       const VideoJS = await loadVideoJS()
       player = VideoJS(el, {
         controls: false, // We use custom controls
@@ -1404,30 +1373,25 @@ async function setupVideo() {
        })
 
       player.on('loadedmetadata', () => {
-        console.log('Video.js loadedmetadata')
         // Handle loaded metadata
         handleLoadedMetadata()
       })
 
       player.on('canplay', () => {
-        console.log('Video.js canplay')
         videoLoading.value = false
       })
 
        player.on('waiting', () => {
-         console.log('Video.js waiting')
          isBuffering.value = true
          videoLoading.value = true
        })
 
        player.on('playing', () => {
-         console.log('Video.js playing')
          isBuffering.value = false
          videoLoading.value = false
        })
 
        player.on('canplay', () => {
-         console.log('Video.js canplay')
          isBuffering.value = false
          videoLoading.value = false
        })
@@ -1447,7 +1411,6 @@ async function setupVideo() {
 
       // Try to play with autoplay
       player.play().catch((e: any) => {
-        console.log('Autoplay prevented by browser, video will start paused')
         videoLoading.value = false // Allow user interaction
         // Don't show error for autoplay prevention - it's expected
       })
@@ -1463,8 +1426,24 @@ async function setupVideo() {
         }, 500)
       }, 10000)
     } else {
+      // For MP4 and other direct video files, try direct access first
+      if (shouldTryDirect && !triedDirectUrl.value) {
+        console.log('🎯 Trying direct video URL first:', currentSource.directUrl)
+        triedDirectUrl.value = true
+        
+        // Test direct URL access
+        try {
+          await testDirectUrl(currentSource.directUrl)
+          console.log('✅ Direct video URL works, using it')
+          playUrl.value = currentSource.directUrl
+        } catch (directError) {
+          console.log('❌ Direct video URL failed, falling back to proxy:', (directError as Error).message)
+          corsFailedSources.value.add(currentSource.url)
+          playUrl.value = currentSource.proxiedUrl
+        }
+      }
+
       // Use native video element for MP4
-      console.log('Using native video element for MP4')
       el.src = playUrl.value
       el.autoplay = true // Enable autoplay for native video
 
@@ -1473,12 +1452,10 @@ async function setupVideo() {
 
       // Add specific event listeners for native video loading
       const onCanPlay = () => {
-        console.log('Native video canplay')
         videoLoading.value = false
         el.removeEventListener('canplay', onCanPlay)
       }
       const onLoadedData = () => {
-        console.log('Native video loadeddata')
         videoLoading.value = false
         el.removeEventListener('loadeddata', onLoadedData)
       }
@@ -1495,7 +1472,6 @@ async function setupVideo() {
 
       // Try to play
       el.play().catch(e => {
-        console.log('Autoplay prevented by browser, waiting for user interaction')
         videoLoading.value = false // Allow user interaction
       })
 
@@ -1568,7 +1544,6 @@ function handleVideoError(error: any, errorType: string = 'unknown') {
   if (recoverable && currentSourceRetries < MAX_RETRIES_PER_SOURCE) {
     // Retry the same source
     currentSourceRetries++
-    console.log(`🔄 Retrying same source (attempt ${currentSourceRetries}/${MAX_RETRIES_PER_SOURCE}) for recoverable error`)
 
     videoError.value = `Nouvelle tentative ${currentSourceRetries}/${MAX_RETRIES_PER_SOURCE}...`
     videoLoading.value = true
@@ -1579,7 +1554,6 @@ function handleVideoError(error: any, errorType: string = 'unknown') {
 
   } else {
     // Either not recoverable or max retries reached - try next source
-    console.log(`❌ ${recoverable ? 'Max retries reached' : 'Non-recoverable error'}, trying next source`)
     tryNextSource()
   }
 }
@@ -1596,7 +1570,6 @@ function tryNextSource() {
 
   // If we've cycled through all sources, stop trying
   if (currentSourceIndex.value === startIndex) {
-    console.log('Tried all sources, giving up')
     videoError.value = 'Toutes les sources vidéo ont échoué'
     return
   }
@@ -1640,7 +1613,6 @@ async function loadAnimeMetadata() {
     // Extract dynamic language flags from the response
     if (response?.languageFlags) {
       dynamicLanguageFlags.value = response.languageFlags
-      console.log('Loaded dynamic language flags:', dynamicLanguageFlags.value)
     }
   } catch (error) {
     console.error('Failed to load anime metadata:', error)
@@ -1654,10 +1626,8 @@ async function loadEpisodesList() {
   loadingEpisodes.value = true
   try {
     const url = `/api/anime/episodes/${id.value}/${season.value}/${lang.value}`
-    console.log('Loading episodes from:', url)
     const response = await $fetch(url) as any
     episodesList.value = (response?.episodes || []) as Array<{ episode: number; title?: string; url: string; urls?: string[] }>
-    console.log('Loaded episodes:', episodesList.value)
 
     // Update current episode title
     const currentEp = episodesList.value.find(ep => ep.episode === episodeNum.value)
@@ -1709,33 +1679,7 @@ function toggleEpisodesPanel() {
   }
 }
 
-async function switchLanguage(targetLang: 'vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj') {
-  if (targetLang === lang.value || switchingLanguage.value) return
-  
-  switchingLanguage.value = true
-  showLanguageDropdown.value = false // Close dropdown immediately
-  
-  try {
-    console.log(`🔄 Switching from ${lang.value} to ${targetLang}`)
-    await navigateTo({
-      path: `/watch/${id.value}/${season.value}/${targetLang}/${episodeNum.value}`,
-      replace: true
-    })
-  } catch (error) {
-    console.error('Failed to switch language:', error)
-  } finally {
-    switchingLanguage.value = false
-  }
-}
 
-function toggleLanguageDropdown() {
-  if (languageOptions.value.length <= 1) return // Don't show dropdown if only one language
-  showLanguageDropdown.value = !showLanguageDropdown.value
-}
-
-function closeLanguageDropdown() {
-  showLanguageDropdown.value = false
-}
 
 onBeforeUnmount(() => {
   destroyPlayer()
@@ -1775,7 +1719,6 @@ onBeforeUnmount(() => {
     document.removeEventListener('fullscreenchange', handleFullscreenChange)
     document.removeEventListener('enterpictureinpicture', handlePictureInPictureChange)
     document.removeEventListener('leavepictureinpicture', handlePictureInPictureChange)
-    document.removeEventListener('click', closeLanguageDropdown)
   }
 })
 
@@ -1787,7 +1730,6 @@ async function fetchEpisodesFor(targetLang: 'vostfr' | 'vf' | 'va' | 'var' | 'vk
 
       // Validate that we got actual episodes with URLs
       if (episodes.length > 0 && episodes.some(ep => ep.urls && ep.urls.length > 0)) {
-        console.log(`✅ Found ${episodes.length} episodes for ${targetLang}`)
         return episodes
       } else {
         console.warn(`⚠️ Language ${targetLang} returned no valid episodes`)
@@ -1814,6 +1756,148 @@ async function fetchEpisodesFor(targetLang: 'vostfr' | 'vf' | 'va' | 'var' | 'vk
 
 
 
+// New clean language switching logic
+async function switchLanguage(targetLang: string) {
+  if (targetLang === lang.value) return // Already on this language
+
+  console.log(`🔄 Switching language from ${lang.value} to ${targetLang}`)
+
+  // Phase 1: Preparation - Check if target language is available
+  const targetLangData = availableLanguages.value.find(l => l.code === targetLang)
+  if (!targetLangData?.available) {
+    console.warn(`❌ Language ${targetLang} not available for this episode`)
+    notice.value = `Langue ${targetLang.toUpperCase()} indisponible pour cet épisode`
+    return
+  }
+
+  // Phase 2: Pre-resolution - Check if sources are already resolved
+  const cachedSources = resolvedSourcesByLanguage.value[targetLang]
+  if (cachedSources && cachedSources.episode === episodeNum.value && cachedSources.season === season.value) {
+    // Phase 3: Instant switching - Sources already available, navigate to update URL
+    console.log(`✅ Sources already resolved for ${targetLang}, switching instantly`)
+    await navigateTo({
+      path: `/watch/${id.value}/${season.value}/${targetLang}/${episodeNum.value}`,
+      replace: true,
+    })
+    notice.value = `Basculement en ${targetLang.toUpperCase()}`
+    closeLanguageDropdown()
+    return
+  }
+
+  // Phase 4: Fallback navigation - Navigate to new URL to trigger resolution
+  console.log(`🔄 Navigating to ${targetLang} for fresh resolution`)
+  await navigateTo({
+    path: `/watch/${id.value}/${season.value}/${targetLang}/${episodeNum.value}`,
+    replace: true,
+  })
+  closeLanguageDropdown()
+}
+
+function closeLanguageDropdown() {
+  showLanguageDropdown.value = false
+}
+
+// Helper function to get human-readable language names
+function getLanguageName(langCode: string): string {
+  const names: Record<string, string> = {
+    'vostfr': 'VOSTFR',
+    'vf': 'VF',
+    'va': 'VA',
+    'var': 'VA+',
+    'vkr': 'VKR',
+    'vcn': 'VCN',
+    'vqc': 'VQC',
+    'vf1': 'VF1',
+    'vf2': 'VF2',
+    'vj': 'VJ'
+  }
+  return names[langCode] || langCode.toUpperCase()
+}
+async function resolveSourcesForLanguage(targetLang: string, candidateUrls: string[]): Promise<{ type: string; url: string; directUrl: string; proxiedUrl: string; quality?: string }[]> {
+  let candidates = candidateUrls
+  if (!candidates.length) return []
+  
+  // Sort candidates by provider reliability (best first) for faster success
+  candidates = candidates.sort((a, b) => {
+    const getReliability = (url: string) => {
+      try {
+        const hostname = new URL(url).hostname.toLowerCase()
+        if (hostname.includes('sibnet')) return 10
+        if (hostname.includes('streamtape')) return 8
+        if (hostname.includes('vidmoly')) return 7
+        if (hostname.includes('uqload')) return 5
+        if (hostname.includes('doodstream')) return 4
+        if (hostname.includes('myvi')) return 3
+        if (hostname.includes('sendvid')) return 1
+        return 0
+      } catch {
+        return 0
+      }
+    }
+    return getReliability(b) - getReliability(a)
+  })
+  
+  // Try candidates sequentially for better reliability (less server load)
+  let resolvedUrls: any[] = []
+  let lastError = ''
+
+  // Process candidates sequentially to avoid overwhelming servers
+  for (let i = 0; i < Math.min(candidates.length, 3); i++) {
+    const targetUrl = candidates[i]
+    if (!targetUrl) continue
+
+    try {
+      // Resolve the provider URL to actual video stream
+      const encoder = new TextEncoder()
+      const data = encoder.encode(targetUrl)
+      const base64 = btoa(String.fromCharCode(...data))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "")
+
+      let referer: string | undefined
+      try {
+        const u = new URL(targetUrl)
+        referer = u.origin + "/"
+      } catch {}
+
+      try {
+        const resolveResponse = await $fetch<any>("/api/player/resolve", {
+          params: {
+            u64: base64,
+            referer,
+            ...(debug.value ? { debug: "1" } : {}),
+          },
+          timeout: 4000, // Reduced to 4s for faster failure detection
+        })
+
+        if (resolveResponse?.ok && resolveResponse?.urls?.length > 0) {
+          resolvedUrls = resolveResponse.urls
+          break // Use the first successful result
+        } else {
+          const error = resolveResponse?.message || "No URLs found"
+          console.warn(`❌ Candidate ${i + 1} failed for ${targetLang}: ${error}`)
+          lastError = error
+        }
+      } catch (resolveError: any) {
+        const errorMsg = resolveError?.message || 'Network error during resolution'
+        console.warn(`❌ Candidate ${i + 1} resolution error for ${targetLang}: ${errorMsg}`)
+        lastError = errorMsg
+      }
+    } catch (error: any) {
+      const errorMsg = error?.message || 'Network error'
+      console.warn(`❌ Candidate ${i + 1} error for ${targetLang}: ${errorMsg}`)
+      lastError = errorMsg
+    }
+  }
+  
+  if (resolvedUrls.length === 0) {
+    throw new Error(lastError || "Toutes les sources ont échoué")
+  }
+  
+  return resolvedUrls
+}
+
 async function resolveEpisode() {
   resolving.value = true
   resolveError.value = ''
@@ -1826,7 +1910,6 @@ async function resolveEpisode() {
   currentSourceRetries = 0
   lastErrorType = ''
 
-  console.log(`🎬 Resolving episode: ${id.value}/${season.value}/${lang.value}/${episodeNum.value}`)
 
   try {
     // Check all languages for the current episode availability
@@ -1845,18 +1928,15 @@ async function resolveEpisode() {
     const languageResults = await Promise.all(languagePromises)
     
     // Update available languages based on whether they have the current episode
-    languageResults.forEach(({ lang, hasCurrentEpisode }) => {
-      availableLanguages.value[lang as keyof typeof availableLanguages.value] = hasCurrentEpisode
-    })
-    
-    console.log(`🎯 Episode ${episodeNum.value} availability:`, Object.fromEntries(
-      Object.entries(availableLanguages.value).filter(([_, available]) => available)
-    ))
+    availableLanguages.value = languageResults.map(({ lang, hasCurrentEpisode }) => ({
+      code: lang,
+      name: getLanguageName(lang),
+      available: hasCurrentEpisode
+    }))
     
     // Try requested language first
     const currentLangResult = languageResults.find(r => r.lang === lang.value)
     let ep = currentLangResult?.episodes.find(e => Number(e.episode) === episodeNum.value)
-    console.log(`🎯 Looking for episode ${episodeNum.value} in ${lang.value}, found:`, ep ? `Episode ${ep.episode}` : 'Not found')
 
     // If not found in requested language, check other available languages
     if (!ep) {
@@ -1865,7 +1945,6 @@ async function resolveEpisode() {
       for (const { lang: altLang, episodes: altEpisodes } of availableLangResults) {
         const altEp = altEpisodes.find((e: any) => Number(e.episode) === episodeNum.value)
         if (altEp) {
-          console.log(`🔄 Found episode ${episodeNum.value} in ${altLang}, switching...`)
           notice.value = `Langue ${lang.value.toUpperCase()} indisponible. Basculement en ${altLang.toUpperCase()}.`
           await navigateTo({
             path: `/watch/${id.value}/${season.value}/${altLang}/${episodeNum.value}`,
@@ -1876,111 +1955,61 @@ async function resolveEpisode() {
         }
       }
 
-      console.log(`❌ Episode ${episodeNum.value} not found in any available language`)
     }
 
     if (!ep) {
       resolveError.value = `Épisode ${episodeNum.value.toString().padStart(2, '0')} introuvable pour ${lang.value.toUpperCase()}`
       return
     }
-    let candidates = ep?.urls?.length ? ep.urls : ep?.url ? [ep.url] : []
-    if (!candidates.length) { resolveError.value = 'Aucun lien pour cet épisode'; return }
     
-    // Sort candidates by provider reliability (best first) for faster success
-    candidates = candidates.sort((a, b) => {
-      const getReliability = (url: string) => {
-        try {
-          const hostname = new URL(url).hostname.toLowerCase()
-          if (hostname.includes('sibnet')) return 10
-          if (hostname.includes('streamtape')) return 8
-          if (hostname.includes('vidmoly')) return 7
-          if (hostname.includes('uqload')) return 5
-          if (hostname.includes('doodstream')) return 4
-          if (hostname.includes('myvi')) return 3
-          if (hostname.includes('sendvid')) return 1
-          return 0
-        } catch {
-          return 0
-        }
-      }
-      return getReliability(b) - getReliability(a)
-    })
+    // Resolve sources for the current language first (for immediate playback)
+    const epUrls = ep?.urls?.length ? ep.urls : ep?.url ? [ep.url] : []
+    if (!epUrls.length) { 
+      resolveError.value = 'Aucun lien pour cet épisode'
+      return
+    }
     
-    console.log(`🎯 Sorted ${candidates.length} candidates by reliability:`, candidates.map(url => {
-      try {
-        const hostname = new URL(url).hostname
-        return `${hostname} (${url})`
-      } catch {
-        return url
-      }
-    }))
-
-    // Try candidates sequentially for better reliability (less server load)
-    let resolvedUrls: any[] = []
-    let lastError = ''
-
-    // Process candidates sequentially to avoid overwhelming servers
-    for (let i = 0; i < Math.min(candidates.length, 3); i++) {
-      const targetUrl = candidates[i]
-      if (!targetUrl) continue
-
-      console.log(`🎯 Trying candidate ${i + 1}/${Math.min(candidates.length, 3)}: ${targetUrl}`)
-
-      try {
-        // Resolve the provider URL to actual video stream
-        const encoder = new TextEncoder()
-        const data = encoder.encode(targetUrl)
-        const base64 = btoa(String.fromCharCode(...data))
-          .replace(/\+/g, "-")
-          .replace(/\//g, "_")
-          .replace(/=+$/, "")
-
-        let referer: string | undefined
-        try {
-          const u = new URL(targetUrl)
-          referer = u.origin + "/"
-        } catch {}
-
-        try {
-          const resolveResponse = await $fetch<any>("/api/player/resolve", {
-            params: {
-              u64: base64,
-              referer,
-              ...(debug.value ? { debug: "1" } : {}),
-            },
-            timeout: 4000, // Reduced to 4s for faster failure detection
-          })
-
-          if (resolveResponse?.ok && resolveResponse?.urls?.length > 0) {
-            console.log(`✅ Successfully resolved candidate ${i + 1}: ${resolveResponse.urls.length} URLs found`)
-            resolvedUrls = resolveResponse.urls
-            break // Use the first successful result
-          } else {
-            const error = resolveResponse?.message || "No URLs found"
-            console.warn(`❌ Candidate ${i + 1} failed: ${error}`)
-            lastError = error
+    const currentLangSources = await resolveSourcesForLanguage(lang.value, epUrls)
+    resolvedList.value = currentLangSources
+    resolvedSourcesByLanguage.value[lang.value] = {
+      sources: currentLangSources,
+      resolvedAt: Date.now(),
+      episode: episodeNum.value,
+      season: season.value
+    }
+    
+    // Pre-resolve sources for other available languages in background
+    const availableLangs = languageResults.filter(r => r.hasCurrentEpisode && r.lang !== lang.value)
+    for (const { lang: otherLang, episodes: otherEpisodes } of availableLangs) {
+      const otherEp = otherEpisodes.find((e: any) => Number(e.episode) === episodeNum.value)
+      if (otherEp?.urls?.length) {
+        // Mark as resolving
+        resolvingLanguages.value.add(otherLang)
+        
+        // Resolve in background without awaiting
+        resolveSourcesForLanguage(otherLang, otherEp.urls).then((sources: { type: string; url: string; directUrl: string; proxiedUrl: string; quality?: string }[]) => {
+          resolvedSourcesByLanguage.value[otherLang] = {
+            sources,
+            resolvedAt: Date.now(),
+            episode: episodeNum.value,
+            season: season.value
           }
-        } catch (resolveError: any) {
-          const errorMsg = resolveError?.message || 'Network error during resolution'
-          console.warn(`❌ Candidate ${i + 1} resolution error: ${errorMsg}`)
-          lastError = errorMsg
-        }
-      } catch (error: any) {
-        const errorMsg = error?.message || 'Network error'
-        console.warn(`❌ Candidate ${i + 1} error: ${errorMsg}`)
-        lastError = errorMsg
+          resolvingLanguages.value.delete(otherLang)
+        }).catch((error: any) => {
+          console.warn(`Failed to pre-resolve sources for ${otherLang}:`, error)
+          resolvingLanguages.value.delete(otherLang)
+        })
       }
     }
     
-    if (resolvedUrls.length === 0) {
-      resolveError.value = lastError || "Toutes les sources ont échoué";
-      return;
-    }
-    
-    resolvedList.value = resolvedUrls;
     currentSourceIndex.value = 0
-    const hlsFirst = resolvedUrls.find((u: any) => u.type === "hls") || resolvedUrls[0];
-    playUrl.value = hlsFirst.proxiedUrl || hlsFirst.url;
+    const hlsFirst = resolvedList.value.find((u: any) => u.type === "hls") || resolvedList.value[0]
+    if (hlsFirst) {
+      playUrl.value = hlsFirst.proxiedUrl || hlsFirst.url
+    } else {
+      resolveError.value = "Aucune source vidéo trouvée"
+      return
+    }
   } catch (e: any) {
     resolveError.value = e?.message || 'Erreur de résolution'
   } finally {
@@ -2008,7 +2037,6 @@ async function preloadNextEpisode() {
     if (nextEpisode && nextEpisode.urls && nextEpisode.urls.length > 0) {
       // Pre-resolve the next episode URLs in background
       const firstUrl = nextEpisode.urls[0]
-      console.log(`🚀 Pre-resolving next episode ${nextEpisodeNum}:`, firstUrl)
 
       // Start background resolution (don't await)
       resolveEpisodeInBackground(id.value, season.value, lang.value, nextEpisodeNum, nextEpisode.urls)
@@ -2021,7 +2049,6 @@ async function preloadNextEpisode() {
 
 // Background episode resolution for preloading
 async function resolveEpisodeInBackground(animeId: string, season: string, lang: string, episodeNum: number, candidateUrls: string[]) {
-  console.log(`🔄 Background resolving episode: ${animeId}/${season}/${lang}/${episodeNum}`)
 
   // Sort candidates by provider reliability
   const candidates = candidateUrls.sort((a, b) => {
@@ -2109,7 +2136,6 @@ async function resolveEpisodeInBackground(animeId: string, season: string, lang:
         })
 
         if (finalUrls.length > 0) {
-          console.log(`✅ Background resolved episode ${animeId}/${season}/${lang}/${episodeNum}: ${finalUrls.length} URLs found`)
         }
         break
       }
@@ -2169,7 +2195,6 @@ async function resolveEpisodeInBackground(animeId: string, season: string, lang:
     document.addEventListener('enterpictureinpicture', handlePictureInPictureChange)
     document.addEventListener('leavepictureinpicture', handlePictureInPictureChange)
     document.addEventListener('click', () => {
-      closeLanguageDropdown()
       closeSpeedDropdown()
       closeQualityDropdown()
     })
@@ -2202,7 +2227,6 @@ watch([season, lang, episodeNum], () => {
       
       // Reset dismissed skips when changing episodes
       dismissedSkips.value.clear()
-      console.log('⏭️ [SKIP] Cleared dismissed skips for new episode')
       
       // Reload volume settings when navigating to new episode
       loadVolumeSettings()
@@ -2306,12 +2330,6 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
             <button @click="resolveEpisode" class="bg-violet-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-violet-700 transition-colors">
               Réessayer
             </button>
-            <button v-if="availableLanguages.vf" @click="switchLanguage('vf')" class="bg-zinc-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-zinc-600 transition-colors">
-              Version Française
-            </button>
-            <button v-if="availableLanguages.vostfr" @click="switchLanguage('vostfr')" class="bg-zinc-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-zinc-600 transition-colors">
-              VOSTFR
-            </button>
           </div>
         </div>
       </div>
@@ -2352,6 +2370,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
           class="w-full h-full object-contain cursor-pointer"
           preload="metadata"
           autoplay
+          crossorigin="anonymous"
           @click="handleVideoClick"
           @dblclick="handleVideoDoubleClick"
         >
@@ -2523,42 +2542,6 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
               </div>
               
               <div class="flex items-center gap-1 md:gap-2">
-                <!-- Language dropdown -->
-                <div v-if="languageOptions.length > 1" class="relative">
-                  <button
-                    @click.stop="toggleLanguageDropdown"
-                    :disabled="switchingLanguage"
-                    class="flex items-center gap-1 px-2 md:px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-xs md:text-sm font-medium touch-manipulation"
-                    :title="'Changer de langue'"
-                  >
-                    <span v-if="switchingLanguage" class="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin"></span>
-                    <span v-else>{{ currentLanguageDisplay.label }}</span>
-                    <Icon name="heroicons:chevron-down" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': showLanguageDropdown }" />
-                  </button>
-                  
-                  <!-- Dropdown menu -->
-                  <div
-                    v-if="showLanguageDropdown"
-                    class="absolute bottom-full right-0 mb-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-50 w-80 overflow-hidden"
-                    @click.stop
-                  >
-                    <div class="py-1">
-                      <button
-                        v-for="option in languageOptions"
-                        :key="option.code"
-                        @click="switchLanguage(option.code as 'vf' | 'vostfr')"
-                        :disabled="option.code === lang"
-                        class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 transition-colors flex items-center gap-2 whitespace-nowrap"
-                        :class="{ 'bg-zinc-700 text-white': option.code === lang, 'text-zinc-300': option.code !== lang }"
-                      >
-                        <span>{{ option.label }}</span>
-                        <span class="text-xs opacity-75 flex-1">{{ option.fullLabel }}</span>
-                        <Icon v-if="option.code === lang" name="heroicons:check" class="w-4 h-4 ml-auto" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                
                 <!-- Playback speed -->
                 <div class="relative">
                   <button
@@ -2639,6 +2622,39 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
                 <button @click="toggleEpisodesPanel" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation" title="Épisodes">
                   <Icon name="heroicons:list-bullet" class="w-5 h-5 md:w-5 md:h-5" />
                 </button>
+
+                <!-- Language selector -->
+                <div v-if="languageOptions.length > 1" class="relative">
+                  <button
+                    @click="showLanguageDropdown = !showLanguageDropdown"
+                    class="flex items-center gap-1 px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-sm font-medium"
+                    title="Changer de langue"
+                  >
+                    <span>{{ currentLanguageDisplay.name }}</span>
+                    <Icon name="heroicons:chevron-down" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': showLanguageDropdown }" />
+                  </button>
+
+                  <!-- Language dropdown menu -->
+                  <div
+                    v-if="showLanguageDropdown"
+                    class="absolute bottom-full right-0 mb-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-50 w-32 overflow-hidden"
+                    @click.stop
+                  >
+                    <div class="py-1">
+                      <button
+                        v-for="langOption in languageOptions"
+                        :key="langOption.code"
+                        @click="switchLanguage(langOption.code)"
+                        :disabled="langOption.code === lang"
+                        class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 transition-colors flex items-center gap-2"
+                        :class="{ 'bg-zinc-700 text-white': langOption.code === lang, 'text-zinc-300': langOption.code !== lang }"
+                      >
+                        <Icon name="heroicons:language" class="w-3 h-3 flex-shrink-0" />
+                        <span class="truncate flex-1">{{ langOption.name }}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
                 <!-- Picture-in-Picture -->
                 <button

@@ -6,7 +6,6 @@
 
 <script setup lang="ts">
 const handleSuccess = (user: any) => {
-  console.log('Login successful:', user)
 
   // Check for redirect cookie
   const redirectCookie = useCookie('redirectAfterLogin')

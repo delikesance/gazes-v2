@@ -95,7 +95,6 @@ export class VideoCache {
   private shouldCache(url: string, contentType: string, size: number): boolean {
     // Don't cache very large files (>100MB)
     if (size > 100 * 1024 * 1024) {
-      console.log(`📦 Skipping cache for large file: ${url} (${size} bytes)`)
       return false
     }
 
@@ -133,7 +132,6 @@ export class VideoCache {
 
       toRemove.push(key)
       freedSize += entry.size
-      console.log(`🗑️ Evicting from cache: ${key} (${entry.size} bytes)`)
     }
 
     // Remove evicted entries
@@ -185,7 +183,6 @@ export class VideoCache {
     this.cache.set(key, entry)
     this.currentSize += size
 
-    console.log(`💾 Cached video content: ${url} (${size} bytes, TTL: ${ttl}ms, provider reliability: ${providerReliability}/10)`)
   }
 
   // Get cached video content
@@ -201,7 +198,6 @@ export class VideoCache {
 
     // Check TTL
     if (now > entry.timestamp + entry.ttl) {
-      console.log(`⏰ Cache expired for: ${url}`)
       this.cache.delete(key)
       this.currentSize -= entry.size
       return null
@@ -209,7 +205,6 @@ export class VideoCache {
 
     // Check URL expiration
     if (entry.expiresAt && now > entry.expiresAt) {
-      console.log(`⏰ URL expired for: ${url}`)
       this.cache.delete(key)
       this.currentSize -= entry.size
       return null
@@ -219,7 +214,6 @@ export class VideoCache {
     entry.accessCount++
     entry.lastAccessed = now
 
-    console.log(`📦 Cache hit for: ${url} (accessed ${entry.accessCount} times)`)
     return {
       data: entry.data,
       contentType: entry.contentType
@@ -255,7 +249,6 @@ export class VideoCache {
     if (entry) {
       this.cache.delete(key)
       this.currentSize -= entry.size
-      console.log(`🗑️ Removed from cache: ${url}`)
       return true
     }
 
@@ -278,7 +271,6 @@ export class VideoCache {
     }
 
     if (removedCount > 0) {
-      console.log(`🧹 Cleaned up ${removedCount} expired cache entries, freed ${freedSize} bytes`)
     }
   }
 
@@ -306,7 +298,6 @@ export class VideoCache {
   clear(): void {
     this.cache.clear()
     this.currentSize = 0
-    console.log('🧹 Cleared video cache')
   }
 
   // Destroy the cache (stop cleanup interval)

@@ -151,10 +151,13 @@ export function parseAnimePage(html: string): AnimeInfo {
 }
 import type { SearchResponse } from "../types/searchResponse";
 
-export function parseAnimeResults(html: string): SearchResponse {
+export function parseAnimeResults(html: string, baseUrl?: string): SearchResponse {
   const results: SearchResponse = [];
-  const animeRegex =
-    /<a[^>]*href="(https:\/\/179\.43\.149\.218\/catalogue\/[^\"]*)"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([^<]*)<\/h3>[\s\S]*?<p[^>]*>([^<]*)<\/p>[\s\S]*?<\/a>/g;
+  const catalogueBaseUrl = baseUrl || 'https://179.43.149.218';
+  const animeRegex = new RegExp(
+    `<a[^>]*href="(${catalogueBaseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/catalogue\\/[^"]*)"[^>]*>[\\s\\S]*?<img[^>]*src="([^"]*)"[^>]*>[\\s\\S]*?<h3[^>]*>([^<]*)</h3>[\\s\\S]*?<p[^>]*>([^<]*)</p>[\\s\\S]*?</a>`,
+    'g'
+  );
 
   let match: RegExpExecArray | null;
 
@@ -189,9 +192,7 @@ export function parseAnimeResults(html: string): SearchResponse {
       // Skip invalid entries that don't have a proper slug
       continue;
     }
-    console.log(
-      `Parsed anime: title='${title.trim()}', id='${id}', url='${url}'`,
-    );
+
     results.push({
       title: title.trim(),
       id,

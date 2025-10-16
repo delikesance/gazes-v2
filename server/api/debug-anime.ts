@@ -21,12 +21,10 @@ export default defineEventHandler(async (event) => {
     return { error: 'Invalid anime ID format' }
   }
   
-  console.log(`🔍 Debugging anime: ${animeId}`)
   
   try {
     // Step 1: Check if anime page exists
     const animePageUrl = `https://179.43.149.218/catalogue/${animeId}`
-    console.log(`📄 Checking anime page: ${animePageUrl}`)
     
     const animeResponse = await axiosInstance.get(animePageUrl, {
       headers: {
@@ -42,7 +40,6 @@ export default defineEventHandler(async (event) => {
     }
 
     const animeHtml = animeResponse.data
-    console.log(`✅ Anime page loaded: ${animeHtml.length} bytes`)
     
     // Step 2: Parse seasons from anime page (two methods)
     // Method 1: Look for href links
@@ -72,8 +69,6 @@ export default defineEventHandler(async (event) => {
       }
     }
     
-    console.log(`🎭 Found seasons: ${Array.from(seasons).join(', ')}`)
-    console.log(`🗣️ Found languages: ${Array.from(languages).join(', ')}`)
     
     // Step 3: Check each season/language combination
     const results = {
@@ -90,7 +85,6 @@ export default defineEventHandler(async (event) => {
     for (const season of seasons) {
       for (const lang of languages) {
         const seasonUrl = `https://179.43.149.218/catalogue/${animeId}/${season}/${lang}`
-        console.log(`🎯 Testing season: ${seasonUrl}`)
         
         try {
           // Try episodes.js first
@@ -107,7 +101,6 @@ export default defineEventHandler(async (event) => {
           if (jsResponse.status >= 200 && jsResponse.status < 300) {
             episodeSource = jsResponse.data
             sourceType = 'episodes.js'
-            console.log(`✅ Found episodes.js: ${episodeSource.length} bytes`)
           } else {
             // Fallback to HTML page
             const htmlResponse = await axiosInstance.get(seasonUrl, {
@@ -119,9 +112,7 @@ export default defineEventHandler(async (event) => {
             if (htmlResponse.status >= 200 && htmlResponse.status < 300) {
               episodeSource = htmlResponse.data
               sourceType = 'html'
-              console.log(`✅ Found HTML page: ${episodeSource.length} bytes`)
             } else {
-              console.log(`❌ Failed to load: ${htmlResponse.status} ${htmlResponse.statusText}`)
               results.errors.push({
                 season,
                 lang,
@@ -146,7 +137,6 @@ export default defineEventHandler(async (event) => {
               
               if (urls.length > 0) {
                 episodeArrays.push(urls)
-                console.log(`📺 Found eps${arrayMatch[2]} with ${urls.length} URLs`)
               }
             }
           }
@@ -172,7 +162,6 @@ export default defineEventHandler(async (event) => {
             
             for (let i = 0; i < Math.min(firstEpisodeUrls.length, 5); i++) {
               const testUrl = firstEpisodeUrls[i] as string
-              console.log(`🧪 Testing embed URL: ${testUrl}`)
               
               try {
                 const embedResponse = await axiosInstance.get(testUrl, {
@@ -197,7 +186,6 @@ export default defineEventHandler(async (event) => {
 
                 if (embedResponse.status >= 200 && embedResponse.status < 300) {
                   const embedHtml = embedResponse.data
-                  console.log(`✅ Embed working: ${testUrl} (${embedHtml.length} bytes)`)
                   
                   // Try to extract video URLs from this embed
                   const videoPatterns = [
@@ -220,7 +208,6 @@ export default defineEventHandler(async (event) => {
                   }
                   
                   if (foundUrls.length > 0) {
-                    console.log(`🎬 Found ${foundUrls.length} video URLs in embed`)
                     results.workingUrls.push({
                       embedUrl: testUrl,
                       videoUrls: foundUrls,
@@ -231,11 +218,9 @@ export default defineEventHandler(async (event) => {
                   }
                   
                 } else {
-                  console.log(`❌ Embed failed: ${testUrl} - ${embedResponse.status} ${embedResponse.statusText}`)
                 }
                 
               } catch (error: any) {
-                console.log(`💥 Embed error: ${testUrl} - ${error.message}`)
                 results.embedTests.push({
                   url: testUrl,
                   error: error.message,
@@ -249,7 +234,6 @@ export default defineEventHandler(async (event) => {
           }
           
         } catch (error: any) {
-          console.log(`💥 Season error: ${season}/${lang} - ${error.message}`)
           results.errors.push({
             season,
             lang,
@@ -272,13 +256,6 @@ export default defineEventHandler(async (event) => {
       failingProviders: [...new Set(results.embedTests.filter(t => !t.working).map(t => t.provider))]
     }
     
-    console.log(`📊 Debug Summary:`)
-    console.log(`  - Seasons tested: ${summary.totalSeasons}`)
-    console.log(`  - Embeds tested: ${summary.totalEmbedsTested}`)
-    console.log(`  - Working embeds: ${summary.workingEmbeds}`)
-    console.log(`  - Video URLs found: ${summary.videoUrlsFound}`)
-    console.log(`  - Working providers: ${summary.workingProviders.join(', ')}`)
-    console.log(`  - Failing providers: ${summary.failingProviders.join(', ')}`)
     
     return {
       success: true,

@@ -109,12 +109,10 @@ export function debugSourceSelection(sources: VideoSource[], selectedSource: Vid
   // Only log in development mode (client-side check)
   if (typeof window !== 'undefined' && window.location?.search?.includes('debug=1')) {
     console.group('🎯 Video Source Selection Debug')
-    console.log('Available sources:', sources.length)
     
     sources.forEach((source, index) => {
       const provider = source.provider
       const isSelected = source === selectedSource
-      console.log(
         `${isSelected ? '✅' : '  '} ${index + 1}. ${source.type.toUpperCase()} - ${
           provider ? `${provider.hostname} (${provider.reliability}/10)` : 'Unknown provider'
         }`
@@ -122,9 +120,7 @@ export function debugSourceSelection(sources: VideoSource[], selectedSource: Vid
     })
     
     if (selectedSource) {
-      console.log('🏆 Selected:', formatProviderInfo(selectedSource.provider))
     } else {
-      console.log('❌ No suitable source found')
     }
     
     console.groupEnd()

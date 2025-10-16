@@ -6,7 +6,6 @@
 
 <script setup lang="ts">
 const handleSuccess = (user: any) => {
-  console.log('Registration successful:', user)
 
   // Redirect to home page after successful registration
   navigateTo('/')

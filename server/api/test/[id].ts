@@ -20,7 +20,6 @@ export default defineEventHandler(async (event) => {
     // Test flag scraping directly
     const seasonUrl = `https://179.43.149.218/catalogue/${id}/saison1/vostfr/`
 
-    console.log('Testing season URL:', seasonUrl)
 
     try {
         const seasonResponse = await axiosInstance.get(seasonUrl, {
@@ -30,14 +29,11 @@ export default defineEventHandler(async (event) => {
             },
         })
 
-        console.log('Season response status:', seasonResponse.status)
 
         if (seasonResponse.status >= 200 && seasonResponse.status < 300) {
             const seasonHtml = seasonResponse.data
-            console.log('Season HTML length:', seasonHtml.length)
 
             const flags = parseLanguageFlags(seasonHtml)
-            console.log('Parsed flags:', flags)
 
             return { flags, htmlLength: seasonHtml.length }
         } else {
@@ -51,7 +47,6 @@ export default defineEventHandler(async (event) => {
 
 // Function to parse language flags from season page HTML
 function parseLanguageFlags(html: string): Record<string, string> {
-    console.log('parseLanguageFlags called with HTML length:', html.length)
     const flags: Record<string, string> = {}
 
     // Map flag filenames to emoji codes
@@ -75,15 +70,12 @@ function parseLanguageFlags(html: string): Record<string, string> {
         const langCode = match[1] // e.g., 'vostfr', 'vf', 'va', 'vj'
         const flagCode = match[2] // e.g., 'cn', 'jp', 'fr', 'en'
 
-        console.log(`Match ${count}: ${langCode} -> flag_${flagCode}.png`)
 
         const emoji = flagMap[`flag_${flagCode}.png`]
         if (emoji && langCode) {
             flags[langCode] = emoji
-            console.log(`Mapped ${langCode} to ${emoji}`)
         }
     }
 
-    console.log(`Total matches: ${count}`)
     return flags
 }

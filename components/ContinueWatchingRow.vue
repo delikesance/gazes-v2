@@ -80,6 +80,25 @@
       </div>
     </div>
   </Carousel>
+
+  <!-- Error message -->
+  <div
+    v-if="showError"
+    class="fixed top-4 right-4 z-50 bg-red-900/90 border border-red-700 rounded-lg p-4 max-w-sm shadow-lg"
+  >
+    <div class="flex items-start gap-3">
+      <Icon name="heroicons:exclamation-triangle" class="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+      <div class="flex-1">
+        <p class="text-red-200 text-sm">{{ errorMessage }}</p>
+      </div>
+      <button
+        @click="dismissError"
+        class="text-red-400 hover:text-red-300 transition-colors"
+      >
+        <Icon name="heroicons:x-mark" class="w-4 h-4" />
+      </button>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -157,8 +176,14 @@ const handleItemClick = (item: SeriesProgress) => {
   navigateTo(`/watch/${item.animeId}/${season}/${lang}/${targetEpisode}?continue=true`)
 }
 
+const errorMessage = ref('')
+const showError = ref(false)
+
 const removeItem = async (item: SeriesProgress) => {
   try {
+    errorMessage.value = ''
+    showError.value = false
+
     // Remove all progress for this anime series (no season/episode specified)
     await $fetch(`/api/watch/progress/${item.animeId}`, {
       method: 'DELETE'
@@ -168,10 +193,15 @@ const removeItem = async (item: SeriesProgress) => {
     if (index > -1) {
       items.value.splice(index, 1)
     }
-  } catch (error) {
-    console.error('Failed to remove item:', error)
-    // TODO: Show error message to user
+  } catch (error: any) {
+    errorMessage.value = error?.data?.message || error?.message || 'Erreur lors de la suppression'
+    showError.value = true
   }
+}
+
+const dismissError = () => {
+  showError.value = false
+  errorMessage.value = ''
 }
 
 onMounted(() => {

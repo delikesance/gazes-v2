@@ -2,13 +2,11 @@ import { AuthService } from '~/server/utils/auth'
 import { DatabaseService } from '~/server/utils/database'
 
 export default defineEventHandler(async (event) => {
-  console.log('📺 [WATCH_PROGRESS] Get request received')
 
   try {
     // Get authenticated user
     const user = await AuthService.getUserFromRequest(event)
     if (!user) {
-      console.log('❌ [WATCH_PROGRESS] No authenticated user')
       throw createError({
         statusCode: 401,
         statusMessage: 'Non authentifié'
@@ -23,7 +21,6 @@ export default defineEventHandler(async (event) => {
     const db = DatabaseService.getInstance()
     const result = await db.getUserContinueWatching(user.id, limit, offset)
 
-    console.log('✅ [WATCH_PROGRESS] Found', result.items.length, 'continue watching items for user:', user.username)
     return {
       success: true,
       progress: result.items,

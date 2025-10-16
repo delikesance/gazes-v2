@@ -33,8 +33,12 @@ export default defineEventHandler(async (event) => {
 // Extract the actual anime fetching logic into a separate function
 async function fetchAnimeDetails(id: string) {
 
+    const config = useRuntimeConfig()
+    const catalogueApiUrl = config.catalogueApiUrl as string
+    const searchApiUrl = config.searchApiUrl as string
+
     // Try to fetch directly first
-    let response = await axiosInstance.get(`https://179.43.149.218/catalogue/${id}/`, {
+    let response = await axiosInstance.get(`${catalogueApiUrl}/catalogue/${id}/`, {
         headers: {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'User-Agent': USER_AGENT,
@@ -45,14 +49,14 @@ async function fetchAnimeDetails(id: string) {
     if (response.status < 200 || response.status >= 300) {
         const searchTerm = id.replace(/[-_]/g, ' ')
 
-        const searchResponse = await axiosInstance.post("https://179.43.149.218/template-php/defaut/fetch.php", "query=" + encodeURIComponent(searchTerm), {
+        const searchResponse = await axiosInstance.post(searchApiUrl, "query=" + encodeURIComponent(searchTerm), {
             headers: {
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                 "X-Requested-With": "XMLHttpRequest"
             }
         })
 
-        const searchResults = parseAnimeResults(searchResponse.data)
+        const searchResults = parseAnimeResults(searchResponse.data, catalogueApiUrl)
 
         if (searchResponse.status < 200 || searchResponse.status >= 300 || !searchResults || searchResults.length === 0) {
             throw createError({
@@ -71,7 +75,7 @@ async function fetchAnimeDetails(id: string) {
             })
         }
         const realAnimeId = searchResults[0].id
-        response = await axiosInstance.get(`https://179.43.149.218/catalogue/${realAnimeId}/`, {
+        response = await axiosInstance.get(`${catalogueApiUrl}/catalogue/${realAnimeId}/`, {
             headers: {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'User-Agent': USER_AGENT,
@@ -99,9 +103,9 @@ async function fetchAnimeDetails(id: string) {
         let seasonUrl = firstSeason.url
 
         if (seasonUrl.startsWith('/')) {
-            seasonUrl = `https://179.43.149.218/catalogue${seasonUrl}`
+            seasonUrl = `${catalogueApiUrl}/catalogue${seasonUrl}`
         } else if (!seasonUrl.startsWith('http')) {
-            seasonUrl = `https://179.43.149.218/catalogue/${id}/${seasonUrl}`
+            seasonUrl = `${catalogueApiUrl}/catalogue/${id}/${seasonUrl}`
         }
 
         try {

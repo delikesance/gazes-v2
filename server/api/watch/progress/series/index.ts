@@ -57,13 +57,11 @@ async function getAnimeDataCached(animeId: string): Promise<any> {
 }
 
 export default defineEventHandler(async (event) => {
-  console.log('📺 [WATCH_PROGRESS_SERIES] Get series progress request received')
 
   try {
     // Get authenticated user
     const user = await AuthService.getUserFromRequest(event)
     if (!user) {
-      console.log('❌ [WATCH_PROGRESS_SERIES] No authenticated user')
       throw createError({
         statusCode: 401,
         statusMessage: 'Non authentifié'
@@ -102,11 +100,9 @@ export default defineEventHandler(async (event) => {
 
         // Get anime data with caching and deduplication
         const animeData = await getAnimeDataCached(seriesData.anime_id)
-        console.log(`📺 Processing ${seriesData.anime_id}: got anime data:`, !!animeData)
 
         // Get total episodes with caching
         const totalEpisodes = await getTotalEpisodesCached(animeData, seriesData.anime_id)
-        console.log(`📺 ${seriesData.anime_id}: total episodes = ${totalEpisodes}`)
 
         // Use aggregated data from database
         const watchedEpisodes = seriesData.total_episodes_watched || 0
@@ -150,7 +146,6 @@ export default defineEventHandler(async (event) => {
     const totalSeries = seriesProgress.length
     const paginatedSeries = seriesProgress.slice(offset, offset + limit)
 
-    console.log('✅ [WATCH_PROGRESS_SERIES] Found', totalSeries, 'series with progress for user:', user.username)
 
     return {
       success: true,
@@ -208,7 +203,6 @@ async function countEpisodesInSeasonCached(animeId: string, season: any): Promis
   try {
     // First try to get episodes from the episodes.js file
     const episodesJsUrl = `${seasonUrl}episodes.js`
-    console.log(`🎯 Trying to fetch episodes.js: ${episodesJsUrl}`)
 
     const jsResponse = await fetch(episodesJsUrl, {
       headers: {
@@ -220,13 +214,11 @@ async function countEpisodesInSeasonCached(animeId: string, season: any): Promis
       const jsContent = await jsResponse.text()
       const episodeCount = countEpisodesInJs(jsContent)
       if (episodeCount > 0) {
-        console.log(`✅ Found ${episodeCount} episodes in episodes.js`)
         return episodeCount
       }
     }
 
     // Fallback to HTML parsing
-    console.log(`📄 Falling back to HTML parsing for: ${seasonUrl}`)
     const response = await fetch(seasonUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
@@ -295,7 +287,6 @@ function countEpisodesInJs(jsContent: string): number {
     const urls = urlsString.split(',').filter(url => url.trim() && url.trim() !== '')
     const episodeCount = urls.length
 
-    console.log(`📊 Found eps${seasonNum} with ${episodeCount} episodes`)
 
     // For now, just return the count from the first array we find
     // In the future, we might want to handle multiple seasons

@@ -52,13 +52,11 @@ class RedisCache {
       })
 
       this.client.on('connect', () => {
-        console.log('✅ Redis connected')
         this.isConnected = true
         this.isRedisAvailable = true
       })
 
       this.client.on('disconnect', () => {
-        console.log('📡 Redis disconnected')
         this.isConnected = false
       })
 
@@ -115,7 +113,6 @@ class RedisCache {
       }
 
       await this.client.setEx(key, Math.ceil(ttlMs / 1000), JSON.stringify(entry))
-      console.log(`💾 Cached data in Redis: ${key}`)
     } catch (error) {
       console.error('❌ Redis set error:', error)
     }
@@ -143,7 +140,6 @@ class RedisCache {
         return null
       }
 
-      console.log(`📦 Redis cache hit: ${key}`)
       return entry.data
     } catch (error) {
       console.error('❌ Redis get error:', error)
@@ -180,7 +176,6 @@ class RedisCache {
 
     try {
       const result = await this.client.del(key)
-      console.log(`🗑️ Removed from Redis cache: ${key}`)
       return result > 0
     } catch (error) {
       console.error('❌ Redis delete error:', error)
@@ -199,7 +194,6 @@ class RedisCache {
 
     try {
       await this.client.flushAll()
-      console.log('🧹 Cleared Redis cache')
     } catch (error) {
       console.error('❌ Redis clear error:', error)
     }
@@ -210,7 +204,6 @@ class RedisCache {
       try {
         await this.client.disconnect()
         this.isConnected = false
-        console.log('📡 Redis disconnected')
       } catch (error) {
         console.error('❌ Redis disconnect error:', error)
       }
@@ -264,7 +257,6 @@ export async function cachedApiCall<T>(
   // Check cache first (only if Redis is available)
   const cached = await cache.get<T>(key)
   if (cached !== null) {
-    console.log(`📦 Redis cache hit for key: ${key}`)
 
     // Background refresh if near expiry (only if Redis is available)
     if (cache['isRedisAvailable']) {
@@ -281,7 +273,6 @@ export async function cachedApiCall<T>(
     return cached
   }
 
-  console.log(`🌐 Redis cache miss for key: ${key}, fetching...`)
 
   // Fetch fresh data
   const result = await fetchFn()
@@ -290,7 +281,6 @@ export async function cachedApiCall<T>(
   if (cache['isRedisAvailable']) {
     await cache.set(key, result, ttl)
     await cache.set(`ttl:${key}`, ttl, ttl)
-    console.log(`💾 Cached data in Redis for key: ${key}`)
   }
 
   return result
