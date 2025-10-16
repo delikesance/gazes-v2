@@ -19,8 +19,9 @@ WORKDIR /app
 # Copier les fichiers de dépendance
 COPY package.json .
 
-# Installer les dépendances avec scripts ignorés
-RUN PNPM_IGNORE_SCRIPTS=true pnpm install
+# Installer les dépendances avec scripts ignorés et sans optionalDependencies
+# (évite d'installer `oxc-parser` qui peut provoquer des erreurs de binding natif)
+RUN PNPM_IGNORE_SCRIPTS=true pnpm install --no-optional
 # Copier le reste du projet
 COPY . .
 
