@@ -17,9 +17,11 @@ ENV PORT=${PORT}
 WORKDIR /app
 
 # Copier les fichiers de dépendance
-COPY package.json .
+# Copy package.json and lockfile so install uses exact versions and optional deps build scripts run
+COPY package.json pnpm-lock.yaml ./
 
-RUN PNPM_IGNORE_SCRIPTS=true pnpm install
+# Install dependencies respecting the lockfile and allowing install scripts (needed for native bindings)
+RUN pnpm install --frozen-lockfile
 # Copier le reste du projet
 COPY . .
 
