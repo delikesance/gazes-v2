@@ -58,12 +58,15 @@ async function performCatalogueSearch({
 }) {
   // If there's a search query, use the search API which has better results
   if (search && search.trim()) {
+    console.log(`[CATALOGUE_SEARCH] Performing search for: "${search}"`)
     // Regular search using anime-sama.fr search API
     try {
       // Read configuration from runtime config with sensible defaults
       const config = useRuntimeConfig()
       const searchApiUrl = config.searchApiUrl || "https://179.43.149.218/template-php/defaut/fetch.php"
       const timeoutMs = parseInt(config.searchApiTimeoutMs || "10000", 10)
+
+      console.log(`[CATALOGUE_SEARCH] Using search API: ${searchApiUrl} with timeout: ${timeoutMs}ms`)
 
       // Create AbortController for timeout
       const controller = new AbortController()
@@ -87,10 +90,25 @@ async function performCatalogueSearch({
         // Clear timeout on successful response
         clearTimeout(timeoutId)
 
+        console.log(`[CATALOGUE_SEARCH] Search API response status: ${searchResponse.status}`)
+
         const searchHtml = searchResponse.data
+        console.log(`[CATALOGUE_SEARCH] Raw HTML response (first 1000 chars):`, searchHtml.substring(0, 1000))
+        console.log(`[CATALOGUE_SEARCH] Full HTML length:`, searchHtml.length)
+
         const config = useRuntimeConfig()
         const catalogueApiUrl = config.catalogueApiUrl as string
         const searchResults = parseAnimeResults(searchHtml, catalogueApiUrl)
+
+        console.log(`[CATALOGUE_SEARCH] Parsed ${searchResults.length} search results`)
+        if (searchResults.length === 0) {
+          console.log(`[CATALOGUE_SEARCH] No results parsed. HTML contains:`, {
+            hasAnchors: searchHtml.includes('<a'),
+            hasImages: searchHtml.includes('<img'),
+            hasH3: searchHtml.includes('<h3>'),
+            totalLength: searchHtml.length
+          })
+        }
 
         // Convert search results to catalogue format and filter out mangas
         const items = searchResults.map(item => ({
@@ -99,6 +117,8 @@ async function performCatalogueSearch({
           image: item.image,
           type: 'Anime' // Search results are typically anime
         })).filter(item => item.type !== 'Scans')
+
+        console.log(`[CATALOGUE_SEARCH] Returning ${items.length} filtered items`)
 
         return { items, count: items.length, status: searchResponse.status }
 

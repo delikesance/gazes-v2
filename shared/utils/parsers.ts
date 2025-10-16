@@ -153,52 +153,92 @@ import type { SearchResponse } from "../types/searchResponse";
 
 export function parseAnimeResults(html: string, baseUrl?: string): SearchResponse {
   const results: SearchResponse = [];
-  const catalogueBaseUrl = baseUrl || 'https://179.43.149.218';
-  const animeRegex = new RegExp(
-    `<a[^>]*href="(${catalogueBaseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/catalogue\\/[^"]*)"[^>]*>[\\s\\S]*?<img[^>]*src="([^"]*)"[^>]*>[\\s\\S]*?<h3[^>]*>([^<]*)</h3>[\\s\\S]*?<p[^>]*>([^<]*)</p>[\\s\\S]*?</a>`,
-    'g'
-  );
 
-  let match: RegExpExecArray | null;
+  // Accept both the configured baseUrl and anime-sama.fr domain
+  const acceptedDomains = [
+    (baseUrl || 'https://179.43.149.218').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+    'https://anime-sama\\.fr'
+  ];
 
-  while ((match = animeRegex.exec(html)) !== null) {
-    const [, url, image, title, aliasesText] = match;
-    if (!title?.trim() || !url) continue;
+  const domainPattern = `(${acceptedDomains.join('|')})`;
 
-    const aliases = aliasesText?.trim()
-      ? aliasesText
-          .split(",")
-          .map((alias) => alias.trim())
-          .filter(Boolean)
-      : [];
+  // Try multiple regex patterns to handle different HTML structures
+  const regexPatterns = [
+    // Original pattern with <p> for aliases
+    new RegExp(
+      `<a[^>]*href="${domainPattern}\\/catalogue\\/([^"]*)"[^>]*>[\\s\\S]*?<img[^>]*src="([^"]*)"[^>]*>[\\s\\S]*?<h3[^>]*>([^<]*)</h3>[\\s\\S]*?<p[^>]*>([^<]*)</p>[\\s\\S]*?</a>`,
+      'g'
+    ),
+    // Pattern without <p> (title only)
+    new RegExp(
+      `<a[^>]*href="${domainPattern}\\/catalogue\\/([^"]*)"[^>]*>[\\s\\S]*?<img[^>]*src="([^"]*)"[^>]*>[\\s\\S]*?<h3[^>]*>([^<]*)</h3>[\\s\\S]*?</a>`,
+      'g'
+    ),
+    // Alternative pattern with div instead of h3
+    new RegExp(
+      `<a[^>]*href="${domainPattern}\\/catalogue\\/([^"]*)"[^>]*>[\\s\\S]*?<img[^>]*src="([^"]*)"[^>]*>[\\s\\S]*?<div[^>]*>([^<]*)</div>[\\s\\S]*?</a>`,
+      'g'
+    )
+  ];
 
-    // Extract the slug as the FIRST segment after "/catalogue/"
-    // This avoids picking up trailing segments like "saison1" or ending up with "catalogue"
-    let id = "";
-    try {
-      // Use URL API when possible for robustness
-      const u = new URL(url);
-      const parts = u.pathname.split("/").filter(Boolean);
-      const idx = parts.indexOf("catalogue");
-      if (idx !== -1 && parts[idx + 1]) {
-        id = parts[idx + 1] || "";
+  console.log(`[PARSE_SEARCH] Parsing HTML with accepted domains: ${acceptedDomains.join(', ')}`)
+
+  for (let patternIndex = 0; patternIndex < regexPatterns.length; patternIndex++) {
+    const animeRegex = regexPatterns[patternIndex];
+    if (!animeRegex) continue;
+
+    console.log(`[PARSE_SEARCH] Trying pattern ${patternIndex + 1}:`, animeRegex.source.substring(0, 100) + '...')
+
+    let match: RegExpExecArray | null;
+    let matchCount = 0;
+
+    while ((match = animeRegex.exec(html)) !== null) {
+      matchCount++;
+      const groups = match.length;
+      const domain = match[1]; // The matched domain
+      const slug = match[2]; // The catalogue slug
+      const image = match[3];
+      const title = match[4];
+      const aliasesText = groups > 5 ? match[5] : ''; // aliases might not exist in some patterns
+
+      console.log(`[PARSE_SEARCH] Pattern ${patternIndex + 1} match ${matchCount}: title="${title}", slug="${slug}", domain="${domain}", image="${image}"`)
+
+      if (!title?.trim() || !slug) {
+        console.log(`[PARSE_SEARCH] Skipping match ${matchCount}: missing title or slug`)
+        continue;
       }
-    } catch {
-      // Fallback to string ops if URL constructor fails
-      const afterCatalogue = url.split("/catalogue/")[1] || "";
-      id = afterCatalogue.split("/").filter(Boolean)[0] || "";
-    }
-    if (!id || id === "catalogue") {
-      // Skip invalid entries that don't have a proper slug
-      continue;
+
+      const aliases = aliasesText?.trim()
+        ? aliasesText
+            .split(",")
+            .map((alias) => alias.trim())
+            .filter(Boolean)
+        : [];
+
+      // The slug is already extracted correctly
+      const id = slug;
+
+      if (!id || id === "catalogue") {
+        console.log(`[PARSE_SEARCH] Skipping match ${matchCount}: invalid id "${id}"`)
+        continue;
+      }
+
+      results.push({
+        title: title.trim(),
+        id,
+        image: image || "",
+      });
     }
 
-    results.push({
-      title: title.trim(),
-      id,
-      image: image || "",
-    });
+    console.log(`[PARSE_SEARCH] Pattern ${patternIndex + 1} found ${matchCount} matches`)
+
+    // If we found results with this pattern, stop trying other patterns
+    if (results.length > 0) {
+      break;
+    }
   }
+
+  console.log(`[PARSE_SEARCH] Total valid results: ${results.length}`)
 
   return results;
 }

@@ -156,19 +156,10 @@ const formatSeasonEpisode = (episode: SeriesProgress['lastWatchedEpisode']) => {
 }
 
 const handleItemClick = (item: SeriesProgress) => {
-  // Navigate to the appropriate episode in the series
-  // If the last watched episode is not fully watched, resume it
-  // Otherwise, go to the next episode
+  // Always navigate to the last watched episode as displayed
+  // The user clicked on the episode shown, so open that specific episode
   const lastEpisode = item.lastWatchedEpisode
-  let targetEpisode = lastEpisode.episode
-
-  if (lastEpisode.progressPercent < 90) {
-    // Resume current episode
-    targetEpisode = lastEpisode.episode
-  } else {
-    // Go to next episode
-    targetEpisode = lastEpisode.episode + 1
-  }
+  const targetEpisode = lastEpisode.episode
 
   const lang = item.defaultLang || 'vostfr'
   const season = lastEpisode.season
