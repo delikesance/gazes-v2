@@ -1,9 +1,5 @@
 // Frontend utility for managing video providers and source selection
-export interface VideoProvider {
-  hostname: string
-  reliability: number
-  description: string
-}
+import type { VideoProvider } from '~/shared/utils/videoProviders'
 
 export interface VideoSource {
   type: 'hls' | 'mp4' | 'unknown'
@@ -109,20 +105,23 @@ export function debugSourceSelection(sources: VideoSource[], selectedSource: Vid
   // Only log in development mode (client-side check)
   if (typeof window !== 'undefined' && window.location?.search?.includes('debug=1')) {
     console.group('🎯 Video Source Selection Debug')
-    
+
     sources.forEach((source, index) => {
       const provider = source.provider
       const isSelected = source === selectedSource
+      console.log(
         `${isSelected ? '✅' : '  '} ${index + 1}. ${source.type.toUpperCase()} - ${
           provider ? `${provider.hostname} (${provider.reliability}/10)` : 'Unknown provider'
         }`
       )
     })
-    
+
     if (selectedSource) {
+      console.log(`🎯 Selected: ${selectedSource.type.toUpperCase()} from ${selectedSource.provider?.hostname || 'Unknown provider'}`)
     } else {
+      console.log('❌ No source selected')
     }
-    
+
     console.groupEnd()
   }
 }

@@ -73,7 +73,7 @@ const loadVideoJS = async () => {
 
 import { onBeforeUnmount, onMounted, ref, watch, nextTick, computed } from 'vue'
 import { formatSeasonDisplay } from '~/shared/utils/season'
-import { getProviderInfo } from '~/server/utils/videoProviders'
+import { getProviderInfo } from '~/shared/utils/videoProviders'
 
 // Use player layout (no navbar)
 definePageMeta({
@@ -167,7 +167,7 @@ function loadVolumeSettings() {
       const settings = JSON.parse(stored)
       // Only load if settings are recent (within 30 days)
       const isRecent = settings.timestamp && (Date.now() - settings.timestamp) < (30 * 24 * 60 * 60 * 1000)
-      
+
       if (isRecent) {
         volume.value = settings.volume ?? 1
         isMuted.value = settings.isMuted ?? false
@@ -306,14 +306,14 @@ async function syncLocalProgressToServer() {
   try {
     // Find all localStorage progress keys
     const progressKeys = Object.keys(localStorage).filter(key => key.startsWith('progress_'))
-    
+
     for (const key of progressKeys) {
       try {
         const stored = localStorage.getItem(key)
         if (!stored) continue
-        
+
         const progressData = JSON.parse(stored)
-        
+
         // Try to save to server
         await $fetch(`/api/watch/progress/${progressData.animeId}`, {
           method: 'POST',
@@ -324,7 +324,7 @@ async function syncLocalProgressToServer() {
             duration: progressData.duration
           }
         })
-        
+
         // Remove from localStorage after successful sync
         localStorage.removeItem(key)
       } catch (error) {
@@ -364,13 +364,13 @@ async function loadSavedProgress() {
   try {
     const progressKey = `progress_${id.value}_${season.value}_${episodeNum.value}`
     const stored = localStorage.getItem(progressKey)
-    
+
     if (stored) {
       const progressData = JSON.parse(stored)
-      
+
       // Check if data is recent (within 30 days)
       const isRecent = progressData.timestamp && (Date.now() - progressData.timestamp) < (30 * 24 * 60 * 60 * 1000)
-      
+
       if (isRecent && progressData.currentTime && progressData.duration) {
         savedProgress.value = {
           currentTime: progressData.currentTime,
@@ -406,14 +406,14 @@ async function saveProgress(currentTime: number, duration: number) {
         duration
       }
     })
-    
+
     if (response?.success) {
       lastSavedTime.value = now
       return
     }
   } catch (error) {
     console.warn('Failed to save progress to server, falling back to localStorage:', error)
-    
+
     // Fallback to localStorage if server save fails
     try {
       const progressKey = `progress_${id.value}_${season.value}_${episodeNum.value}`
@@ -425,7 +425,7 @@ async function saveProgress(currentTime: number, duration: number) {
         season: season.value,
         episode: episodeNum.value
       }
-      
+
       localStorage.setItem(progressKey, JSON.stringify(progressData))
       lastSavedTime.value = now
     } catch (localStorageError) {
@@ -543,7 +543,7 @@ function seek(time: number) {
   if (isSeeking.value) {
     return
   }
-  
+
   if (player) {
     player.currentTime(time)
     currentTime.value = time
@@ -560,7 +560,7 @@ function seekBy(seconds: number) {
   if (isSeeking.value) {
     return
   }
-  
+
   if (player) {
     const newTime = Math.max(0, Math.min(player.duration(), player.currentTime() + seconds))
     player.currentTime(newTime)
@@ -738,7 +738,7 @@ function formatTime(seconds: number): string {
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
   const secs = Math.floor(seconds % 60)
-  
+
   if (hours > 0) {
     return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
   }
@@ -762,7 +762,7 @@ function showControlsTemporarily() {
 function updateCursorVisibility() {
   const playerContainer = document.querySelector('.fixed.inset-0.bg-black.z-50') as HTMLElement
   const videoElement = videoRef.value as HTMLElement
-  
+
   if (isFullscreen.value) {
     // In fullscreen, hide cursor when controls are hidden
     const cursorStyle = showControls.value ? 'default' : 'none'
@@ -795,23 +795,23 @@ function handleProgressClick(event: MouseEvent) {
   if (isSeeking.value) {
     return
   }
-  
+
   const el = videoRef.value
   const progressBar = event.currentTarget as HTMLElement
   if (!el || !progressBar) return
-  
+
   const rect = progressBar.getBoundingClientRect()
   const clickX = event.clientX - rect.left
   const percentage = clickX / rect.width
   const newTime = percentage * el.duration
-  
+
   seek(newTime)
 }
 
 function handleKeyPress(event: KeyboardEvent) {
   const el = videoRef.value
   if (!el) return
-  
+
   switch (event.key) {
     case ' ':
     case 'k':
@@ -920,7 +920,7 @@ function onVideoPause() {
 function onVideoTimeUpdate() { handleTimeUpdate() }
 function onVideoLoadedMetadata() { handleLoadedMetadata() }
 function onVideoVolumeChange() { handleVolumeChange() }
-function onVideoSeeking() { 
+function onVideoSeeking() {
   isSeeking.value = true
   // Pause video during seeking for smoother experience
   const el = videoRef.value
@@ -931,7 +931,7 @@ function onVideoSeeking() {
     wasPlayingBeforeSeek.value = false
   }
 }
-function onVideoSeeked() { 
+function onVideoSeeked() {
   isSeeking.value = false
   // Resume playback if video was playing before seek
   const el = videoRef.value
@@ -1162,12 +1162,12 @@ function hideSkipButtons() {
   showSkipButtons.value = false
   const skipType = currentSkipType.value
   currentSkipType.value = null
-  
+
   // Mark the current skip type as dismissed for this episode
   if (skipType) {
     dismissedSkips.value.add(skipType)
   }
-  
+
   if (skipTimeout.value) {
     clearTimeout(skipTimeout.value)
     skipTimeout.value = null
@@ -1232,33 +1232,33 @@ async function testDirectUrl(url: string): Promise<void> {
     const testVideo = document.createElement('video')
     testVideo.crossOrigin = 'anonymous'
     testVideo.preload = 'metadata'
-    
+
     const timeout = setTimeout(() => {
       testVideo.remove()
       reject(new Error('Direct URL test timeout'))
     }, 3000)
-    
+
     const cleanup = () => {
       clearTimeout(timeout)
       testVideo.remove()
     }
-    
+
     testVideo.addEventListener('loadedmetadata', () => {
       cleanup()
       resolve()
     })
-    
+
     testVideo.addEventListener('error', (e) => {
       cleanup()
       const error = testVideo.error
       reject(new Error(`Direct URL failed: ${error?.message || 'Unknown error'}`))
     })
-    
+
     testVideo.addEventListener('abort', () => {
       cleanup()
       reject(new Error('Direct URL test aborted'))
     })
-    
+
     testVideo.src = url
     document.body.appendChild(testVideo)
   })
@@ -1295,20 +1295,20 @@ async function setupVideo() {
   // Determine if we should try direct URL first
   const currentSource = resolvedList.value[currentSourceIndex.value]
   const shouldTryDirect = currentSource?.directUrl && !corsFailedSources.value.has(currentSource.url)
-  
+
   try {
     if (isM3U8(playUrl.value)) {
       // For HLS streams, we need to check if direct access works
       if (shouldTryDirect && !triedDirectUrl.value) {
         console.log('🎯 Trying direct HLS URL first:', currentSource.directUrl)
         triedDirectUrl.value = true
-        
+
         // Try direct URL with timeout
         const directTestPromise = testDirectUrl(currentSource.directUrl)
-        const timeoutPromise = new Promise((_, reject) => 
+        const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Direct URL timeout')), 3000)
         )
-        
+
         try {
           await Promise.race([directTestPromise, timeoutPromise])
           console.log('✅ Direct HLS URL works, using it')
@@ -1430,7 +1430,7 @@ async function setupVideo() {
       if (shouldTryDirect && !triedDirectUrl.value) {
         console.log('🎯 Trying direct video URL first:', currentSource.directUrl)
         triedDirectUrl.value = true
-        
+
         // Test direct URL access
         try {
           await testDirectUrl(currentSource.directUrl)
@@ -1645,7 +1645,7 @@ async function loadEpisodesList() {
 
 function selectEpisode(episodeNumber: number) {
   if (episodeNumber === episodeNum.value) return // Already on this episode
-  
+
   showEpisodes.value = false
   navigateTo({
     path: `/watch/${id.value}/${season.value}/${lang.value}/${episodeNumber}`,
@@ -1655,7 +1655,7 @@ function selectEpisode(episodeNumber: number) {
 
 function scrollToCurrentEpisode() {
   if (!episodesScrollContainer.value) return
-  
+
   // Find the current episode element
   const currentEpisodeElement = episodesScrollContainer.value.querySelector(`[data-episode="${episodeNum.value}"]`) as HTMLElement
   if (currentEpisodeElement) {
@@ -1816,7 +1816,7 @@ function getLanguageName(langCode: string): string {
 async function resolveSourcesForLanguage(targetLang: string, candidateUrls: string[]): Promise<{ type: string; url: string; directUrl: string; proxiedUrl: string; quality?: string }[]> {
   let candidates = candidateUrls
   if (!candidates.length) return []
-  
+
   // Sort candidates by provider reliability (best first) for faster success
   candidates = candidates.sort((a, b) => {
     const getReliability = (url: string) => {
@@ -1836,7 +1836,7 @@ async function resolveSourcesForLanguage(targetLang: string, candidateUrls: stri
     }
     return getReliability(b) - getReliability(a)
   })
-  
+
   // Try candidates sequentially for better reliability (less server load)
   let resolvedUrls: any[] = []
   let lastError = ''
@@ -1890,11 +1890,11 @@ async function resolveSourcesForLanguage(targetLang: string, candidateUrls: stri
       lastError = errorMsg
     }
   }
-  
+
   if (resolvedUrls.length === 0) {
     throw new Error(lastError || "Toutes les sources ont échoué")
   }
-  
+
   return resolvedUrls
 }
 
@@ -1913,27 +1913,27 @@ async function resolveEpisode() {
 
   try {
     // Check all languages for the current episode availability
-    const allLanguages: ('vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj')[] = 
+    const allLanguages: ('vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj')[] =
       ['vostfr', 'vf', 'va', 'var', 'vkr', 'vcn', 'vqc', 'vf1', 'vf2', 'vj']
-    
+
     // Start fetching for all languages to check episode availability
-    const languagePromises = allLanguages.map(langCode => 
-      fetchEpisodesFor(langCode, 1).then(episodes => ({ 
-        lang: langCode, 
+    const languagePromises = allLanguages.map(langCode =>
+      fetchEpisodesFor(langCode, 1).then(episodes => ({
+        lang: langCode,
         episodes,
         hasCurrentEpisode: episodes.some(ep => Number(ep.episode) === episodeNum.value)
       })).catch(() => ({ lang: langCode, episodes: [], hasCurrentEpisode: false }))
     )
-    
+
     const languageResults = await Promise.all(languagePromises)
-    
+
     // Update available languages based on whether they have the current episode
     availableLanguages.value = languageResults.map(({ lang, hasCurrentEpisode }) => ({
       code: lang,
       name: getLanguageName(lang),
       available: hasCurrentEpisode
     }))
-    
+
     // Try requested language first
     const currentLangResult = languageResults.find(r => r.lang === lang.value)
     let ep = currentLangResult?.episodes.find(e => Number(e.episode) === episodeNum.value)
@@ -1941,7 +1941,7 @@ async function resolveEpisode() {
     // If not found in requested language, check other available languages
     if (!ep) {
       const availableLangResults = languageResults.filter(r => r.hasCurrentEpisode && r.lang !== lang.value)
-      
+
       for (const { lang: altLang, episodes: altEpisodes } of availableLangResults) {
         const altEp = altEpisodes.find((e: any) => Number(e.episode) === episodeNum.value)
         if (altEp) {
@@ -1961,14 +1961,14 @@ async function resolveEpisode() {
       resolveError.value = `Épisode ${episodeNum.value.toString().padStart(2, '0')} introuvable pour ${lang.value.toUpperCase()}`
       return
     }
-    
+
     // Resolve sources for the current language first (for immediate playback)
     const epUrls = ep?.urls?.length ? ep.urls : ep?.url ? [ep.url] : []
-    if (!epUrls.length) { 
+    if (!epUrls.length) {
       resolveError.value = 'Aucun lien pour cet épisode'
       return
     }
-    
+
     const currentLangSources = await resolveSourcesForLanguage(lang.value, epUrls)
     resolvedList.value = currentLangSources
     resolvedSourcesByLanguage.value[lang.value] = {
@@ -1977,7 +1977,7 @@ async function resolveEpisode() {
       episode: episodeNum.value,
       season: season.value
     }
-    
+
     // Pre-resolve sources for other available languages in background
     const availableLangs = languageResults.filter(r => r.hasCurrentEpisode && r.lang !== lang.value)
     for (const { lang: otherLang, episodes: otherEpisodes } of availableLangs) {
@@ -1985,7 +1985,7 @@ async function resolveEpisode() {
       if (otherEp?.urls?.length) {
         // Mark as resolving
         resolvingLanguages.value.add(otherLang)
-        
+
         // Resolve in background without awaiting
         resolveSourcesForLanguage(otherLang, otherEp.urls).then((sources: { type: string; url: string; directUrl: string; proxiedUrl: string; quality?: string }[]) => {
           resolvedSourcesByLanguage.value[otherLang] = {
@@ -2001,7 +2001,7 @@ async function resolveEpisode() {
         })
       }
     }
-    
+
     currentSourceIndex.value = 0
     const hlsFirst = resolvedList.value.find((u: any) => u.type === "hls") || resolvedList.value[0]
     if (hlsFirst) {
@@ -2168,11 +2168,11 @@ async function resolveEpisodeInBackground(animeId: string, season: string, lang:
 
     // Preload next episode in background (non-blocking)
     preloadNextEpisode().catch(() => null)
-  
+
   // Ensure video element events are set up immediately
   await nextTick()
   handleVideoEvents()
-  
+
   // Sync initial state with video element
   const el = videoRef.value
   if (el) {
@@ -2182,12 +2182,12 @@ async function resolveEpisodeInBackground(animeId: string, season: string, lang:
     volume.value = (el as HTMLVideoElement).volume
     isMuted.value = (el as HTMLVideoElement).muted
   }
-  
+
   // Load saved volume settings
   loadVolumeSettings()
-  
+
   // setupVideo() will be called automatically by the watch when playUrl is set
-  
+
   // Global event listeners
   if (typeof document !== 'undefined') {
     document.addEventListener('keydown', handleKeyPress)
@@ -2199,7 +2199,7 @@ async function resolveEpisodeInBackground(animeId: string, season: string, lang:
       closeQualityDropdown()
     })
   }
-  
+
   // Save progress before unloading the page
   const handleBeforeUnload = () => {
     if (duration.value > 0) {
@@ -2207,7 +2207,7 @@ async function resolveEpisodeInBackground(animeId: string, season: string, lang:
     }
   }
   window.addEventListener('beforeunload', handleBeforeUnload)
-  
+
   // Clean up on unmount
   onBeforeUnmount(() => {
     window.removeEventListener('beforeunload', handleBeforeUnload)
@@ -2224,13 +2224,13 @@ watch([season, lang, episodeNum], () => {
     // Only re-resolve if params actually changed
     if (currentParams !== lastResolvedParams) {
       lastResolvedParams = currentParams
-      
+
       // Reset dismissed skips when changing episodes
       dismissedSkips.value.clear()
-      
+
       // Reload volume settings when navigating to new episode
       loadVolumeSettings()
-      
+
       // When switching episodes or languages, we need to re-check language availability
       // for the new episode, so don't reset availableLanguages here - let resolveEpisode handle it
       resolveEpisode()
@@ -2293,7 +2293,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
             </button>
           </div>
         </div>
-        
+
         <!-- Notice banner -->
         <div v-if="notice" class="mt-3 px-4 py-2 bg-amber-600/90 rounded-lg text-amber-100 text-sm">
           {{ notice }}
@@ -2311,7 +2311,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
           <p class="text-sm text-zinc-400 mt-2">Cela peut prendre quelques secondes</p>
         </div>
       </div>
-      
+
       <!-- Error state -->
       <div v-else-if="resolveError" class="absolute inset-0 flex items-center justify-center text-white">
         <div class="text-center max-w-md px-6">
@@ -2333,7 +2333,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
           </div>
         </div>
       </div>
-      
+
       <!-- Video player -->
       <div v-else class="w-full h-full relative" @click="showEpisodes = false">
         <!-- Video loading overlay -->
@@ -2363,7 +2363,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
             </p>
           </div>
         </div>
-        
+
         <!-- Video element - no native controls -->
         <video
           ref="videoRef"
@@ -2376,9 +2376,9 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
         >
           Votre navigateur ne supporte pas la lecture vidéo. Veuillez utiliser un navigateur moderne.
         </video>
-        
+
         <!-- Episode Selector Panel (Netflix-style) -->
-        <div 
+        <div
           v-if="showEpisodes"
           class="absolute right-4 bottom-24 w-96 max-h-[32rem] bg-zinc-900/95 backdrop-blur-sm border border-zinc-700 rounded-lg overflow-hidden z-30 shadow-2xl"
           @click.stop
@@ -2393,22 +2393,22 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
               <Icon name="heroicons:x-mark" class="w-5 h-5" />
             </button>
           </div>
-          
+
           <!-- Episodes List -->
           <div ref="episodesScrollContainer" class="max-h-80 overflow-y-auto custom-scrollbar">
             <div v-if="loadingEpisodes" class="p-6 text-center text-zinc-400">
               <div class="w-8 h-8 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
               <p>Chargement des épisodes...</p>
             </div>
-            
+
             <div v-else-if="episodesList.length === 0" class="p-6 text-center text-zinc-400">
               <Icon name="heroicons:exclamation-triangle" class="w-12 h-12 mx-auto mb-3 text-zinc-500" />
               <p>Aucun épisode trouvé</p>
             </div>
-            
+
             <div v-else class="divide-y divide-zinc-800">
-              <button 
-                v-for="(ep, index) in episodesList" 
+              <button
+                v-for="(ep, index) in episodesList"
                 :key="ep.episode"
                 :data-episode="ep.episode"
                 @click="selectEpisode(ep.episode)"
@@ -2425,7 +2425,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
                     <Icon name="heroicons:play" class="w-5 h-5 text-white" />
                   </div>
                 </div>
-                
+
                 <!-- Episode info -->
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 mb-1">
@@ -2437,7 +2437,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
                     {{ ep.episode === episodeNum ? 'Vous regardez actuellement cet épisode' : (ep.title ? `Épisode ${ep.episode.toString().padStart(2, '0')} • ${season}` : `Épisode ${ep.episode.toString().padStart(2, '0')} de la saison ${season}`) }}
                   </p>
                 </div>
-                
+
                 <!-- Play indicator -->
                 <div class="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Icon name="heroicons:chevron-right" class="w-5 h-5 text-zinc-400" />
@@ -2446,7 +2446,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
             </div>
           </div>
         </div>
-        
+
         <!-- Custom Controls Overlay - Fixed to bottom with proper spacing -->
         <div
           class="absolute bottom-0 left-0 right-0 transition-opacity duration-200 pointer-events-none z-20"
@@ -2458,7 +2458,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
           <div class="bg-gradient-to-t from-black/90 via-black/60 to-transparent px-4 pb-4 pt-8 md:px-6 md:pb-6 pointer-events-auto">
             <!-- Progress bar -->
             <div class="mb-3">
-              <div 
+              <div
                 class="relative h-1 bg-white/20 rounded-full cursor-pointer hover:h-2 transition-all duration-200"
                 :class="{ 'opacity-75': isSeeking }"
                 @click="handleProgressClick"
@@ -2466,7 +2466,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
                 @mouseleave="isDragging = false"
               >
                 <!-- Seeking indicator -->
-                <div 
+                <div
                   v-if="isSeeking"
                   class="absolute inset-0 bg-blue-500/20 rounded-full flex items-center justify-center"
                 >
@@ -2475,25 +2475,25 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
                     <span>Chargement...</span>
                   </div>
                 </div>
-                
+
                 <!-- Buffered progress -->
-                <div 
+                <div
                   class="absolute top-0 left-0 h-full bg-white/40 rounded-full"
                   :style="{ width: bufferedPercent + '%' }"
                 ></div>
                 <!-- Current progress -->
-                <div 
+                <div
                   class="absolute top-0 left-0 h-full bg-violet-600 rounded-full transition-all duration-100"
                   :style="{ width: progressPercent + '%' }"
                 ></div>
                 <!-- Progress handle -->
-                <div 
+                <div
                   class="absolute top-1/2 transform -translate-y-1/2 w-3 h-3 bg-violet-600 rounded-full opacity-0 hover:opacity-100 transition-opacity duration-200"
                   :style="{ left: progressPercent + '%', marginLeft: '-6px' }"
                 ></div>
               </div>
             </div>
-            
+
             <!-- Control buttons and info -->
             <div class="flex items-center justify-between text-white">
               <div class="flex items-center gap-2 md:gap-3">
@@ -2534,13 +2534,13 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
                     class="absolute inset-0 w-full opacity-0 cursor-pointer"
                   />
                 </div>
-                
+
                 <!-- Time display -->
                 <div class="text-sm text-zinc-300 whitespace-nowrap">
                   {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
                 </div>
               </div>
-              
+
               <div class="flex items-center gap-1 md:gap-2">
                 <!-- Playback speed -->
                 <div class="relative">
@@ -2617,7 +2617,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
                     </div>
                   </div>
                 </div>
-                
+
                 <!-- Episodes -->
                 <button @click="toggleEpisodesPanel" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation" title="Épisodes">
                   <Icon name="heroicons:list-bullet" class="w-5 h-5 md:w-5 md:h-5" />
@@ -2674,7 +2674,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
             </div>
           </div>
         </div>
-        
+
         <!-- Video error overlay -->
         <div v-if="videoError" class="absolute inset-0 bg-black/80 flex items-center justify-center z-40">
           <div class="text-center text-white max-w-md px-6">
@@ -2694,7 +2694,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
             </div>
           </div>
         </div>
-        
+
 
         <!-- Touch seek overlay -->
         <div
