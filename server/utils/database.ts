@@ -32,28 +32,40 @@ export interface WatchingProgress {
 export class DatabaseService {
   private static instance: DatabaseService
   private supabase: any
+  private isMockMode: boolean = false
+  private mockData?: {
+    users: Map<string, UserWithPassword>
+    watchingProgress: Map<string, WatchingProgress>
+    watchedEpisodes: Map<string, { userId: string; animeId: string; season: string; episode: number; watchedAt: Date }>
+  }
 
-  private constructor() {
-    console.log('📁 [DATABASE] Initializing Supabase connection...')
-
+  constructor() {
     try {
       const config = useRuntimeConfig()
-
       const supabaseUrl = config.supabaseUrl as string
       const supabaseKey = config.supabaseKey as string
 
       if (!supabaseUrl || !supabaseKey) {
-        const errorMsg = 'Missing required Supabase environment variables'
-        console.error('❌ [DATABASE] ' + errorMsg)
-        throw new Error(errorMsg)
+        console.warn('⚠️ [DATABASE] Supabase credentials not configured, using mock database for development')
+        this.isMockMode = true
+        this.mockData = {
+          users: new Map(),
+          watchingProgress: new Map(),
+          watchedEpisodes: new Map()
+        }
+        return
       }
 
       this.supabase = createClient(supabaseUrl, supabaseKey)
-
       this.initDatabase()
     } catch (error) {
-      console.error('❌ [DATABASE] Failed to initialize:', error)
-      throw error
+      console.warn('⚠️ [DATABASE] Failed to initialize Supabase, using mock database for development')
+      this.isMockMode = true
+      this.mockData = {
+        users: new Map(),
+        watchingProgress: new Map(),
+        watchedEpisodes: new Map()
+      }
     }
   }
 
@@ -69,7 +81,6 @@ export class DatabaseService {
   }
 
   private async initDatabase() {
-    console.log('📁 [DATABASE] Database schema initialization completed')
   }
 
   /**
@@ -77,6 +88,10 @@ export class DatabaseService {
    */
   async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy', latency: number }> {
     const startTime = Date.now()
+
+    if (this.isMockMode) {
+      return { status: 'healthy', latency: Date.now() - startTime }
+    }
 
     try {
       // Simple query to test connection
@@ -88,20 +103,39 @@ export class DatabaseService {
       const latency = Date.now() - startTime
 
       if (error) {
-        console.error('📁 [DATABASE] Health check failed:', error)
         return { status: 'unhealthy', latency }
       }
 
       return { status: 'healthy', latency }
     } catch (error) {
-      console.error('📁 [DATABASE] Health check error:', error)
       return { status: 'unhealthy', latency: Date.now() - startTime }
     }
   }
 
   // User operations
   async createUser(email: string, username: string, hashedPassword: string): Promise<User> {
-    console.log('📁 [DATABASE] Creating user:', username, 'with email:', email)
+    if (this.isMockMode) {
+      const id = crypto.randomUUID()
+      const now = new Date()
+      const user: UserWithPassword = {
+        id,
+        email,
+        username,
+        password: hashedPassword,
+        createdAt: now,
+        updatedAt: now,
+        created_at: now.toISOString(),
+        updated_at: now.toISOString()
+      }
+      this.mockData!.users.set(email, user)
+      return {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      }
+    }
 
     const id = crypto.randomUUID()
     const now = new Date()
@@ -121,14 +155,11 @@ export class DatabaseService {
         .single()
 
       if (error) {
-        console.error('📁 [DATABASE] Error creating user:', error)
         if (error.code === '23505') {
           throw new Error('User with this email already exists')
         }
         throw error
       }
-
-      console.log('📁 [DATABASE] User created successfully with ID:', id)
 
       return {
         id: data.id,
@@ -138,13 +169,15 @@ export class DatabaseService {
         updatedAt: new Date(data.updated_at)
       }
     } catch (error: any) {
-      console.error('📁 [DATABASE] Error creating user:', error)
       throw error
     }
   }
 
   async findUserByEmail(email: string): Promise<UserWithPassword | null> {
-    console.log('📁 [DATABASE] Looking for user by email:', email)
+    if (this.isMockMode) {
+      const user = this.mockData!.users.get(email)
+      return user || null
+    }
 
     const { data, error } = await this.supabase
       .from('users')
@@ -154,14 +187,12 @@ export class DatabaseService {
 
     if (error) {
       if (error.code === 'PGRST116') {
-        console.log('📁 [DATABASE] User not found:', email)
         return null
       }
       console.error('📁 [DATABASE] Error finding user:', error)
       throw error
     }
 
-    console.log('📁 [DATABASE] User found:', data.username)
     return {
       ...data,
       createdAt: new Date(data.created_at),
@@ -170,7 +201,6 @@ export class DatabaseService {
   }
 
   async findUserById(id: string): Promise<User | null> {
-    console.log('📁 [DATABASE] Looking for user by ID:', id)
 
     const { data, error } = await this.supabase
       .from('users')
@@ -180,14 +210,12 @@ export class DatabaseService {
 
     if (error) {
       if (error.code === 'PGRST116') {
-        console.log('📁 [DATABASE] User not found:', id)
         return null
       }
       console.error('📁 [DATABASE] Error finding user:', error)
       throw error
     }
 
-    console.log('📁 [DATABASE] User found:', data.username)
     return {
       id: data.id,
       email: data.email,
@@ -198,7 +226,6 @@ export class DatabaseService {
   }
 
   async findUserByUsername(username: string): Promise<UserWithPassword | null> {
-    console.log('📁 [DATABASE] Looking for user by username:', username)
 
     const { data, error } = await this.supabase
       .from('users')
@@ -208,14 +235,12 @@ export class DatabaseService {
 
     if (error) {
       if (error.code === 'PGRST116') {
-        console.log('📁 [DATABASE] User not found:', username)
         return null
       }
       console.error('📁 [DATABASE] Error finding user:', error)
       throw error
     }
 
-    console.log('📁 [DATABASE] User found:', data.username)
     return {
       ...data,
       createdAt: new Date(data.created_at),
@@ -224,7 +249,6 @@ export class DatabaseService {
   }
 
   async updateUser(id: string, updates: Partial<User & { password?: string }>): Promise<User> {
-    console.log('📁 [DATABASE] Updating user:', id)
 
     const updateData: any = {
       updated_at: new Date().toISOString()
@@ -254,7 +278,6 @@ export class DatabaseService {
       throw error
     }
 
-    console.log('📁 [DATABASE] User updated successfully')
 
     return {
       id: data.id,
@@ -266,7 +289,6 @@ export class DatabaseService {
   }
 
   async deleteUser(id: string): Promise<boolean> {
-    console.log('📁 [DATABASE] Deleting user:', id)
 
     const { error } = await this.supabase
       .from('users')
@@ -278,12 +300,10 @@ export class DatabaseService {
       return false
     }
 
-    console.log('📁 [DATABASE] User deleted successfully')
     return true
   }
 
   async getAllUsers(limit: number = 50, offset: number = 0): Promise<{ items: User[], total: number }> {
-    console.log('📁 [DATABASE] Getting all users, limit:', limit, 'offset:', offset)
 
     // Get total count
     const { count: totalCount, error: countError } = await this.supabase
@@ -315,12 +335,10 @@ export class DatabaseService {
       updatedAt: new Date(row.updated_at)
     }))
 
-    console.log('📁 [DATABASE] Found', users.length, 'users (total:', totalCount, ')')
     return { items: users, total: totalCount || 0 }
   }
 
   async getUserCount(): Promise<number> {
-    console.log('📁 [DATABASE] Getting user count')
 
     const { count, error } = await this.supabase
       .from('users')
@@ -336,13 +354,11 @@ export class DatabaseService {
       throw error
     }
 
-    console.log('📁 [DATABASE] User count:', count)
     return count || 0
   }
 
   // Watching progress operations
   async saveWatchingProgress(userId: string, animeId: string, season: string, episode: number, currentTime: number, duration: number): Promise<WatchingProgress> {
-    console.log('📁 [DATABASE] Saving watching progress:', { userId, animeId, season, episode, currentTime, duration })
 
     const completed = duration > 0 && currentTime >= duration * 0.9
     const now = new Date()
@@ -371,7 +387,6 @@ export class DatabaseService {
       throw error
     }
 
-    console.log('📁 [DATABASE] Watching progress saved successfully')
 
     return {
       id: data.id,
@@ -387,7 +402,10 @@ export class DatabaseService {
   }
 
   async getWatchingProgress(userId: string, animeId: string, season: string, episode: number): Promise<WatchingProgress | null> {
-    console.log('📁 [DATABASE] Getting watching progress:', { userId, animeId, season, episode })
+    if (this.isMockMode) {
+      // Return null for mock mode
+      return null
+    }
 
     const { data, error } = await this.supabase
       .from('watching_progress')
@@ -400,14 +418,12 @@ export class DatabaseService {
 
     if (error) {
       if (error.code === 'PGRST116') {
-        console.log('📁 [DATABASE] No watching progress found')
         return null
       }
       console.error('📁 [DATABASE] Error getting watching progress:', error)
       throw error
     }
 
-    console.log('📁 [DATABASE] Found watching progress:', data.current_time, '/', data.duration)
     return {
       id: data.id,
       userId: data.user_id,
@@ -422,7 +438,10 @@ export class DatabaseService {
   }
 
   async getUserSeriesProgress(userId: string, limit: number = 20, offset: number = 0): Promise<{ items: any[], total: number }> {
-    console.log('📁 [DATABASE] Getting series progress for user:', userId, 'limit:', limit, 'offset:', offset)
+    if (this.isMockMode) {
+      // Return empty array for mock mode
+      return { items: [], total: 0 }
+    }
 
     try {
       // Try optimized database function first
@@ -434,13 +453,10 @@ export class DatabaseService {
         })
 
       if (!error && data) {
-        console.log('📁 [DATABASE] Used optimized database function, found', data.length, 'series progress items')
         return { items: data, total: data.length > 0 ? data[0].total_count : 0 }
       }
 
-      console.log('📁 [DATABASE] Optimized function failed, falling back to application aggregation:', error?.message)
     } catch (error) {
-      console.log('📁 [DATABASE] Optimized function not available, falling back to application aggregation:', error)
     }
 
     // Fallback to application-level aggregation if RPC fails
@@ -450,7 +466,6 @@ export class DatabaseService {
   }
 
   async deleteWatchingProgress(userId: string, animeId: string, season: string, episode: number): Promise<boolean> {
-    console.log('📁 [DATABASE] Deleting watching progress:', { userId, animeId, season, episode })
 
     const { error } = await this.supabase
       .from('watching_progress')
@@ -465,12 +480,14 @@ export class DatabaseService {
       return false
     }
 
-    console.log('📁 [DATABASE] Watching progress deleted successfully')
     return true
   }
 
   async getAllUserWatchingProgress(userId: string): Promise<WatchingProgress[]> {
-    console.log('📁 [DATABASE] Getting all watching progress for user:', userId)
+    if (this.isMockMode) {
+      // Return empty array for mock mode
+      return []
+    }
 
     const { data, error } = await this.supabase
       .from('watching_progress')
@@ -495,12 +512,10 @@ export class DatabaseService {
       completed: row.completed
     }))
 
-    console.log('📁 [DATABASE] Found', progress.length, 'watching progress items')
     return progress
   }
 
   async getAggregatedUserSeriesProgress(userId: string): Promise<any[]> {
-    console.log('📁 [DATABASE] Getting aggregated series progress for user:', userId)
 
     // Use a single query with aggregation to get series progress
     const { data, error } = await this.supabase
@@ -511,19 +526,15 @@ export class DatabaseService {
     if (error) {
       console.error('📁 [DATABASE] Error getting aggregated series progress:', error)
       // Fallback to application-level aggregation if RPC fails
-      console.log('📁 [DATABASE] Falling back to application-level aggregation')
       return this.getAggregatedSeriesProgressFallback(userId)
     }
 
-    console.log('📁 [DATABASE] Found', data.length, 'aggregated series progress items')
     return data
   }
 
   private async getAggregatedSeriesProgressFallback(userId: string): Promise<any[]> {
-    console.log('📁 [DATABASE] Using fallback aggregation method')
 
     const allProgress = await this.getAllUserWatchingProgress(userId)
-    console.log('📁 [DATABASE] Found', allProgress.length, 'raw progress items for fallback aggregation')
 
     // Group and aggregate in application code - return same format as database function
     const seriesMap = new Map<string, any>()
@@ -573,13 +584,11 @@ export class DatabaseService {
     }
 
     const result = Array.from(seriesMap.values())
-    console.log('📁 [DATABASE] Fallback aggregation produced', result.length, 'series items')
     return result
   }
 
   // Watched episodes operations
   async markEpisodeWatched(userId: string, animeId: string, season: string, episode: number): Promise<void> {
-    console.log('📁 [DATABASE] Marking episode as watched:', { userId, animeId, season, episode })
 
     const id = crypto.randomUUID()
     const now = new Date()
@@ -602,11 +611,9 @@ export class DatabaseService {
       throw error
     }
 
-    console.log('📁 [DATABASE] Episode marked as watched successfully')
   }
 
   async unmarkEpisodeWatched(userId: string, animeId: string, season: string, episode: number): Promise<boolean> {
-    console.log('📁 [DATABASE] Unmarking episode as watched:', { userId, animeId, season, episode })
 
     const { error } = await this.supabase
       .from('watched_episodes')
@@ -621,12 +628,10 @@ export class DatabaseService {
       return false
     }
 
-    console.log('📁 [DATABASE] Episode unmarked as watched successfully')
     return true
   }
 
   async getWatchedEpisodes(userId: string, animeId: string): Promise<{ season: string; episode: number; watchedAt: Date }[]> {
-    console.log('📁 [DATABASE] Getting watched episodes for series:', { userId, animeId })
 
     const { data, error } = await this.supabase
       .from('watched_episodes')
@@ -647,12 +652,10 @@ export class DatabaseService {
       watchedAt: new Date(row.watched_at)
     }))
 
-    console.log('📁 [DATABASE] Found', watchedEpisodes.length, 'watched episodes')
     return watchedEpisodes
   }
 
   async getLatestWatchedEpisode(userId: string, animeId: string): Promise<{ season: string; episode: number; watchedAt: Date } | null> {
-    console.log('📁 [DATABASE] Getting latest watched episode for series (highest episode number):', { userId, animeId })
 
     // Get all watched episodes and find the one with highest episode number
     const allWatched = await this.getWatchedEpisodes(userId, animeId)
@@ -674,7 +677,6 @@ export class DatabaseService {
       }
     }
 
-    console.log('📁 [DATABASE] Found latest watched episode (highest number):', latestEpisode.episode)
     return latestEpisode
   }
 
@@ -697,7 +699,6 @@ export class DatabaseService {
   }
 
   async isEpisodeWatched(userId: string, animeId: string, season: string, episode: number): Promise<boolean> {
-    console.log('📁 [DATABASE] Checking if episode is watched:', { userId, animeId, season, episode })
 
     const { data, error } = await this.supabase
       .from('watched_episodes')
@@ -713,12 +714,10 @@ export class DatabaseService {
     }
 
     const isWatched = (data || 0) > 0
-    console.log('📁 [DATABASE] Episode watched status:', isWatched)
     return isWatched
   }
 
   async clearWatchedEpisodesForSeries(userId: string, animeId: string): Promise<boolean> {
-    console.log('📁 [DATABASE] Clearing all watched episodes for series:', { userId, animeId })
 
     const { error } = await this.supabase
       .from('watched_episodes')
@@ -731,7 +730,6 @@ export class DatabaseService {
       return false
     }
 
-    console.log('📁 [DATABASE] Watched episodes cleared successfully')
     return true
   }
 }

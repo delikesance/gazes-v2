@@ -2,13 +2,11 @@ import { AuthService } from '~/server/utils/auth'
 import { DatabaseService } from '~/server/utils/database'
 
 export default defineEventHandler(async (event) => {
-  console.log('📺 [WATCHED_EPISODES] Watched episodes request received')
 
   try {
     // Get authenticated user
     const user = await AuthService.getUserFromRequest(event)
     if (!user) {
-      console.log('❌ [WATCHED_EPISODES] No authenticated user')
       throw createError({
         statusCode: 401,
         statusMessage: 'Non authentifié'

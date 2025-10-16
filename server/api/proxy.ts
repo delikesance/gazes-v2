@@ -132,7 +132,6 @@ export default defineEventHandler(async (event) => {
   if (isVideoContent && !range) {
     const cached = videoCache.get(rawUrl)
     if (cached) {
-      console.log('[proxy] Serving from video cache:', rawUrl)
       setResponseHeader(event, 'Content-Type', cached.contentType)
       setResponseHeader(event, 'X-Cache-Status', 'HIT')
       setResponseStatus(event, 200)
@@ -150,8 +149,6 @@ export default defineEventHandler(async (event) => {
     return JSON.stringify({ ok: false, message: `Failed to fetch: ${error?.message || 'Network error'}` })
   }
 
-  console.log('[proxy] Fetch response status:', res.status, 'for URL:', target.toString())
-  console.log('[proxy] Response headers:', Object.fromEntries(res.headers.entries()))
 
   // Always allow CORS for the proxied response
   setResponseHeader(event, 'Access-Control-Allow-Origin', '*')
@@ -175,7 +172,6 @@ export default defineEventHandler(async (event) => {
   const contentType = res.headers.get('Content-Type') || ''
   const isM3U8Response = /application\/(vnd\.apple\.mpegurl|x-mpegURL)|text\/plain.*\.m3u8/i.test(contentType) || /\.m3u8($|\?)/i.test(target.toString())
 
-  console.log('[proxy] Content-Type:', contentType, 'Is M3U8:', isM3U8Response, 'Rewrite enabled:', rewrite)
 
   // Check if we got HTML instead of media - this indicates the URL is not a valid media file
   if (!isM3U8Response && /text\/html|application\/xhtml\+xml/i.test(contentType)) {
@@ -188,8 +184,6 @@ export default defineEventHandler(async (event) => {
   if (isM3U8Response && rewrite && res.ok) {
     try {
       const playlist = await resClone.text()
-      console.log('[proxy] Original playlist length:', playlist.length)
-      console.log('[proxy] First 500 chars of playlist:', playlist.substring(0, 500))
 
       // Cache the original playlist content
       if (isVideoContent && !range) {

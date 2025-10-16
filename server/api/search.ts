@@ -31,7 +31,10 @@ export default defineEventHandler(async (event): Promise<SearchResponse> => {
 
 // Extract the actual search logic into a separate function
 async function performSearch(title: string): Promise<SearchResponse> {
-    const response = await axiosInstance.post("https://179.43.149.218/template-php/defaut/fetch.php", "query=" + encodeURIComponent(title), {
+    const config = useRuntimeConfig()
+    const searchApiUrl = config.searchApiUrl as string
+
+    const response = await axiosInstance.post(searchApiUrl, "query=" + encodeURIComponent(title), {
         headers: {
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "X-Requested-With": "XMLHttpRequest"
@@ -39,5 +42,7 @@ async function performSearch(title: string): Promise<SearchResponse> {
     });
 
     const html = response.data
-    return parseAnimeResults(html)
+    // Extract base URL from searchApiUrl for parsing
+    const baseUrl = searchApiUrl.replace('/template-php/defaut/fetch.php', '')
+    return parseAnimeResults(html, baseUrl)
 }

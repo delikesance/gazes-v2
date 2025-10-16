@@ -140,7 +140,6 @@ function saveVolumeSettings() {
       timestamp: Date.now()
     }
     localStorage.setItem(VOLUME_STORAGE_KEY, JSON.stringify(settings))
-    console.log('🔊 Volume settings saved:', settings)
   } catch (error) {
     console.warn('Failed to save volume settings:', error)
   }
@@ -157,10 +156,8 @@ function loadVolumeSettings() {
       if (isRecent) {
         volume.value = settings.volume ?? 1
         isMuted.value = settings.isMuted ?? false
-        console.log('🔊 Volume settings loaded:', settings)
         return true
       } else {
-        console.log('🔊 Volume settings expired, using defaults')
       }
     }
   } catch (error) {
@@ -386,7 +383,6 @@ async function syncLocalProgressToServer() {
         
         // Remove from localStorage after successful sync
         localStorage.removeItem(key)
-        console.log('✅ Synced progress to server and removed from localStorage:', progressData)
       } catch (error) {
         console.warn('Failed to sync progress for key:', key, error)
       }
@@ -412,7 +408,6 @@ async function loadSavedProgress() {
             currentTime: (episodeProgress as any).currentTime,
             duration: (episodeProgress as any).duration
           }
-          console.log('📺 Loaded saved progress from server:', savedProgress.value)
           return
         }
       }
@@ -437,12 +432,10 @@ async function loadSavedProgress() {
           currentTime: progressData.currentTime,
           duration: progressData.duration
         }
-        console.log('📺 Loaded saved progress from localStorage:', savedProgress.value)
         return
       } else {
         // Clean up expired data
         localStorage.removeItem(progressKey)
-        console.log('📺 Removed expired progress data from localStorage')
       }
     }
   } catch (localStorageError) {
@@ -472,7 +465,6 @@ async function saveProgress(currentTime: number, duration: number) {
     
     if (response?.success) {
       lastSavedTime.value = now
-      console.log('💾 Progress saved to server:', { currentTime, duration })
       return
     }
   } catch (error) {
@@ -492,7 +484,6 @@ async function saveProgress(currentTime: number, duration: number) {
       
       localStorage.setItem(progressKey, JSON.stringify(progressData))
       lastSavedTime.value = now
-      console.log('💾 Progress saved to localStorage:', progressData)
     } catch (localStorageError) {
       console.warn('Failed to save progress to localStorage:', localStorageError)
     }
@@ -565,7 +556,6 @@ function togglePlay() {
       player.pause()
     } else {
       player.play().catch((e: any) => {
-        console.log('Play failed:', e)
       })
     }
   } else {
@@ -576,7 +566,6 @@ function togglePlay() {
       el.pause()
     } else {
       el.play().catch(e => {
-        console.log('Play failed:', e)
       })
     }
   }
@@ -608,7 +597,6 @@ function showSeekFeedback(direction: 'forward' | 'backward', seconds: number) {
 function seek(time: number) {
   // Prevent rapid seeking that can cause audio desynchronization
   if (isSeeking.value) {
-    console.log('Seek blocked - already seeking')
     return
   }
   
@@ -626,7 +614,6 @@ function seek(time: number) {
 function seekBy(seconds: number) {
   // Prevent rapid seeking that can cause audio desynchronization
   if (isSeeking.value) {
-    console.log('SeekBy blocked - already seeking')
     return
   }
   
@@ -862,7 +849,6 @@ function handleMouseMove() {
 function handleProgressClick(event: MouseEvent) {
   // Prevent rapid seeking that can cause audio desynchronization
   if (isSeeking.value) {
-    console.log('Progress click seek blocked - already seeking')
     return
   }
   
@@ -963,7 +949,6 @@ function handleKeyPress(event: KeyboardEvent) {
 
 // --- Stable handler references for video events ---
 function onVideoPlay() {
-  console.log('Video play event - clearing loading state and autoplay error')
   isPlaying.value = true
   isBuffering.value = false
   videoLoading.value = false // Clear loading when video actually starts
@@ -1008,7 +993,6 @@ function onVideoSeeked() {
   const el = videoRef.value
   if (el && wasPlayingBeforeSeek.value && el.paused) {
     el.play().catch(e => {
-      console.log('Auto-resume after seek failed:', e)
     })
   }
 }
@@ -1024,7 +1008,6 @@ function onVideoSeeked() {
    showControls.value = true
    // Mark episode as completed when it actually ends
    if (duration.value > 0) {
-     console.log('🎬 Episode ended, marking as completed')
      saveProgress(duration.value, duration.value) // This will mark it as completed
    }
 
@@ -1158,7 +1141,6 @@ function handleLoadedMetadata() {
     const shouldResume = isContinueWatching.value || currentPlaybackTime < 5
 
     if (shouldResume) {
-      console.log('📺 Resuming from saved progress:', resumeTime, 'seconds', isContinueWatching.value ? '(continue watching)' : '(at start)')
       if (player) {
         player.currentTime(resumeTime)
       } else if (videoRef.value) {
@@ -1178,11 +1160,9 @@ function handleLoadedMetadata() {
         setTimeout(() => {
           if (player && !player.playing()) {
             player.play().catch((e: any) => {
-              console.log('Continue watching autoplay failed, user interaction required')
             })
           } else if (videoRef.value && videoRef.value.paused) {
             videoRef.value.play().catch((e: any) => {
-              console.log('Continue watching autoplay failed, user interaction required')
             })
           }
         }, 500) // Small delay to ensure seek is complete
@@ -1211,16 +1191,12 @@ function handleEnded() {
 // Skip functionality functions
 async function loadSkipTimes() {
   try {
-    console.log('⏭️ [SKIP] Loading skip times for anime:', id.value, 'episode:', episodeNum.value, 'duration:', duration.value)
     const params = duration.value > 0 ? { episodeLength: duration.value } : {}
     const response = await $fetch(`/api/anime/${id.value}/skip/${episodeNum.value}`, { params })
     if (response?.skipTimes && Array.isArray(response.skipTimes)) {
       skipTimes.value = response.skipTimes
-      console.log('⏭️ [SKIP] Successfully loaded skip times:', skipTimes.value.length, 'entries')
-      console.log('⏭️ [SKIP] Skip times details:', skipTimes.value)
     } else {
       skipTimes.value = []
-      console.log('⏭️ [SKIP] No skip times found for this episode')
     }
   } catch (error) {
     console.warn('⏭️ [SKIP] Failed to load skip times:', error)
@@ -1231,7 +1207,6 @@ async function loadSkipTimes() {
 function skipToEnd(skipType: 'op' | 'ed') {
   const skipTime = skipTimes.value.find(s => s.type === skipType)
   if (skipTime && videoRef.value) {
-    console.log(`⏭️ [SKIP] Skipping ${skipType.toUpperCase()} from ${currentTime.value}s to ${skipTime.endTime}s`)
     seek(skipTime.endTime)
     hideSkipButtons()
   } else {
@@ -1240,7 +1215,6 @@ function skipToEnd(skipType: 'op' | 'ed') {
 }
 
 function hideSkipButtons() {
-  console.log('⏭️ [SKIP] Hiding skip buttons')
   showSkipButtons.value = false
   const skipType = currentSkipType.value
   currentSkipType.value = null
@@ -1248,7 +1222,6 @@ function hideSkipButtons() {
   // Mark the current skip type as dismissed for this episode
   if (skipType) {
     dismissedSkips.value.add(skipType)
-    console.log(`⏭️ [SKIP] Marked ${skipType.toUpperCase()} as dismissed for this episode`)
   }
   
   if (skipTimeout.value) {
@@ -1267,7 +1240,6 @@ function checkSkipAvailability() {
   for (const skipTime of skipTimes.value) {
     // Skip if this skip type has already been dismissed for this episode
     if (dismissedSkips.value.has(skipTime.type)) {
-      console.log(`⏭️ [SKIP] Skipping ${skipTime.type.toUpperCase()} - already dismissed for this episode`)
       continue
     }
 
@@ -1278,7 +1250,6 @@ function checkSkipAvailability() {
     if (currentVideoTime >= skipTime.startTime && currentVideoTime < skipTime.endTime) {
       shouldShowButtons = true
       activeSkipType = skipTime.type
-      console.log(`⏭️ [SKIP] Currently in ${skipTime.type.toUpperCase()} period (${currentVideoTime.toFixed(1)}s of ${skipTime.startTime.toFixed(1)}s-${skipTime.endTime.toFixed(1)}s)`)
       break
     }
 
@@ -1286,7 +1257,6 @@ function checkSkipAvailability() {
     if (timeUntilStart > 0 && timeUntilStart <= 3) {
       shouldShowButtons = true
       activeSkipType = skipTime.type
-      console.log(`⏭️ [SKIP] Approaching ${skipTime.type.toUpperCase()} start in ${timeUntilStart.toFixed(1)}s`)
       break
     }
   }
@@ -1294,14 +1264,11 @@ function checkSkipAvailability() {
   if (shouldShowButtons && !showSkipButtons.value) {
     showSkipButtons.value = true
     currentSkipType.value = activeSkipType
-    console.log(`⏭️ [SKIP] Showing skip buttons for ${activeSkipType?.toUpperCase()}`)
     // Auto-hide after 10 seconds if not interacted with
     skipTimeout.value = setTimeout(() => {
-      console.log('⏭️ [SKIP] Auto-hiding skip buttons (timeout)')
       hideSkipButtons()
     }, 10000)
   } else if (!shouldShowButtons && showSkipButtons.value) {
-    console.log('⏭️ [SKIP] Hiding skip buttons (no longer in skip period)')
     hideSkipButtons()
   }
 }
@@ -1346,8 +1313,6 @@ async function setupVideo() {
   el.volume = volume.value
   el.muted = isMuted.value
 
-  console.log(`setupVideo: Attempt ${setupAttempts} - Setting up video with URL:`, playUrl.value)
-  console.log('setupVideo: Is M3U8:', isM3U8(playUrl.value))
 
   try {
     if (isM3U8(playUrl.value)) {
@@ -1404,30 +1369,25 @@ async function setupVideo() {
        })
 
       player.on('loadedmetadata', () => {
-        console.log('Video.js loadedmetadata')
         // Handle loaded metadata
         handleLoadedMetadata()
       })
 
       player.on('canplay', () => {
-        console.log('Video.js canplay')
         videoLoading.value = false
       })
 
        player.on('waiting', () => {
-         console.log('Video.js waiting')
          isBuffering.value = true
          videoLoading.value = true
        })
 
        player.on('playing', () => {
-         console.log('Video.js playing')
          isBuffering.value = false
          videoLoading.value = false
        })
 
        player.on('canplay', () => {
-         console.log('Video.js canplay')
          isBuffering.value = false
          videoLoading.value = false
        })
@@ -1447,7 +1407,6 @@ async function setupVideo() {
 
       // Try to play with autoplay
       player.play().catch((e: any) => {
-        console.log('Autoplay prevented by browser, video will start paused')
         videoLoading.value = false // Allow user interaction
         // Don't show error for autoplay prevention - it's expected
       })
@@ -1464,7 +1423,6 @@ async function setupVideo() {
       }, 10000)
     } else {
       // Use native video element for MP4
-      console.log('Using native video element for MP4')
       el.src = playUrl.value
       el.autoplay = true // Enable autoplay for native video
 
@@ -1473,12 +1431,10 @@ async function setupVideo() {
 
       // Add specific event listeners for native video loading
       const onCanPlay = () => {
-        console.log('Native video canplay')
         videoLoading.value = false
         el.removeEventListener('canplay', onCanPlay)
       }
       const onLoadedData = () => {
-        console.log('Native video loadeddata')
         videoLoading.value = false
         el.removeEventListener('loadeddata', onLoadedData)
       }
@@ -1495,7 +1451,6 @@ async function setupVideo() {
 
       // Try to play
       el.play().catch(e => {
-        console.log('Autoplay prevented by browser, waiting for user interaction')
         videoLoading.value = false // Allow user interaction
       })
 
@@ -1568,7 +1523,6 @@ function handleVideoError(error: any, errorType: string = 'unknown') {
   if (recoverable && currentSourceRetries < MAX_RETRIES_PER_SOURCE) {
     // Retry the same source
     currentSourceRetries++
-    console.log(`🔄 Retrying same source (attempt ${currentSourceRetries}/${MAX_RETRIES_PER_SOURCE}) for recoverable error`)
 
     videoError.value = `Nouvelle tentative ${currentSourceRetries}/${MAX_RETRIES_PER_SOURCE}...`
     videoLoading.value = true
@@ -1579,7 +1533,6 @@ function handleVideoError(error: any, errorType: string = 'unknown') {
 
   } else {
     // Either not recoverable or max retries reached - try next source
-    console.log(`❌ ${recoverable ? 'Max retries reached' : 'Non-recoverable error'}, trying next source`)
     tryNextSource()
   }
 }
@@ -1596,7 +1549,6 @@ function tryNextSource() {
 
   // If we've cycled through all sources, stop trying
   if (currentSourceIndex.value === startIndex) {
-    console.log('Tried all sources, giving up')
     videoError.value = 'Toutes les sources vidéo ont échoué'
     return
   }
@@ -1640,7 +1592,6 @@ async function loadAnimeMetadata() {
     // Extract dynamic language flags from the response
     if (response?.languageFlags) {
       dynamicLanguageFlags.value = response.languageFlags
-      console.log('Loaded dynamic language flags:', dynamicLanguageFlags.value)
     }
   } catch (error) {
     console.error('Failed to load anime metadata:', error)
@@ -1654,10 +1605,8 @@ async function loadEpisodesList() {
   loadingEpisodes.value = true
   try {
     const url = `/api/anime/episodes/${id.value}/${season.value}/${lang.value}`
-    console.log('Loading episodes from:', url)
     const response = await $fetch(url) as any
     episodesList.value = (response?.episodes || []) as Array<{ episode: number; title?: string; url: string; urls?: string[] }>
-    console.log('Loaded episodes:', episodesList.value)
 
     // Update current episode title
     const currentEp = episodesList.value.find(ep => ep.episode === episodeNum.value)
@@ -1716,7 +1665,6 @@ async function switchLanguage(targetLang: 'vostfr' | 'vf' | 'va' | 'var' | 'vkr'
   showLanguageDropdown.value = false // Close dropdown immediately
   
   try {
-    console.log(`🔄 Switching from ${lang.value} to ${targetLang}`)
     await navigateTo({
       path: `/watch/${id.value}/${season.value}/${targetLang}/${episodeNum.value}`,
       replace: true
@@ -1787,7 +1735,6 @@ async function fetchEpisodesFor(targetLang: 'vostfr' | 'vf' | 'va' | 'var' | 'vk
 
       // Validate that we got actual episodes with URLs
       if (episodes.length > 0 && episodes.some(ep => ep.urls && ep.urls.length > 0)) {
-        console.log(`✅ Found ${episodes.length} episodes for ${targetLang}`)
         return episodes
       } else {
         console.warn(`⚠️ Language ${targetLang} returned no valid episodes`)
@@ -1826,7 +1773,6 @@ async function resolveEpisode() {
   currentSourceRetries = 0
   lastErrorType = ''
 
-  console.log(`🎬 Resolving episode: ${id.value}/${season.value}/${lang.value}/${episodeNum.value}`)
 
   try {
     // Check all languages for the current episode availability
@@ -1849,14 +1795,9 @@ async function resolveEpisode() {
       availableLanguages.value[lang as keyof typeof availableLanguages.value] = hasCurrentEpisode
     })
     
-    console.log(`🎯 Episode ${episodeNum.value} availability:`, Object.fromEntries(
-      Object.entries(availableLanguages.value).filter(([_, available]) => available)
-    ))
-    
     // Try requested language first
     const currentLangResult = languageResults.find(r => r.lang === lang.value)
     let ep = currentLangResult?.episodes.find(e => Number(e.episode) === episodeNum.value)
-    console.log(`🎯 Looking for episode ${episodeNum.value} in ${lang.value}, found:`, ep ? `Episode ${ep.episode}` : 'Not found')
 
     // If not found in requested language, check other available languages
     if (!ep) {
@@ -1865,7 +1806,6 @@ async function resolveEpisode() {
       for (const { lang: altLang, episodes: altEpisodes } of availableLangResults) {
         const altEp = altEpisodes.find((e: any) => Number(e.episode) === episodeNum.value)
         if (altEp) {
-          console.log(`🔄 Found episode ${episodeNum.value} in ${altLang}, switching...`)
           notice.value = `Langue ${lang.value.toUpperCase()} indisponible. Basculement en ${altLang.toUpperCase()}.`
           await navigateTo({
             path: `/watch/${id.value}/${season.value}/${altLang}/${episodeNum.value}`,
@@ -1876,7 +1816,6 @@ async function resolveEpisode() {
         }
       }
 
-      console.log(`❌ Episode ${episodeNum.value} not found in any available language`)
     }
 
     if (!ep) {
@@ -1906,15 +1845,6 @@ async function resolveEpisode() {
       return getReliability(b) - getReliability(a)
     })
     
-    console.log(`🎯 Sorted ${candidates.length} candidates by reliability:`, candidates.map(url => {
-      try {
-        const hostname = new URL(url).hostname
-        return `${hostname} (${url})`
-      } catch {
-        return url
-      }
-    }))
-
     // Try candidates sequentially for better reliability (less server load)
     let resolvedUrls: any[] = []
     let lastError = ''
@@ -1924,7 +1854,6 @@ async function resolveEpisode() {
       const targetUrl = candidates[i]
       if (!targetUrl) continue
 
-      console.log(`🎯 Trying candidate ${i + 1}/${Math.min(candidates.length, 3)}: ${targetUrl}`)
 
       try {
         // Resolve the provider URL to actual video stream
@@ -1952,7 +1881,6 @@ async function resolveEpisode() {
           })
 
           if (resolveResponse?.ok && resolveResponse?.urls?.length > 0) {
-            console.log(`✅ Successfully resolved candidate ${i + 1}: ${resolveResponse.urls.length} URLs found`)
             resolvedUrls = resolveResponse.urls
             break // Use the first successful result
           } else {
@@ -2008,7 +1936,6 @@ async function preloadNextEpisode() {
     if (nextEpisode && nextEpisode.urls && nextEpisode.urls.length > 0) {
       // Pre-resolve the next episode URLs in background
       const firstUrl = nextEpisode.urls[0]
-      console.log(`🚀 Pre-resolving next episode ${nextEpisodeNum}:`, firstUrl)
 
       // Start background resolution (don't await)
       resolveEpisodeInBackground(id.value, season.value, lang.value, nextEpisodeNum, nextEpisode.urls)
@@ -2021,7 +1948,6 @@ async function preloadNextEpisode() {
 
 // Background episode resolution for preloading
 async function resolveEpisodeInBackground(animeId: string, season: string, lang: string, episodeNum: number, candidateUrls: string[]) {
-  console.log(`🔄 Background resolving episode: ${animeId}/${season}/${lang}/${episodeNum}`)
 
   // Sort candidates by provider reliability
   const candidates = candidateUrls.sort((a, b) => {
@@ -2109,7 +2035,6 @@ async function resolveEpisodeInBackground(animeId: string, season: string, lang:
         })
 
         if (finalUrls.length > 0) {
-          console.log(`✅ Background resolved episode ${animeId}/${season}/${lang}/${episodeNum}: ${finalUrls.length} URLs found`)
         }
         break
       }
@@ -2202,7 +2127,6 @@ watch([season, lang, episodeNum], () => {
       
       // Reset dismissed skips when changing episodes
       dismissedSkips.value.clear()
-      console.log('⏭️ [SKIP] Cleared dismissed skips for new episode')
       
       // Reload volume settings when navigating to new episode
       loadVolumeSettings()

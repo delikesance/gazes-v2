@@ -88,7 +88,9 @@ async function performCatalogueSearch({
         clearTimeout(timeoutId)
 
         const searchHtml = searchResponse.data
-        const searchResults = parseAnimeResults(searchHtml)
+        const config = useRuntimeConfig()
+        const catalogueApiUrl = config.catalogueApiUrl as string
+        const searchResults = parseAnimeResults(searchHtml, catalogueApiUrl)
 
         // Convert search results to catalogue format and filter out mangas
         const items = searchResults.map(item => ({
@@ -171,8 +173,9 @@ async function performCatalogueSearch({
    const catalogueTimeoutMs = parseInt(config.catalogueTimeoutMs || "15000", 10)
 
    // Per requirement, request must be: https://179.43.149.218/catalogue/?genre[]=Action&search=
+   const catalogueApiUrl = config.catalogueApiUrl as string
    const candidates = [
-     { base: 'https://179.43.149.218/catalogue/', genreKey: paramKeys.genreKey, categorieKey: paramKeys.categorieKey, referer: 'https://179.43.149.218/catalogue/' },
+     { base: `${catalogueApiUrl}/catalogue/`, genreKey: paramKeys.genreKey, categorieKey: paramKeys.categorieKey, referer: `${catalogueApiUrl}/catalogue/` },
    ]
 
    const tried: Array<{ url: string; status: number; count: number }> = []

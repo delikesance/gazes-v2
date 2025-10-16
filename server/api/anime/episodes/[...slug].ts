@@ -10,21 +10,18 @@ const axiosInstance = axios.create({
 })
 // Function to scrape episode titles from anime-sama main page
 async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, lang: string): Promise<Record<number, string>> {
-    console.log('Starting title scraping for:', animeId, season, lang)
 
     // For films/movies, we need to scrape titles from newSPF() calls
     const isFilm = season.toLowerCase().includes('film') || season.toLowerCase().includes('movie')
 
     // For regular episodes, skip expensive scraping since they rarely have real titles
     if (!isFilm) {
-        console.log('Skipping title scraping for regular episodes (not a film)')
         return {}
     }
 
     const titles: Record<number, string> = {}
 
     // For films, only fetch the language-specific page where newSPF() calls are located
-    console.log('Fetching film titles from lang page:', `https://179.43.149.218/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`)
 
     const langPageRes = await axiosInstance.get(`https://179.43.149.218/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`, {
         headers: {
@@ -36,7 +33,6 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
 
     if (langPageRes.status >= 200 && langPageRes.status < 300) {
         const langPageHtml = langPageRes.data
-        console.log('Film page HTML length:', langPageHtml.length)
 
         // For films, only look for newSPF() calls - much simpler and faster
         const newSPFMatches = langPageHtml.match(/newSPF\("([^"]+)"\)/gi)
@@ -52,16 +48,12 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
                 }
             })
         }
-        console.log('Found film titles:', Object.keys(titles).length, titles)
-        console.log('Found film titles:', Object.keys(titles).length, titles)
     }
     return titles
 }
 
 // Function to extract episode titles from HTML content
 function extractEpisodeTitles(html: string): Record<number, string> {
-    console.log('extractEpisodeTitles called with HTML length:', html.length)
-    console.log('HTML contains newSPF:', html.includes('newSPF'))
     const titles: Record<number, string> = {}
 
     try {
@@ -253,7 +245,6 @@ export default defineEventHandler(async (event) => {
     const params = event.context.params as Record<string, string | string[]>
     const slugString = params.slug as string
     const slug = slugString.split('/')
-    console.log('Slug parameter:', slug)
     const query = getQuery(event)
     const debug = query.debug === 'true'
 

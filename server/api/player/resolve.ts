@@ -161,7 +161,6 @@ async function* iterateMatches(html: string, patterns: typeof VIDEO_URL_PATTERNS
 
     // Early termination if we have enough URLs
     if (totalUrlsFound >= MAX_TOTAL_URLS) {
-      console.log(`✅ Found ${totalUrlsFound} URLs, stopping early for performance`)
       return
     }
 
@@ -185,7 +184,6 @@ async function* iterateMatches(html: string, patterns: typeof VIDEO_URL_PATTERNS
         if (pattern.type === 'sibnet_relative' && !candidate.startsWith('http')) {
           // Convert SibNet relative URLs to absolute
           processedCandidate = `https://video.sibnet.ru${candidate.startsWith('/') ? '' : '/'}${candidate}`
-          console.log(`🔗 Converting SibNet relative URL: ${candidate} -> ${processedCandidate}`)
         }
 
         const validation = validateUrl(processedCandidate)
@@ -211,7 +209,6 @@ async function* iterateMatches(html: string, patterns: typeof VIDEO_URL_PATTERNS
   }
 }// Main extraction function with size limits and security checks
 async function extractVideoUrls(html: string): Promise<{ type: string; url: string; quality?: string }[]> {
-  console.log('🔍 Starting secure URL extraction...')
 
   // Early size check to prevent processing huge documents
   if (html.length > EXTRACTION_CONFIG.MAX_HTML_SIZE) {
@@ -234,7 +231,6 @@ async function extractVideoUrls(html: string): Promise<{ type: string; url: stri
       if (!uniqueUrls.has(urlData.url)) {
         uniqueUrls.add(urlData.url)
         urls.push(urlData)
-        console.log(`✅ Found ${urlData.type} URL: ${urlData.url}${urlData.quality ? ` (${urlData.quality})` : ''}`)
       }
     }
   } catch (error) {
@@ -242,7 +238,6 @@ async function extractVideoUrls(html: string): Promise<{ type: string; url: stri
     return []
   }
 
-  console.log(`🔗 Extraction complete: ${urls.length} unique URLs found`)
   return urls
 }
 
@@ -263,9 +258,7 @@ export default defineEventHandler(async (event) => {
   // Handle both url and u64 parameters
   let url = ''
   if (query.u64 && typeof query.u64 === 'string') {
-    console.log('📝 Decoding u64 parameter:', query.u64)
     url = decodeBase64Url(query.u64)
-    console.log('🔗 Decoded URL:', url)
   } else if (query.url && typeof query.url === 'string') {
     url = query.url
   }
@@ -279,7 +272,6 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    console.log('🔍 Resolving URL:', url)
     
     // Get optional referer parameter
     const referer = query.referer as string
@@ -297,7 +289,6 @@ export default defineEventHandler(async (event) => {
     
     // Add referer if provided
     if (referer) {
-      console.log('📎 Using referer:', referer)
       headers['Referer'] = decodeURIComponent(referer)
     }
     
@@ -335,12 +326,9 @@ export default defineEventHandler(async (event) => {
       }
 
       const html = await response.text()
-      console.log('📄 Fetched HTML length:', html.length)
-      console.log('📄 First 500 chars:', html.substring(0, 500))
       
       // Extract video URLs from HTML
       const extractedUrls = await extractVideoUrls(html)
-      console.log('🔗 Found URLs:', extractedUrls)
       
       // Remove duplicates and format for frontend
       const uniqueUrls = new Map<string, any>()
@@ -369,13 +357,10 @@ export default defineEventHandler(async (event) => {
       })
       
       // Log provider information for debugging
-      console.log('🏆 URLs sorted by provider reliability:')
       finalUrls.forEach((urlData, index) => {
         const provider = urlData.provider
         if (provider) {
-          console.log(`  ${index + 1}. ${provider.hostname} (reliability: ${provider.reliability}/10) - ${urlData.type}`)
         } else {
-          console.log(`  ${index + 1}. Unknown provider - ${urlData.type}`)
         }
       })
       

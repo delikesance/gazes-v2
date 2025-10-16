@@ -9,7 +9,6 @@ export default defineEventHandler(async (event) => {
 
     if (healthResult.status === 'healthy') {
       updateDbStatus('connected')
-      console.log(`📁 Database healthy, latency: ${healthResult.latency}ms`)
     } else {
       updateDbStatus('disconnected')
       console.error(`📁 Database unhealthy, latency: ${healthResult.latency}ms`)

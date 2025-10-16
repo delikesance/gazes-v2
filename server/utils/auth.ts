@@ -92,16 +92,9 @@ export class AuthService {
   /**
    * Create a new user
    */
-  static async createUser(email: string, username: string, password: string): Promise<User> {
-    console.log('🔐 [AUTH_SERVICE] Creating user:', username, 'with email:', email)
-
-    console.log('🔐 [AUTH_SERVICE] Hashing password...')
-    const hashedPassword = await this.hashPassword(password)
-    console.log('🔐 [AUTH_SERVICE] Password hashed successfully')
-
+  static async createUser(email: string, username: string, hashedPassword: string): Promise<User> {
     const db = DatabaseService.getInstance()
     const user = await db.createUser(email, username, hashedPassword)
-    console.log('🔐 [AUTH_SERVICE] User created successfully, returning without password')
 
     return user
   }
@@ -110,48 +103,33 @@ export class AuthService {
    * Find user by email
    */
   static async findUserByEmail(email: string): Promise<(User & { password: string }) | null> {
-    console.log('🔐 [AUTH_SERVICE] Looking for user by email:', email)
     const db = DatabaseService.getInstance()
     const user = await db.findUserByEmail(email)
-    console.log('🔐 [AUTH_SERVICE] User found:', user ? 'YES' : 'NO')
     return user
   }
 
   /**
     * Find user by ID
     */
-   static async findUserById(id: string): Promise<User | null> {
-     console.log('🔐 [AUTH_SERVICE] Looking for user by ID:', id)
-     const db = DatabaseService.getInstance()
-     const user = await db.findUserById(id)
-     console.log('🔐 [AUTH_SERVICE] User found:', user ? 'YES' : 'NO')
-
-     return user
-   }
-
-  /**
+  static async findUserById(id: string): Promise<User | null> {
+    const db = DatabaseService.getInstance()
+    const user = await db.findUserById(id)
+    return user
+  }  /**
    * Authenticate user with email and password
    */
   static async authenticateUser(email: string, password: string): Promise<User | null> {
-    console.log('🔐 [AUTH_SERVICE] Attempting to authenticate user:', email)
-
     const user = await this.findUserByEmail(email)
     if (!user) {
-      console.log('❌ [AUTH_SERVICE] User not found:', email)
       return null
     }
 
-    console.log('🔐 [AUTH_SERVICE] User found, verifying password...')
     const isValidPassword = await this.verifyPassword(password, user.password)
-    console.log('🔐 [AUTH_SERVICE] Password verification result:', isValidPassword ? 'VALID' : 'INVALID')
-
     if (!isValidPassword) {
-      console.log('❌ [AUTH_SERVICE] Invalid password for user:', email)
       return null
     }
 
     const { password: _, ...userWithoutPassword } = user
-    console.log('✅ [AUTH_SERVICE] Authentication successful for user:', user.username)
     return userWithoutPassword
   }
 
@@ -159,28 +137,16 @@ export class AuthService {
    * Get user from JWT token in request
    */
   static async getUserFromRequest(event: H3Event): Promise<User | null> {
-    console.log('🔐 [AUTH_SERVICE] Getting user from request...')
-
     try {
       const token = getCookie(event, 'accessToken')
-      console.log('🔐 [AUTH_SERVICE] Access token found:', !!token)
-
       if (!token) {
-        console.log('❌ [AUTH_SERVICE] No access token in request')
         return null
       }
 
-      console.log('🔐 [AUTH_SERVICE] Verifying access token...')
       const payload = this.verifyToken(token, 'access')
-      console.log('🔐 [AUTH_SERVICE] Token verified for user ID:', payload.userId)
-
-      console.log('🔐 [AUTH_SERVICE] Finding user by ID...')
       const user = await this.findUserById(payload.userId)
-      console.log('🔐 [AUTH_SERVICE] User found from token:', user ? 'YES' : 'NO')
-
       return user
     } catch (error) {
-      console.error('❌ [AUTH_SERVICE] Error getting user from request:', error)
       return null
     }
   }

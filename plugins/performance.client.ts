@@ -172,7 +172,6 @@ export default defineNuxtPlugin(() => {
           linkElement.setAttribute('media', 'print')
           linkElement.onload = () => {
             linkElement.setAttribute('media', 'all')
-            console.log('Full CSS loaded asynchronously')
           }
         }
       })
@@ -238,12 +237,10 @@ export default defineNuxtPlugin(() => {
     if (currentRoute.path.startsWith('/watch/')) {
       // Use dynamic imports to preload video player chunk
       import('video.js').then(() => {
-        console.log('Video.js preloaded for watch page')
-      }).catch(err => console.log('Video.js preload failed:', err))
+        // Video.js loaded
+      })
     }
   }
-
-  // Optimize Intersection Observer for lazy loading
   const optimizeIntersectionObserver = () => {
     // Use a single shared IntersectionObserver for better performance
     const observerOptions = {
@@ -301,7 +298,6 @@ export default defineNuxtPlugin(() => {
           scope: '/'
         })
 
-        console.log('Service Worker registered:', registration.scope)
 
         // Handle updates
         registration.addEventListener('updatefound', () => {
@@ -310,14 +306,12 @@ export default defineNuxtPlugin(() => {
             newWorker.addEventListener('statechange', () => {
               if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
                 // New version available
-                console.log('New service worker available, consider refreshing')
               }
             })
           }
         })
 
       } catch (error) {
-        console.log('Service Worker registration failed:', error)
       }
     }
   }
@@ -331,7 +325,6 @@ export default defineNuxtPlugin(() => {
     optimizeScrollPerformance()
     registerServiceWorker()
 
-    console.log('🚀 Performance optimizations initialized')
   }
 
   // Run optimizations on mount

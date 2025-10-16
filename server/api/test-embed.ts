@@ -25,7 +25,6 @@ export default defineEventHandler(async (event) => {
   } catch (e) {
     return { error: 'Invalid URL format' }
   }
-  console.log(`🧪 Testing embed URL: ${url}`)
   
   try {
     const response = await axiosInstance.get(url, {
@@ -44,7 +43,6 @@ export default defineEventHandler(async (event) => {
     }
 
     const html = response.data
-    console.log(`📄 Response size: ${html.length} bytes`)
     
     // Extract all potential video patterns
     const patterns = {

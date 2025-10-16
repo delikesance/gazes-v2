@@ -11,10 +11,12 @@ const axiosInstance = axios.create({
 // Function to scrape episode titles from the main anime page on anime-sama
 async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, lang: string): Promise<Record<number, string>> {
     const titles: Record<number, string> = {}
+    const config = useRuntimeConfig()
+    const catalogueApiUrl = config.catalogueApiUrl as string
 
     try {
         // Try to fetch the main anime page first
-        const mainPageUrl = `https://179.43.149.218/catalogue/${encodeURIComponent(animeId)}/`
+        const mainPageUrl = `${catalogueApiUrl}/catalogue/${encodeURIComponent(animeId)}/`
         const mainPageRes = await axiosInstance.get(mainPageUrl, {
             headers: {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -77,7 +79,7 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
         }
 
         // Also try the specific season page URL for additional episode data
-        const seasonPageUrl = `https://179.43.149.218/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/`
+        const seasonPageUrl = `${catalogueApiUrl}/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/`
         const seasonPageRes = await axiosInstance.get(seasonPageUrl, {
             headers: {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -86,7 +88,7 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
         })
 
         if (seasonPageRes.status >= 200 && seasonPageRes.status < 300) {
-            const seasonPageHtml = await seasonPageRes.text()
+            const seasonPageHtml = seasonPageRes.data
             const seasonTitles = extractEpisodeTitles(seasonPageHtml)
 
             // Merge with existing titles, preferring longer/better titles
@@ -99,7 +101,7 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
         }
 
         // For films and special cases, also try the language-specific page where selectEpisodes might be located
-        const langPageUrl = `https://179.43.149.218/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`
+        const langPageUrl = `${catalogueApiUrl}/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`
         const langPageRes = await axiosInstance.get(langPageUrl, {
             headers: {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -335,12 +337,13 @@ function generateFallbackTitle(animeId: string, season: string, episodeNum: numb
 }
 
 export default defineEventHandler(async (event) => {
-    console.log('Route hit:', event.context.params)
     const { id, season, lang } = event.context.params as { id: string, season: string, lang: string }
     const query = getQuery(event)
     const debug = query.debug === 'true'
 
-    console.log('Parameters:', { id, season, lang })
+    const config = useRuntimeConfig()
+    const catalogueApiUrl = config.catalogueApiUrl as string
+
 
     if (!id || !season || !lang) {
         throw createError({
@@ -357,7 +360,7 @@ export default defineEventHandler(async (event) => {
 
     if (debug) console.info(`[episodes] Scraped ${Object.keys(episodeTitles).length} episode titles from anime-sama`)
     // First, try to fetch episode lists from the episodes.js file
-    const jsUrl = `https://179.43.149.218/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/episodes.js`
+    const jsUrl = `${catalogueApiUrl}/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/episodes.js`
     let sourceText = ''
 
     try {
@@ -383,7 +386,7 @@ export default defineEventHandler(async (event) => {
 
     // If episodes.js didn't work, try the main season page
     if (!sourceText) {
-        const seasonUrl = `https://179.43.149.218/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`
+        const seasonUrl = `${catalogueApiUrl}/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`
         try {
             const res = await axiosInstance.get(seasonUrl, {
                 headers: {
