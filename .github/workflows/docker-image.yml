@@ -29,6 +29,17 @@ jobs:
           driver-opts: |
             network=host
 
+      - name: Detect runner architecture
+        id: arch
+        run: |
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) ARCH=amd64 ;;
+            aarch64) ARCH=arm64 ;;
+            *) ARCH=$ARCH ;;
+          esac
+          echo "arch=$ARCH" >> $GITHUB_OUTPUT
+
       - name: Extract version from tag or commit
         id: meta
         run: |
@@ -55,12 +66,13 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          platforms: linux/amd64
+          # Do not force a single platform here; let buildx build for the runner's architecture by default.
+          # Use the detected architecture to separate cache refs per-arch.
           tags: |
             ghcr.io/${{ github.repository_owner }}/gazes-v2:${{ steps.meta.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/gazes-v2:latest
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/gazes-v2:cache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/gazes-v2:cache,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/gazes-v2:cache-${{ steps.arch.outputs.arch }}
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/gazes-v2:cache-${{ steps.arch.outputs.arch }},mode=max
 
   deploy:
     runs-on: self-hosted
