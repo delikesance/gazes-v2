@@ -2266,16 +2266,18 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
     @mousemove="handleMouseMove"
   >
     <!-- Top navigation overlay -->
-    <div
-      class="absolute top-0 left-0 right-0 z-20 transition-opacity duration-200"
-      :class="showControls ? 'opacity-100' : 'opacity-0'"
-    >
+    <div class="absolute top-0 left-0 right-0 z-20">
       <div class="bg-gradient-to-b from-black/80 via-black/40 to-transparent p-4 md:p-6">
         <div class="flex items-center justify-between text-white">
           <div class="flex items-center gap-4">
             <NuxtLink :to="`/anime/${id}`" class="flex items-center gap-2 hover:text-zinc-300 transition-colors">
               <Icon name="heroicons:arrow-left" class="w-5 h-5" />
               <span class="text-sm font-medium">Retour</span>
+            </NuxtLink>
+            <div class="h-5 w-px bg-white/30"></div>
+            <NuxtLink to="/" class="flex items-center gap-2 hover:text-zinc-300 transition-colors">
+              <Icon name="heroicons:home" class="w-5 h-5" />
+              <span class="text-sm font-medium">Accueil</span>
             </NuxtLink>
             <div class="h-5 w-px bg-white/30"></div>
             <div class="flex flex-col">
