@@ -1,23 +1,29 @@
 import { preferNonBlacklisted, isBlacklisted, hostnameOf } from '~/shared/utils/hosts'
 import { defineEventHandler, getQuery, createError } from 'h3'
+import axios from 'axios'
+import https from 'https'
+
+const axiosInstance = axios.create({
+  httpsAgent: new https.Agent({
+    rejectUnauthorized: false
+  })
+})
 // Function to scrape episode titles from the main anime page on anime-sama
 async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, lang: string): Promise<Record<number, string>> {
     const titles: Record<number, string> = {}
 
     try {
         // Try to fetch the main anime page first
-        const mainPageUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(animeId)}/`
-        const mainPageRes = await fetch(mainPageUrl, {
+        const mainPageUrl = `https://179.43.149.218/catalogue/${encodeURIComponent(animeId)}/`
+        const mainPageRes = await axiosInstance.get(mainPageUrl, {
             headers: {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-            },
-            redirect: 'follow',
-            referrerPolicy: 'strict-origin-when-cross-origin',
+            }
         })
 
-        if (mainPageRes.ok) {
-            const mainPageHtml = await mainPageRes.text()
+        if (mainPageRes.status >= 200 && mainPageRes.status < 300) {
+            const mainPageHtml = mainPageRes.data
 
             // Look for episode lists in the main page - anime-sama sometimes has episode lists with real titles
             const episodeListPatterns = [
@@ -71,17 +77,15 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
         }
 
         // Also try the specific season page URL for additional episode data
-        const seasonPageUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/`
-        const seasonPageRes = await fetch(seasonPageUrl, {
+        const seasonPageUrl = `https://179.43.149.218/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/`
+        const seasonPageRes = await axiosInstance.get(seasonPageUrl, {
             headers: {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-            },
-            redirect: 'follow',
-            referrerPolicy: 'strict-origin-when-cross-origin',
+            }
         })
 
-        if (seasonPageRes.ok) {
+        if (seasonPageRes.status >= 200 && seasonPageRes.status < 300) {
             const seasonPageHtml = await seasonPageRes.text()
             const seasonTitles = extractEpisodeTitles(seasonPageHtml)
 
@@ -95,18 +99,16 @@ async function scrapeEpisodeTitlesFromMainPage(animeId: string, season: string, 
         }
 
         // For films and special cases, also try the language-specific page where selectEpisodes might be located
-        const langPageUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`
-        const langPageRes = await fetch(langPageUrl, {
+        const langPageUrl = `https://179.43.149.218/catalogue/${encodeURIComponent(animeId)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`
+        const langPageRes = await axiosInstance.get(langPageUrl, {
             headers: {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-            },
-            redirect: 'follow',
-            referrerPolicy: 'strict-origin-when-cross-origin',
+            }
         })
 
-        if (langPageRes.ok) {
-            const langPageHtml = await langPageRes.text()
+        if (langPageRes.status >= 200 && langPageRes.status < 300) {
+            const langPageHtml = langPageRes.data
             const langTitles = extractEpisodeTitles(langPageHtml)
 
             // Merge with existing titles, preferring longer/better titles
@@ -355,22 +357,20 @@ export default defineEventHandler(async (event) => {
 
     if (debug) console.info(`[episodes] Scraped ${Object.keys(episodeTitles).length} episode titles from anime-sama`)
     // First, try to fetch episode lists from the episodes.js file
-    const jsUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/episodes.js`
+    const jsUrl = `https://179.43.149.218/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/episodes.js`
     let sourceText = ''
 
     try {
-        const jsRes = await fetch(jsUrl, {
+        const jsRes = await axiosInstance.get(jsUrl, {
             headers: {
                 'Accept': '*/*',
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
             },
-            redirect: 'follow',
-            referrerPolicy: 'strict-origin-when-cross-origin',
-            signal: AbortSignal.timeout(10000), // 10 second timeout
+            timeout: 10000
         })
 
-        if (jsRes.ok) {
-            const jsText = await jsRes.text()
+        if (jsRes.status >= 200 && jsRes.status < 300) {
+            const jsText = jsRes.data
             if (jsText && jsText.trim()) {
                 sourceText = jsText
                 dbg.source = jsUrl
@@ -383,19 +383,17 @@ export default defineEventHandler(async (event) => {
 
     // If episodes.js didn't work, try the main season page
     if (!sourceText) {
-        const seasonUrl = `https://anime-sama.fr/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`
+        const seasonUrl = `https://179.43.149.218/catalogue/${encodeURIComponent(id)}/${encodeURIComponent(season)}/${encodeURIComponent(lang)}/`
         try {
-            const res = await fetch(seasonUrl, {
+            const res = await axiosInstance.get(seasonUrl, {
                 headers: {
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-                },
-                redirect: 'follow',
-                referrerPolicy: 'strict-origin-when-cross-origin',
+                }
             })
 
-            if (res.ok) {
-                sourceText = await res.text()
+            if (res.status >= 200 && res.status < 300) {
+                sourceText = res.data
                 dbg.source = seasonUrl
                 dbg.length = sourceText.length
             }

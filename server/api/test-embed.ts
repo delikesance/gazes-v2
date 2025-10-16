@@ -1,3 +1,12 @@
+import axios from 'axios'
+import https from 'https'
+
+const axiosInstance = axios.create({
+  httpsAgent: new https.Agent({
+    rejectUnauthorized: false
+  })
+})
+
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const url = query.url as string
@@ -19,22 +28,22 @@ export default defineEventHandler(async (event) => {
   console.log(`🧪 Testing embed URL: ${url}`)
   
   try {
-    const response = await fetch(url, {
+    const response = await axiosInstance.get(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-        'Referer': 'https://anime-sama.fr/'
+        'Referer': 'https://179.43.149.218/'
       },
-      signal: AbortSignal.timeout(10000)
+      timeout: 10000
     })
     
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       return {
         error: `HTTP ${response.status}: ${response.statusText}`,
         url
       }
     }
-    
-    const html = await response.text()
+
+    const html = response.data
     console.log(`📄 Response size: ${html.length} bytes`)
     
     // Extract all potential video patterns

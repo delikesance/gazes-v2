@@ -123,7 +123,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Handle external anime-sama.fr images
-  if (url.origin === 'https://anime-sama.fr' && request.destination === 'image') {
+  if (url.origin === 'https://179.43.149.218' && request.destination === 'image') {
     event.respondWith(CACHE_STRATEGIES.cacheFirst(request))
     return
   }

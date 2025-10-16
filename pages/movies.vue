@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import CarouselRow from '~/components/CarouselRow.vue'
-import HeroBanner from '~/components/HeroBanner.vue'
+import { ref, computed, defineAsyncComponent } from 'vue'
+const CarouselRow = defineAsyncComponent(() => import('~/components/CarouselRow.vue'))
+const HeroBanner = defineAsyncComponent(() => import('~/components/HeroBanner.vue'))
 
 // Set page metadata
 useSeoMeta({

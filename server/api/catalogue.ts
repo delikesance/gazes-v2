@@ -1,6 +1,14 @@
  import { parseCataloguePage } from '#shared/utils/parsers'
  import { parseAnimeResults } from '#shared/utils/parsers'
  import { cachedApiCall, generateCatalogueCacheKey, generateSearchCacheKey, REDIS_CACHE_TTL } from '~/server/utils/redis-cache'
+ import axios from 'axios'
+ import https from 'https'
+
+ const axiosInstance = axios.create({
+   httpsAgent: new https.Agent({
+     rejectUnauthorized: false
+   })
+ })
 
  export default defineEventHandler(async (event) => {
   const q = getQuery(event)
@@ -54,7 +62,7 @@ async function performCatalogueSearch({
     try {
       // Read configuration from runtime config with sensible defaults
       const config = useRuntimeConfig()
-      const searchApiUrl = config.searchApiUrl || "https://anime-sama.fr/template-php/defaut/fetch.php"
+      const searchApiUrl = config.searchApiUrl || "https://179.43.149.218/template-php/defaut/fetch.php"
       const timeoutMs = parseInt(config.searchApiTimeoutMs || "10000", 10)
 
       // Create AbortController for timeout
@@ -64,8 +72,7 @@ async function performCatalogueSearch({
       }, timeoutMs)
 
       try {
-        const searchResponse = await fetch(searchApiUrl, {
-          method: "POST",
+        const searchResponse = await axiosInstance.post(searchApiUrl, "query=" + encodeURIComponent(search), {
           headers: {
             "Accept": "*/*",
             "Accept-Language": "en-US,en;q=0.9",
@@ -74,16 +81,13 @@ async function performCatalogueSearch({
              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "X-Requested-With": "XMLHttpRequest"
           },
-          body: "query=" + encodeURIComponent(search),
-          mode: "cors",
-          redirect: "follow",
-          signal: controller.signal
+          timeout: timeoutMs
         });
 
         // Clear timeout on successful response
         clearTimeout(timeoutId)
 
-        const searchHtml = await searchResponse.text()
+        const searchHtml = searchResponse.data
         const searchResults = parseAnimeResults(searchHtml)
 
         // Convert search results to catalogue format and filter out mangas
@@ -166,9 +170,9 @@ async function performCatalogueSearch({
    const config = useRuntimeConfig()
    const catalogueTimeoutMs = parseInt(config.catalogueTimeoutMs || "15000", 10)
 
-   // Per requirement, request must be: https://anime-sama.fr/catalogue/?genre[]=Action&search=
+   // Per requirement, request must be: https://179.43.149.218/catalogue/?genre[]=Action&search=
    const candidates = [
-     { base: 'https://anime-sama.fr/catalogue/', genreKey: paramKeys.genreKey, categorieKey: paramKeys.categorieKey, referer: 'https://anime-sama.fr/catalogue/' },
+     { base: 'https://179.43.149.218/catalogue/', genreKey: paramKeys.genreKey, categorieKey: paramKeys.categorieKey, referer: 'https://179.43.149.218/catalogue/' },
    ]
 
    const tried: Array<{ url: string; status: number; count: number }> = []
@@ -183,8 +187,7 @@ async function performCatalogueSearch({
           controller.abort()
         }, catalogueTimeoutMs)
 
-        const res = await fetch(url.toString(), {
-          method: 'GET',
+        const res = await axiosInstance.get(url.toString(), {
           headers: {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
@@ -192,14 +195,13 @@ async function performCatalogueSearch({
             'Referer': c.referer,
             'Upgrade-Insecure-Requests': '1'
           },
-          redirect: 'follow',
-          signal: controller.signal
+          timeout: catalogueTimeoutMs
         })
 
         // Clear timeout on successful response
         clearTimeout(timeoutId)
 
-        const html = await res.text()
+        const html = res.data
         const items = parseCataloguePage(html)
         // Filter out mangas (Scans) after parsing
         const filteredItems = items.filter(item => item.type !== 'Scans')
@@ -225,8 +227,7 @@ async function performCatalogueSearch({
             controller2.abort()
           }, catalogueTimeoutMs)
 
-          const res2 = await fetch(searchUrl.toString(), {
-            method: 'GET',
+          const res2 = await axiosInstance.get(searchUrl.toString(), {
             headers: {
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
               'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
@@ -234,14 +235,13 @@ async function performCatalogueSearch({
               'Referer': c.referer,
               'Upgrade-Insecure-Requests': '1'
             },
-            redirect: 'follow',
-            signal: controller2.signal
+            timeout: catalogueTimeoutMs
           })
 
           // Clear timeout on successful response
           clearTimeout(timeoutId2)
 
-          const html2 = await res2.text()
+          const html2 = res2.data
           const items2 = parseCataloguePage(html2)
           const filteredItems2 = items2.filter(item => item.type !== 'Scans')
           const fallbackData = { items: filteredItems2, status: res2.status }

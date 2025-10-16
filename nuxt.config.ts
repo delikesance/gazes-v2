@@ -19,7 +19,7 @@ export default defineNuxtConfig({
   // Runtime configuration for environment variables
   runtimeConfig: {
     // Server-side configuration (private keys) - these will be overridden by env vars
-    searchApiUrl: "https://anime-sama.fr/template-php/defaut/fetch.php",
+    searchApiUrl: "https://179.43.149.218/template-php/defaut/fetch.php",
     searchApiTimeoutMs: "10000",
     catalogueTimeoutMs: "15000",
     // JWT configuration
@@ -189,7 +189,7 @@ export default defineNuxtConfig({
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
         // DNS prefetch for external resources
-        { rel: 'dns-prefetch', href: 'https://anime-sama.fr' },
+        { rel: 'dns-prefetch', href: 'https://179.43.149.218' },
         { rel: 'dns-prefetch', href: 'https://video.sibnet.ru' }
       ]
     }

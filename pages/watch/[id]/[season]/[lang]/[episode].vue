@@ -100,6 +100,8 @@ const notice = ref('')
 const videoRef = ref<HTMLVideoElement | null>(null)
 const videoError = ref('')
 const videoLoading = ref(false)
+const isBuffering = ref(false)
+const bufferProgress = ref(0)
 
 // Video player state
 const currentTime = ref(0)
@@ -114,6 +116,18 @@ const isSeeking = ref(false)
 const isDragging = ref(false)
 const controlsTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
 const wasPlayingBeforeSeek = ref(false)
+const playbackSpeed = ref(1)
+const showSpeedDropdown = ref(false)
+const isPictureInPicture = ref(false)
+const showQualityDropdown = ref(false)
+const autoPlayNext = ref(true) // Enable/disable auto-play next episode
+const showNextEpisodeOverlay = ref(false)
+const nextEpisodeCountdown = ref(10) // 10 second countdown
+const nextEpisodeTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
+
+// Mobile touch state
+const touchSeekOverlay = ref(false)
+const touchSeekTime = ref(0)
 
 // Volume localStorage functions
 const VOLUME_STORAGE_KEY = 'gazes-player-volume'
@@ -162,6 +176,9 @@ let progressAnimationFrame: number | null = null
 let lastProgressUpdate = 0
 const PROGRESS_UPDATE_THROTTLE = 100 // Update at most every 100ms
 
+// Buffer progress tracking
+let bufferAnimationFrame: number | null = null
+
 function updateProgressSmoothly() {
   const now = Date.now()
   if (now - lastProgressUpdate < PROGRESS_UPDATE_THROTTLE) {
@@ -198,6 +215,29 @@ function stopProgressUpdates() {
   if (progressAnimationFrame) {
     cancelAnimationFrame(progressAnimationFrame)
     progressAnimationFrame = null
+  }
+}
+
+function updateBufferProgress() {
+  const el = videoRef.value
+  if (el && el.buffered.length > 0 && duration.value > 0) {
+    const bufferedEnd = el.buffered.end(el.buffered.length - 1)
+    bufferProgress.value = Math.min(100, (bufferedEnd / duration.value) * 100)
+  }
+  bufferAnimationFrame = requestAnimationFrame(updateBufferProgress)
+}
+
+function startBufferUpdates() {
+  if (bufferAnimationFrame) {
+    cancelAnimationFrame(bufferAnimationFrame)
+  }
+  updateBufferProgress()
+}
+
+function stopBufferUpdates() {
+  if (bufferAnimationFrame) {
+    cancelAnimationFrame(bufferAnimationFrame)
+    bufferAnimationFrame = null
   }
 }
 
@@ -297,11 +337,17 @@ const formattedSeasonDisplay = computed(() => formatSeasonDisplay(season.value))
 // Computed for formatted episode display
 const formattedEpisodeDisplay = computed(() => `Épisode ${episodeNum.value.toString().padStart(2, '0')}`)
 
+// Computed for picture-in-picture support
+const pictureInPictureEnabled = computed(() => {
+  if (typeof document === 'undefined') return false
+  return document.pictureInPictureEnabled
+})
+
 // Anime and episode metadata
 const animeTitle = ref('')
 const currentEpisodeTitle = ref('')
 
-// Dynamic language flags from anime-sama.fr
+// Dynamic language flags from 179.43.149.218
 const dynamicLanguageFlags = ref<Record<string, string>>({})
 
 // Skip functionality state
@@ -542,6 +588,23 @@ function handleVideoClick(event: MouseEvent) {
   togglePlay()
 }
 
+function handleVideoDoubleClick() {
+  // Double tap to seek forward 10 seconds (like YouTube)
+  seekBy(10)
+  showSeekFeedback('forward', 10)
+}
+
+function showSeekFeedback(direction: 'forward' | 'backward', seconds: number) {
+  touchSeekOverlay.value = true
+  touchSeekTime.value = seconds
+  setTimeout(() => {
+    touchSeekOverlay.value = false
+  }, 1000)
+}
+
+// Screenshot functionality
+
+
 function seek(time: number) {
   // Prevent rapid seeking that can cause audio desynchronization
   if (isSeeking.value) {
@@ -594,8 +657,10 @@ function toggleMute() {
 }
 
 function setVolume(newVolume: number) {
+  const clampedVolume = Math.max(0, Math.min(1, newVolume))
+
   if (player) {
-    player.volume(Math.max(0, Math.min(1, newVolume)))
+    player.volume(clampedVolume)
     volume.value = player.volume()
     if (player.volume() > 0) {
       player.muted(false)
@@ -604,7 +669,7 @@ function setVolume(newVolume: number) {
   } else {
     const el = videoRef.value
     if (!el) return
-    el.volume = Math.max(0, Math.min(1, newVolume))
+    el.volume = clampedVolume
     volume.value = el.volume
     if (el.volume > 0) {
       el.muted = false
@@ -612,6 +677,122 @@ function setVolume(newVolume: number) {
     }
   }
   saveVolumeSettings()
+}
+
+// Playback speed functions
+const speedOptions = [0.5, 0.75, 1, 1.25, 1.5, 2]
+
+function setPlaybackSpeed(speed: number) {
+  playbackSpeed.value = speed
+  if (player) {
+    player.playbackRate(speed)
+  } else {
+    const el = videoRef.value
+    if (el) {
+      el.playbackRate = speed
+    }
+  }
+  showControlsTemporarily()
+}
+
+function cyclePlaybackSpeed() {
+  const currentIndex = speedOptions.indexOf(playbackSpeed.value)
+  const nextIndex = (currentIndex + 1) % speedOptions.length
+  setPlaybackSpeed(speedOptions[nextIndex]!)
+}
+
+function toggleSpeedDropdown() {
+  showSpeedDropdown.value = !showSpeedDropdown.value
+}
+
+function closeSpeedDropdown() {
+  showSpeedDropdown.value = false
+}
+
+// Picture-in-Picture functions
+function togglePictureInPicture() {
+  if (typeof document === 'undefined' || !document.pictureInPictureEnabled) {
+    console.warn('Picture-in-Picture not supported')
+    return
+  }
+
+  const videoElement = player ? player.el() : videoRef.value
+  if (!videoElement) return
+
+  if (document.pictureInPictureElement) {
+    document.exitPictureInPicture()
+  } else {
+    videoElement.requestPictureInPicture().catch((err: any) => {
+      console.error('Failed to enter Picture-in-Picture:', err)
+    })
+  }
+  showControlsTemporarily()
+}
+
+function handlePictureInPictureChange() {
+  if (typeof document !== 'undefined') {
+    isPictureInPicture.value = !!document.pictureInPictureElement
+  }
+}
+
+
+
+// Quality selector functions
+function toggleQualityDropdown() {
+  showQualityDropdown.value = !showQualityDropdown.value
+}
+
+function closeQualityDropdown() {
+  showQualityDropdown.value = false
+}
+
+function selectQuality(source: { type: string; url: string; proxiedUrl: string; quality?: string }) {
+  switchToSource(source)
+  showQualityDropdown.value = false
+  showControlsTemporarily()
+}
+
+// Auto-play next episode functions
+function startNextEpisodeCountdown() {
+  if (!autoPlayNext.value) return
+
+  // Check if there's a next episode
+  const currentEpisodeIndex = episodesList.value.findIndex(ep => ep.episode === episodeNum.value)
+  if (currentEpisodeIndex === -1 || currentEpisodeIndex >= episodesList.value.length - 1) return
+
+  showNextEpisodeOverlay.value = true
+  nextEpisodeCountdown.value = 10
+
+  nextEpisodeTimeout.value = setInterval(() => {
+    nextEpisodeCountdown.value--
+    if (nextEpisodeCountdown.value <= 0) {
+      playNextEpisode()
+    }
+  }, 1000)
+}
+
+function cancelNextEpisodeCountdown() {
+  if (nextEpisodeTimeout.value) {
+    clearInterval(nextEpisodeTimeout.value)
+    nextEpisodeTimeout.value = null
+  }
+  showNextEpisodeOverlay.value = false
+  nextEpisodeCountdown.value = 10
+}
+
+function playNextEpisode() {
+  cancelNextEpisodeCountdown()
+  const currentEpisodeIndex = episodesList.value.findIndex(ep => ep.episode === episodeNum.value)
+  if (currentEpisodeIndex !== -1 && currentEpisodeIndex < episodesList.value.length - 1) {
+    const nextEpisode = episodesList.value[currentEpisodeIndex + 1]
+    if (nextEpisode) {
+      selectEpisode(nextEpisode.episode)
+    }
+  }
+}
+
+function toggleAutoPlayNext() {
+  autoPlayNext.value = !autoPlayNext.value
 }
 
 function toggleFullscreen() {
@@ -736,19 +917,39 @@ function handleKeyPress(event: KeyboardEvent) {
       event.preventDefault()
       toggleEpisodesPanel()
       break
-    case 'l':
-    case 'L':
-      event.preventDefault()
-      if (languageOptions.value.length > 1) {
-        const currentIndex = languageOptions.value.findIndex(opt => opt.code === lang.value)
-        const nextIndex = (currentIndex + 1) % languageOptions.value.length
-        const nextOption = languageOptions.value[nextIndex]
-        if (nextOption) {
-          switchLanguage(nextOption.code as any)
-        }
-      }
-      break
-    case 'Escape':
+     case 'l':
+     case 'L':
+       event.preventDefault()
+       if (languageOptions.value.length > 1) {
+         const currentIndex = languageOptions.value.findIndex(opt => opt.code === lang.value)
+         const nextIndex = (currentIndex + 1) % languageOptions.value.length
+         const nextOption = languageOptions.value[nextIndex]
+         if (nextOption) {
+           switchLanguage(nextOption.code as any)
+         }
+       }
+       break
+     case '<':
+     case ',':
+       event.preventDefault()
+       cyclePlaybackSpeed()
+       break
+     case '>':
+     case '.':
+       event.preventDefault()
+       // Cycle backwards
+       const currentIndex = speedOptions.indexOf(playbackSpeed.value)
+       const prevIndex = currentIndex === 0 ? speedOptions.length - 1 : currentIndex - 1
+       setPlaybackSpeed(speedOptions[prevIndex]!)
+       break
+     case 'p':
+     case 'P':
+       event.preventDefault()
+       togglePictureInPicture()
+       break
+
+
+     case 'Escape':
       event.preventDefault()
       if (showEpisodes.value) {
         showEpisodes.value = false
@@ -761,21 +962,24 @@ function handleKeyPress(event: KeyboardEvent) {
 }
 
 // --- Stable handler references for video events ---
-function onVideoPlay() { 
+function onVideoPlay() {
   console.log('Video play event - clearing loading state and autoplay error')
   isPlaying.value = true
+  isBuffering.value = false
   videoLoading.value = false // Clear loading when video actually starts
   if (videoError.value && videoError.value.includes('Cliquez')) {
     videoError.value = '' // Clear autoplay error when video starts
   }
   startProgressUpdates() // Start smooth progress updates
+  startBufferUpdates() // Start buffer progress updates
   startProgressSaving() // Start automatic progress saving
   showControlsTemporarily()
   updateCursorVisibility()
 }
-function onVideoPause() { 
+function onVideoPause() {
   isPlaying.value = false
   stopProgressUpdates() // Stop smooth progress updates
+  stopBufferUpdates() // Stop buffer progress updates
   stopProgressSaving() // Stop automatic progress saving
   // Save progress immediately when paused
   if (duration.value > 0) {
@@ -815,22 +1019,32 @@ function onVideoSeeked() {
   videoLoading.value = false
   handleVideoError(error, 'native')
 }
-function onVideoEnded() { 
-  isPlaying.value = false
-  showControls.value = true
-  // Mark episode as completed when it actually ends
-  if (duration.value > 0) {
-    console.log('🎬 Episode ended, marking as completed')
-    saveProgress(duration.value, duration.value) // This will mark it as completed
-  }
-}
+ function onVideoEnded() {
+   isPlaying.value = false
+   showControls.value = true
+   // Mark episode as completed when it actually ends
+   if (duration.value > 0) {
+     console.log('🎬 Episode ended, marking as completed')
+     saveProgress(duration.value, duration.value) // This will mark it as completed
+   }
+
+   // Start auto-play countdown for next episode
+   startNextEpisodeCountdown()
+ }
 // --- Stable handler references for Hls events ---
 let hlsErrorHandler: ((event: string, data: any) => void) | null = null
 let hlsManifestParsedHandler: (() => void) | null = null
 
 // --- Stable handler references for global events ---
 function handleFullscreenChange() {
+  const wasFullscreen = isFullscreen.value
   isFullscreen.value = !!document.fullscreenElement
+
+  // When exiting fullscreen, show controls temporarily
+  if (wasFullscreen && !isFullscreen.value) {
+    showControlsTemporarily()
+  }
+
   updateCursorVisibility()
 }
 
@@ -907,6 +1121,8 @@ function handleLoadedMetadata() {
     if (isMuted.value !== undefined) {
       player.muted(isMuted.value)
     }
+    // Apply playback speed
+    player.playbackRate(playbackSpeed.value)
     // Update reactive refs to match player state
     volume.value = player.volume()
     isMuted.value = player.muted()
@@ -922,6 +1138,8 @@ function handleLoadedMetadata() {
     if (isMuted.value !== undefined) {
       el.muted = isMuted.value
     }
+    // Apply playback speed
+    el.playbackRate = playbackSpeed.value
     // Update reactive refs to match element state
     volume.value = el.volume
     isMuted.value = el.muted
@@ -1196,15 +1414,23 @@ async function setupVideo() {
         videoLoading.value = false
       })
 
-      player.on('waiting', () => {
-        console.log('Video.js waiting')
-        videoLoading.value = true
-      })
+       player.on('waiting', () => {
+         console.log('Video.js waiting')
+         isBuffering.value = true
+         videoLoading.value = true
+       })
 
-      player.on('playing', () => {
-        console.log('Video.js playing')
-        videoLoading.value = false
-      })
+       player.on('playing', () => {
+         console.log('Video.js playing')
+         isBuffering.value = false
+         videoLoading.value = false
+       })
+
+       player.on('canplay', () => {
+         console.log('Video.js canplay')
+         isBuffering.value = false
+         videoLoading.value = false
+       })
 
       // Apply volume settings to Video.js player
       player.volume(volume.value)
@@ -1544,9 +1770,13 @@ onBeforeUnmount(() => {
   document.body.style.cursor = 'default'
 
   // Remove global event listeners to prevent memory leaks
-  document.removeEventListener('keydown', handleKeyPress)
-  document.removeEventListener('fullscreenchange', handleFullscreenChange)
-  document.removeEventListener('click', closeLanguageDropdown)
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('keydown', handleKeyPress)
+    document.removeEventListener('fullscreenchange', handleFullscreenChange)
+    document.removeEventListener('enterpictureinpicture', handlePictureInPictureChange)
+    document.removeEventListener('leavepictureinpicture', handlePictureInPictureChange)
+    document.removeEventListener('click', closeLanguageDropdown)
+  }
 })
 
 async function fetchEpisodesFor(targetLang: 'vostfr' | 'vf' | 'va' | 'var' | 'vkr' | 'vcn' | 'vqc' | 'vf1' | 'vf2' | 'vj', maxRetries: number = 2): Promise<Array<{ episode: number; title?: string; url: string; urls?: string[] }>> {
@@ -1933,11 +2163,17 @@ async function resolveEpisodeInBackground(animeId: string, season: string, lang:
   // setupVideo() will be called automatically by the watch when playUrl is set
   
   // Global event listeners
-  document.addEventListener('keydown', handleKeyPress)
-  document.addEventListener('fullscreenchange', () => {
-    isFullscreen.value = !!document.fullscreenElement
-  })
-  document.addEventListener('click', closeLanguageDropdown)
+  if (typeof document !== 'undefined') {
+    document.addEventListener('keydown', handleKeyPress)
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('enterpictureinpicture', handlePictureInPictureChange)
+    document.addEventListener('leavepictureinpicture', handlePictureInPictureChange)
+    document.addEventListener('click', () => {
+      closeLanguageDropdown()
+      closeSpeedDropdown()
+      closeQualityDropdown()
+    })
+  }
   
   // Save progress before unloading the page
   const handleBeforeUnload = () => {
@@ -2001,10 +2237,13 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
 
 <template>
   <!-- Full viewport video player like Netflix with custom controls -->
-  <div class="fixed inset-0 bg-black z-50 flex flex-col h-screen overflow-hidden" @mousemove="handleMouseMove">
+  <div
+    class="fixed inset-0 bg-black z-50 flex flex-col h-screen overflow-hidden"
+    @mousemove="handleMouseMove"
+  >
     <!-- Top navigation overlay -->
-    <div 
-      class="absolute top-0 left-0 right-0 z-20 transition-opacity duration-300"
+    <div
+      class="absolute top-0 left-0 right-0 z-20 transition-opacity duration-200"
       :class="showControls ? 'opacity-100' : 'opacity-0'"
     >
       <div class="bg-gradient-to-b from-black/80 via-black/40 to-transparent p-4 md:p-6">
@@ -2043,8 +2282,9 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
       <!-- Loading state -->
       <div v-if="resolving" class="absolute inset-0 flex items-center justify-center text-white">
         <div class="flex flex-col items-center justify-center text-white">
-          <div class="w-16 h-16 border-2 border-white/20 border-t-white rounded-full animate-spin mb-4 mx-auto"></div>
-          <p class="text-lg font-medium text-center">Chargement de l'épisode</p>
+          <div class="w-16 h-16 border-2 border-white/20 border-t-violet-500 rounded-full animate-spin mb-4 mx-auto"></div>
+          <p class="text-lg font-medium text-center">Recherche de sources vidéo...</p>
+          <p class="text-sm text-zinc-400 mt-2">Cela peut prendre quelques secondes</p>
         </div>
       </div>
       
@@ -2052,11 +2292,27 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
       <div v-else-if="resolveError" class="absolute inset-0 flex items-center justify-center text-white">
         <div class="text-center max-w-md px-6">
           <Icon name="heroicons:exclamation-triangle" class="w-16 h-16 mx-auto mb-4 text-red-400" />
-          <h3 class="text-xl font-semibold mb-2">Impossible de charger l'épisode</h3>
-          <p class="text-zinc-300 mb-6">{{ resolveError }}</p>
-          <button @click="resolveEpisode" class="bg-white text-black px-6 py-3 rounded-lg font-medium hover:bg-zinc-200 transition-colors">
-            Réessayer
-          </button>
+          <h3 class="text-xl font-semibold mb-2">Épisode non disponible</h3>
+          <p class="text-zinc-300 mb-4">Impossible de trouver des sources pour cet épisode.</p>
+          <div class="text-sm text-zinc-400 mb-6">
+            <p>Solutions possibles :</p>
+            <ul class="text-left mt-2 space-y-1">
+              <li>• Essayer une autre langue</li>
+              <li>• Vérifier plus tard (sources peuvent être ajoutées)</li>
+              <li>• Vérifier votre connexion internet</li>
+            </ul>
+          </div>
+          <div class="flex flex-wrap gap-2 justify-center">
+            <button @click="resolveEpisode" class="bg-violet-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-violet-700 transition-colors">
+              Réessayer
+            </button>
+            <button v-if="availableLanguages.vf" @click="switchLanguage('vf')" class="bg-zinc-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-zinc-600 transition-colors">
+              Version Française
+            </button>
+            <button v-if="availableLanguages.vostfr" @click="switchLanguage('vostfr')" class="bg-zinc-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-zinc-600 transition-colors">
+              VOSTFR
+            </button>
+          </div>
         </div>
       </div>
       
@@ -2065,10 +2321,28 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
         <!-- Video loading overlay -->
         <div v-if="videoLoading" class="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-30">
           <div class="flex flex-col items-center justify-center text-white">
-            <!-- Simple rotating circle -->
-            <div class="w-16 h-16 border-2 border-white/20 border-t-white rounded-full animate-spin mb-4 mx-auto"></div>
+            <!-- Buffering indicator -->
+            <div v-if="isBuffering" class="mb-4">
+              <div class="w-16 h-16 border-4 border-violet-600/30 border-t-violet-600 rounded-full animate-spin mb-4 mx-auto"></div>
+              <div class="w-32 h-2 bg-white/20 rounded-full overflow-hidden">
+                <div
+                  class="h-full bg-violet-600 transition-all duration-300"
+                  :style="{ width: bufferProgress + '%' }"
+                ></div>
+              </div>
+            </div>
+            <!-- Regular loading -->
+            <div v-else class="w-16 h-16 border-2 border-white/20 border-t-white rounded-full animate-spin mb-4 mx-auto"></div>
             <!-- Loading text -->
-            <p class="text-lg font-medium text-center">Chargement de la vidéo</p>
+            <p class="text-lg font-medium text-center">
+              {{ isBuffering ? 'Chargement en cours...' : 'Préparation de la vidéo...' }}
+            </p>
+            <p v-if="isBuffering" class="text-sm text-zinc-400 mt-2">
+              {{ Math.round(bufferProgress) }}% mis en buffer
+            </p>
+            <p v-else class="text-sm text-zinc-400 mt-2">
+              Connexion à la source vidéo...
+            </p>
           </div>
         </div>
         
@@ -2079,7 +2353,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
           preload="metadata"
           autoplay
           @click="handleVideoClick"
-          @dblclick="toggleFullscreen"
+          @dblclick="handleVideoDoubleClick"
         >
           Votre navigateur ne supporte pas la lecture vidéo. Veuillez utiliser un navigateur moderne.
         </video>
@@ -2155,10 +2429,11 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
         </div>
         
         <!-- Custom Controls Overlay - Fixed to bottom with proper spacing -->
-        <div 
-          class="absolute bottom-0 left-0 right-0 transition-opacity duration-300 pointer-events-none z-20"
+        <div
+          class="absolute bottom-0 left-0 right-0 transition-opacity duration-200 pointer-events-none z-20"
           :class="showControls ? 'opacity-100' : 'opacity-0'"
           @click.stop
+          @mouseenter="showControlsTemporarily"
         >
           <!-- Bottom controls container -->
           <div class="bg-gradient-to-t from-black/90 via-black/60 to-transparent px-4 pb-4 pt-8 md:px-6 md:pb-6 pointer-events-auto">
@@ -2202,40 +2477,40 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
             
             <!-- Control buttons and info -->
             <div class="flex items-center justify-between text-white">
-              <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2 md:gap-3">
                 <!-- Play/Pause -->
-                <button @click="togglePlay" class="p-2 hover:bg-white/10 rounded-full transition-colors">
-                  <Icon :name="isPlaying ? 'heroicons:pause' : 'heroicons:play'" class="w-6 h-6" />
+                <button @click="togglePlay" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation">
+                  <Icon :name="isPlaying ? 'heroicons:pause' : 'heroicons:play'" class="w-6 h-6 md:w-6 md:h-6" />
                 </button>
-                
+
                 <!-- Skip back/forward -->
-                <button @click="seekBy(-10)" class="p-2 hover:bg-white/10 rounded-full transition-colors" title="Reculer 10s">
-                  <Icon name="heroicons:backward" class="w-5 h-5" />
+                <button @click="seekBy(-10)" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation" title="Reculer 10s">
+                  <Icon name="heroicons:backward" class="w-5 h-5 md:w-5 md:h-5" />
                 </button>
-                <button @click="seekBy(10)" class="p-2 hover:bg-white/10 rounded-full transition-colors" title="Avancer 10s">
-                  <Icon name="heroicons:forward" class="w-5 h-5" />
+                <button @click="seekBy(10)" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation" title="Avancer 10s">
+                  <Icon name="heroicons:forward" class="w-5 h-5 md:w-5 md:h-5" />
                 </button>
-                
+
                 <!-- Volume control -->
-                <button @click="toggleMute" class="p-2 hover:bg-white/10 rounded-full transition-colors">
-                  <Icon 
+                <button @click="toggleMute" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation">
+                  <Icon
                     :name="isMuted ? 'heroicons:speaker-x-mark' : 'heroicons:speaker-wave'"
-                    class="w-5 h-5" 
+                    class="w-5 h-5 md:w-5 md:h-5"
                   />
                 </button>
-                <div class="w-16 h-1 bg-white/20 rounded-full relative group">
+                <div class="w-16 md:w-16 h-2 md:h-1 bg-white/20 rounded-full relative group">
                   <div class="h-full bg-violet-600 rounded-full" :style="{ width: (volume * 100) + '%' }"></div>
                   <!-- Volume handle dot -->
-                  <div 
-                    class="absolute top-1/2 transform -translate-y-1/2 w-3 h-3 bg-violet-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 border border-white/50"
-                    :style="{ left: (volume * 100) + '%', marginLeft: '-6px' }"
+                  <div
+                    class="absolute top-1/2 transform -translate-y-1/2 w-4 h-4 md:w-3 md:h-3 bg-violet-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 border border-white/50"
+                    :style="{ left: (volume * 100) + '%', marginLeft: '-8px md:-6px' }"
                   ></div>
-                  <input 
-                    type="range" 
-                    min="0" 
-                    max="1" 
-                    step="0.01" 
-                    :value="volume" 
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    :value="volume"
                     @input="setVolume(parseFloat(($event.target as HTMLInputElement).value))"
                     class="absolute inset-0 w-full opacity-0 cursor-pointer"
                   />
@@ -2247,13 +2522,13 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
                 </div>
               </div>
               
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-1 md:gap-2">
                 <!-- Language dropdown -->
                 <div v-if="languageOptions.length > 1" class="relative">
                   <button
                     @click.stop="toggleLanguageDropdown"
                     :disabled="switchingLanguage"
-                    class="flex items-center gap-1 px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-sm font-medium"
+                    class="flex items-center gap-1 px-2 md:px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-xs md:text-sm font-medium touch-manipulation"
                     :title="'Changer de langue'"
                   >
                     <span v-if="switchingLanguage" class="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin"></span>
@@ -2284,33 +2559,100 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
                   </div>
                 </div>
                 
+                <!-- Playback speed -->
+                <div class="relative">
+                  <button
+                    @click="toggleSpeedDropdown"
+                    class="flex items-center gap-1 px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-sm font-medium"
+                    :title="'Vitesse de lecture'"
+                  >
+                    <span>{{ playbackSpeed }}x</span>
+                    <Icon name="heroicons:chevron-down" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': showSpeedDropdown }" />
+                  </button>
+
+                  <!-- Speed dropdown menu -->
+                  <div
+                    v-if="showSpeedDropdown"
+                    class="absolute bottom-full right-0 mb-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-50 w-24 overflow-hidden"
+                    @click.stop
+                  >
+                    <div class="py-1">
+                      <button
+                        v-for="speed in speedOptions"
+                        :key="speed"
+                        @click="setPlaybackSpeed(speed)"
+                        :disabled="speed === playbackSpeed"
+                        class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 transition-colors"
+                        :class="{ 'bg-zinc-700 text-white': speed === playbackSpeed, 'text-zinc-300': speed !== playbackSpeed }"
+                      >
+                        {{ speed }}x
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- Skip toggle -->
-                <button 
+                <button
                   @click="skipEnabled = !skipEnabled"
                   :class="skipEnabled ? 'text-violet-400' : 'text-zinc-400'"
-                  class="p-2 hover:bg-white/10 rounded-full transition-colors"
+                  class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation"
                   :title="skipEnabled ? 'Désactiver le saut automatique' : 'Activer le saut automatique'"
                 >
-                  <Icon name="heroicons:forward" class="w-5 h-5" />
+                  <Icon name="heroicons:forward" class="w-5 h-5 md:w-5 md:h-5" />
                 </button>
-                
-                <!-- Settings/Quality (if multiple sources) -->
-                <button 
-                  v-if="debug && resolvedList.length > 1" 
-                  class="p-2 hover:bg-white/10 rounded-full transition-colors" 
-                  title="Sources"
-                >
-                  <Icon name="heroicons:cog-6-tooth" class="w-5 h-5" />
-                </button>
+
+                <!-- Quality selector -->
+                <div v-if="resolvedList.length > 1" class="relative">
+                  <button
+                    @click="toggleQualityDropdown"
+                    class="flex items-center gap-1 px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-sm font-medium"
+                    title="Qualité"
+                  >
+                    <Icon name="heroicons:cog-6-tooth" class="w-4 h-4" />
+                    <Icon name="heroicons:chevron-down" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': showQualityDropdown }" />
+                  </button>
+
+                  <!-- Quality dropdown menu -->
+                  <div
+                    v-if="showQualityDropdown"
+                    class="absolute bottom-full right-0 mb-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-50 w-48 overflow-hidden"
+                    @click.stop
+                  >
+                    <div class="py-1">
+                      <button
+                        v-for="(source, index) in resolvedList"
+                        :key="index"
+                        @click="selectQuality(source)"
+                        :disabled="source.proxiedUrl === playUrl"
+                        class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 transition-colors flex items-center gap-2"
+                        :class="{ 'bg-zinc-700 text-white': source.proxiedUrl === playUrl, 'text-zinc-300': source.proxiedUrl !== playUrl }"
+                      >
+                        <Icon name="heroicons:play" class="w-3 h-3 flex-shrink-0" />
+                        <span class="truncate flex-1">{{ source.quality || source.type.toUpperCase() }}</span>
+                        <span class="text-xs opacity-75">{{ source.type }}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
                 
                 <!-- Episodes -->
-                <button @click="toggleEpisodesPanel" class="p-2 hover:bg-white/10 rounded-full transition-colors" title="Épisodes">
-                  <Icon name="heroicons:list-bullet" class="w-5 h-5" />
+                <button @click="toggleEpisodesPanel" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation" title="Épisodes">
+                  <Icon name="heroicons:list-bullet" class="w-5 h-5 md:w-5 md:h-5" />
                 </button>
-                
+
+                <!-- Picture-in-Picture -->
+                <button
+                  v-if="pictureInPictureEnabled"
+                  @click="togglePictureInPicture"
+                  class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation"
+                  :title="isPictureInPicture ? 'Quitter Picture-in-Picture' : 'Picture-in-Picture'"
+                >
+                  <Icon :name="isPictureInPicture ? 'heroicons:arrows-pointing-in' : 'heroicons:rectangle-stack'" class="w-5 h-5 md:w-5 md:h-5" />
+                </button>
+
                 <!-- Fullscreen -->
-                <button @click="toggleFullscreen" class="p-2 hover:bg-white/10 rounded-full transition-colors">
-                  <Icon :name="isFullscreen ? 'heroicons:arrows-pointing-in' : 'heroicons:arrows-pointing-out'" class="w-5 h-5" />
+                <button @click="toggleFullscreen" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation">
+                  <Icon :name="isFullscreen ? 'heroicons:arrows-pointing-in' : 'heroicons:arrows-pointing-out'" class="w-5 h-5 md:w-5 md:h-5" />
                 </button>
               </div>
             </div>
@@ -2321,53 +2663,86 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
         <div v-if="videoError" class="absolute inset-0 bg-black/80 flex items-center justify-center z-40">
           <div class="text-center text-white max-w-md px-6">
             <Icon name="heroicons:exclamation-triangle" class="w-12 h-12 mx-auto mb-3 text-red-400" />
-            <h4 class="text-lg font-medium mb-2">{{ videoError }}</h4>
-            <div class="text-sm text-zinc-400 mb-4 break-all">
-              {{ playUrl }}
-            </div>
+            <h4 class="text-lg font-medium mb-2">Problème de lecture</h4>
+            <p class="text-zinc-300 mb-4">La vidéo ne peut pas être lue correctement.</p>
             <div class="flex flex-wrap gap-2 justify-center">
-              <button @click="setupVideo" class="bg-white text-black px-4 py-2 rounded font-medium hover:bg-zinc-200 transition-colors">
-                Recharger
+              <button @click="setupVideo" class="bg-violet-600 text-white px-4 py-2 rounded font-medium hover:bg-violet-700 transition-colors">
+                Recharger la vidéo
               </button>
               <button v-if="resolvedList.length > 1" @click="tryNextSource" class="bg-zinc-700 text-white px-4 py-2 rounded font-medium hover:bg-zinc-600 transition-colors">
-                Source alternative
+                Essayer une autre source
               </button>
+            </div>
+            <div class="mt-4 text-xs text-zinc-500">
+              Si le problème continue, la source peut être temporairement indisponible.
             </div>
           </div>
         </div>
         
-        <!-- Debug panel for development -->
-        <div v-if="debug && resolvedList.length" class="absolute bottom-24 left-4 right-4 bg-black/90 border border-zinc-700 rounded-lg p-4 text-white text-sm z-30 max-h-32 overflow-y-auto">
-          <h4 class="font-medium mb-2">Sources disponibles:</h4>
-          <div class="space-y-1">
-            <div v-for="(source, index) in resolvedList" :key="index" 
-                 class="flex items-center gap-2 p-2 rounded"
-                 :class="source.proxiedUrl === playUrl ? 'bg-violet-600/30 border border-violet-500' : 'bg-zinc-800/50'">
-              <Icon name="heroicons:play" class="w-3 h-3 flex-shrink-0" />
-              <span class="font-mono text-xs truncate flex-1">{{ source.type }} - {{ source.url }}</span>
-              <button v-if="source.proxiedUrl !== playUrl" 
-                      @click="switchToSource(source)" 
-                      class="text-xs bg-white text-black px-2 py-1 rounded hover:bg-zinc-200 transition-colors">
-                Utiliser
-              </button>
-            </div>
-          </div>
-          <div class="mt-2 pt-2 border-t border-zinc-600">
-            <div class="text-xs text-zinc-400">
-              Langues disponibles: VOSTFR={{ availableLanguages.vostfr }}, VF={{ availableLanguages.vf }}, VA={{ availableLanguages.va }}, VAR={{ availableLanguages.var }}, VKR={{ availableLanguages.vkr }}, VCN={{ availableLanguages.vcn }}, VQC={{ availableLanguages.vqc }}, VF1={{ availableLanguages.vf1 }}, VF2={{ availableLanguages.vf2 }}, VJ={{ availableLanguages.vj }}
-            </div>
-          </div>
+
+        <!-- Touch seek overlay -->
+        <div
+          v-if="touchSeekOverlay"
+          class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 rounded-lg p-4 text-white text-center"
+        >
+          <Icon name="heroicons:forward" class="w-8 h-8 mx-auto mb-2" />
+          <p class="text-sm">{{ touchSeekTime }}s</p>
         </div>
 
-        <!-- Skip buttons overlay -->
-        <div 
+        <!-- Next episode auto-play overlay -->
+        <div
+          v-if="showNextEpisodeOverlay"
+          class="absolute inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-40"
+        >
+          <div class="text-center text-white max-w-md px-6">
+            <div class="mb-4">
+              <Icon name="heroicons:play-circle" class="w-16 h-16 mx-auto mb-4 text-violet-400" />
+              <h3 class="text-xl font-semibold mb-2">Épisode suivant</h3>
+              <p class="text-zinc-300 mb-4">
+                {{ episodesList.find(ep => ep.episode === episodeNum + 1)?.title || `Épisode ${episodeNum + 1}` }}
+              </p>
+              <div class="w-16 h-16 mx-auto mb-4 border-4 border-violet-600 border-t-transparent rounded-full animate-spin"></div>
+              <p class="text-sm text-zinc-400">Lecture automatique dans {{ nextEpisodeCountdown }}s</p>
+            </div>
+            <div class="flex gap-3 justify-center">
+              <button
+                @click="playNextEpisode"
+                class="bg-violet-600 hover:bg-violet-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2"
+              >
+                <Icon name="heroicons:play" class="w-5 h-5" />
+                <span>Lire maintenant</span>
+              </button>
+              <button
+                @click="cancelNextEpisodeCountdown"
+                class="bg-zinc-700 hover:bg-zinc-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+              >
+                Annuler
+              </button>
+            </div>
+            <div class="mt-4">
+              <label class="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  :checked="autoPlayNext"
+                  @change="toggleAutoPlayNext"
+                  class="rounded border-zinc-600 text-violet-600 focus:ring-violet-500"
+                />
+                <span>Lecture automatique activée</span>
+              </label>
+             </div>
+           </div>
+         </div>
+       </div>
+
+         <!-- Skip buttons overlay -->
+        <div
           v-if="showSkipButtons && currentSkipType"
           class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-40 transition-opacity duration-300"
         >
           <div class="bg-black/80 backdrop-blur-sm rounded-lg p-4 text-center text-white">
             <div class="text-sm text-zinc-300 mb-2">
               {{ currentSkipType === 'op' ? 'Générique de début' : 'Générique de fin' }}
-            </div>
+        </div>
             <button
               @click="skipToEnd(currentSkipType)"
               class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2 mx-auto"
@@ -2385,7 +2760,6 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
         </div>
       </div>
     </div>
-  </div>
 </template>
 
 <style scoped>

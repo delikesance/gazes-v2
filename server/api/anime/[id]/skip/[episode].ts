@@ -1,4 +1,12 @@
 import { parseAnimePage, parseAnimeResults } from '#shared/utils/parsers'
+import axios from 'axios'
+import https from 'https'
+
+const axiosInstance = axios.create({
+  httpsAgent: new https.Agent({
+    rejectUnauthorized: false
+  })
+})
 
 const USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
 
@@ -21,31 +29,28 @@ async function getAnimeById(animeId: string): Promise<{ title: string } | null> 
   console.log(`⏭️ [API] Fetching anime info for ID/slug: ${animeId}`)
 
   // Try to fetch directly first (if it's a numeric ID)
-  let response = await fetch(`https://anime-sama.fr/catalogue/${animeId}/`, {
+  let response = await axiosInstance.get(`https://179.43.149.218/catalogue/${animeId}/`, {
     headers: {
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'User-Agent': USER_AGENT,
-    },
-    redirect: 'follow',
+    }
   })
 
   // If direct fetch fails, try to search for the anime (slug-based lookup)
-  if (!response.ok) {
+  if (response.status < 200 || response.status >= 300) {
     console.log(`⏭️ [API] Direct fetch failed, trying search for slug: ${animeId}`)
     const searchTerm = animeId.replace(/[-_]/g, ' ')
 
-    const searchResponse = await fetch("https://anime-sama.fr/template-php/defaut/fetch.php", {
-      method: "POST",
+    const searchResponse = await axiosInstance.post("https://179.43.149.218/template-php/defaut/fetch.php", "query=" + encodeURIComponent(searchTerm), {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         "X-Requested-With": "XMLHttpRequest"
-      },
-      body: "query=" + encodeURIComponent(searchTerm),
+      }
     })
 
-    const searchResults = parseAnimeResults(await searchResponse.text())
+    const searchResults = parseAnimeResults(searchResponse.data)
 
-    if (!searchResponse.ok || !searchResults || searchResults.length === 0) {
+    if (searchResponse.status < 200 || searchResponse.status >= 300 || !searchResults || searchResults.length === 0) {
       console.log(`⏭️ [API] No search results found for: ${animeId}`)
       return null
     }
@@ -59,21 +64,20 @@ async function getAnimeById(animeId: string): Promise<{ title: string } | null> 
     const realAnimeId = searchResults[0].id
     console.log(`⏭️ [API] Found real anime ID from search: ${realAnimeId}`)
 
-    response = await fetch(`https://anime-sama.fr/catalogue/${realAnimeId}/`, {
+    response = await axiosInstance.get(`https://179.43.149.218/catalogue/${realAnimeId}/`, {
       headers: {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'User-Agent': USER_AGENT,
-      },
-      redirect: 'follow',
+      }
     })
 
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       console.log(`⏭️ [API] Failed to fetch anime page with real ID: ${response.status}`)
       return null
     }
   }
 
-  const html = await response.text()
+  const html = response.data
   const animeData = parseAnimePage(html)
 
   console.log(`⏭️ [API] Found anime: "${animeData.title}"`)

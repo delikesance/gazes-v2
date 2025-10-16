@@ -1,3 +1,12 @@
+import axios from 'axios'
+import https from 'https'
+
+const axiosInstance = axios.create({
+  httpsAgent: new https.Agent({
+    rejectUnauthorized: false
+  })
+})
+
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const animeId = query.id as string
@@ -16,23 +25,23 @@ export default defineEventHandler(async (event) => {
   
   try {
     // Step 1: Check if anime page exists
-    const animePageUrl = `https://anime-sama.fr/catalogue/${animeId}`
+    const animePageUrl = `https://179.43.149.218/catalogue/${animeId}`
     console.log(`📄 Checking anime page: ${animePageUrl}`)
     
-    const animeResponse = await fetch(animePageUrl, {
+    const animeResponse = await axiosInstance.get(animePageUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
       }
     })
-    
-    if (!animeResponse.ok) {
+
+    if (animeResponse.status < 200 || animeResponse.status >= 300) {
       return {
         error: `Anime page not found: ${animeResponse.status} ${animeResponse.statusText}`,
         url: animePageUrl
       }
     }
-    
-    const animeHtml = await animeResponse.text()
+
+    const animeHtml = animeResponse.data
     console.log(`✅ Anime page loaded: ${animeHtml.length} bytes`)
     
     // Step 2: Parse seasons from anime page (two methods)
@@ -80,35 +89,35 @@ export default defineEventHandler(async (event) => {
     
     for (const season of seasons) {
       for (const lang of languages) {
-        const seasonUrl = `https://anime-sama.fr/catalogue/${animeId}/${season}/${lang}`
+        const seasonUrl = `https://179.43.149.218/catalogue/${animeId}/${season}/${lang}`
         console.log(`🎯 Testing season: ${seasonUrl}`)
         
         try {
           // Try episodes.js first
           const episodesJsUrl = `${seasonUrl}/episodes.js`
-          const jsResponse = await fetch(episodesJsUrl, {
+          const jsResponse = await axiosInstance.get(episodesJsUrl, {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
             }
           })
-          
+
           let episodeSource = ''
           let sourceType = ''
-          
-          if (jsResponse.ok) {
-            episodeSource = await jsResponse.text()
+
+          if (jsResponse.status >= 200 && jsResponse.status < 300) {
+            episodeSource = jsResponse.data
             sourceType = 'episodes.js'
             console.log(`✅ Found episodes.js: ${episodeSource.length} bytes`)
           } else {
             // Fallback to HTML page
-            const htmlResponse = await fetch(seasonUrl, {
+            const htmlResponse = await axiosInstance.get(seasonUrl, {
               headers: {
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
               }
             })
-            
-            if (htmlResponse.ok) {
-              episodeSource = await htmlResponse.text()
+
+            if (htmlResponse.status >= 200 && htmlResponse.status < 300) {
+              episodeSource = htmlResponse.data
               sourceType = 'html'
               console.log(`✅ Found HTML page: ${episodeSource.length} bytes`)
             } else {
@@ -166,14 +175,14 @@ export default defineEventHandler(async (event) => {
               console.log(`🧪 Testing embed URL: ${testUrl}`)
               
               try {
-                const embedResponse = await fetch(testUrl, {
+                const embedResponse = await axiosInstance.get(testUrl, {
                   headers: {
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-                    'Referer': 'https://anime-sama.fr/'
+                    'Referer': 'https://179.43.149.218/'
                   },
-                  signal: AbortSignal.timeout(10000) // 10 second timeout
+                  timeout: 10000
                 })
-                
+
                 const embedResult = {
                   url: testUrl,
                   status: embedResponse.status,
@@ -181,13 +190,13 @@ export default defineEventHandler(async (event) => {
                   season,
                   lang,
                   provider: new URL(testUrl).hostname,
-                  working: embedResponse.ok
+                  working: embedResponse.status >= 200 && embedResponse.status < 300
                 }
-                
+
                 results.embedTests.push(embedResult)
-                
-                if (embedResponse.ok) {
-                  const embedHtml = await embedResponse.text()
+
+                if (embedResponse.status >= 200 && embedResponse.status < 300) {
+                  const embedHtml = embedResponse.data
                   console.log(`✅ Embed working: ${testUrl} (${embedHtml.length} bytes)`)
                   
                   // Try to extract video URLs from this embed

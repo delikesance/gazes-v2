@@ -195,9 +195,9 @@ async function countEpisodesInSeasonCached(animeId: string, season: any): Promis
   let seasonUrl = season.url
 
   if (seasonUrl.startsWith('/')) {
-    seasonUrl = `https://anime-sama.fr/catalogue${seasonUrl}`
+    seasonUrl = `https://179.43.149.218/catalogue${seasonUrl}`
   } else if (!seasonUrl.startsWith('http')) {
-    seasonUrl = `https://anime-sama.fr/catalogue/${animeId}/${seasonUrl}`
+    seasonUrl = `https://179.43.149.218/catalogue/${animeId}/${seasonUrl}`
   }
 
   // Ensure URL ends with slash
