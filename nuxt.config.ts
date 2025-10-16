@@ -40,39 +40,93 @@ export default defineNuxtConfig({
 
   // Simplified Vite configuration for Vercel compatibility
   vite: {
+    define: {
+      global: 'globalThis',
+      'process.env': 'process.env'
+    },
     resolve: {
+      alias: {
+        crypto: 'crypto-browserify',
+        stream: 'stream-browserify',
+        util: 'util',
+        buffer: 'buffer',
+        process: 'process/browser',
+        os: 'os-browserify/browser',
+        path: 'path-browserify'
+      },
       dedupe: ['vue', 'vue-router', '@vue/runtime-core', '@vue/runtime-dom']
     },
     build: {
       rollupOptions: {
-        external: [
-          'bcryptjs',
-          '@supabase/supabase-js',
-          '@supabase/postgrest-js',
-          'pg'
-        ],
+        // Ne pas externaliser ces modules côté client
+        external: (id) => {
+          // Seulement externaliser les modules côté serveur
+          if (typeof window === 'undefined') {
+            return ['bcryptjs', '@supabase/supabase-js', '@supabase/postgrest-js', 'pg'].includes(id);
+          }
+          return false;
+        },
         output: {
           manualChunks(id) {
-            // Video libraries chunk
-            if (id.includes('video.js') || 
-                id.includes('hls.js') || 
-                id.includes('@videojs/http-streaming') ||
-                id.includes('videojs')) {
-              return 'video-vendor';
+            // Video libraries chunk - split further for smaller chunks
+            if (id.includes('video.js')) {
+              return 'videojs-core';
             }
+            if (id.includes('hls.js')) {
+              return 'hls-vendor';
+            }
+            if (id.includes('@videojs/http-streaming')) {
+              return 'videojs-streaming';
+            }
+            if (id.includes('videojs')) {
+              return 'videojs-plugins';
+            }
+
             // Large libraries that should be separated
             if (id.includes('node_modules')) {
-              // Group common large libraries
-              if (id.includes('vue') || id.includes('vue-router')) {
-                return 'vue-vendor';
+              // Split Vue ecosystem more granularly
+              if (id.includes('vue/') && !id.includes('vue-router')) {
+                return 'vue-core';
+              }
+              if (id.includes('vue-router')) {
+                return 'vue-router';
+              }
+              if (id.includes('@vue/')) {
+                return 'vue-runtime';
+              }
+
+              // Nuxt chunks
+              if (id.includes('@nuxt/image')) {
+                return 'nuxt-image';
+              }
+              if (id.includes('@nuxt/icon')) {
+                return 'nuxt-icon';
               }
               if (id.includes('@nuxt') || id.includes('nuxt')) {
-                return 'nuxt-vendor';
+                return 'nuxt-core';
               }
-              if (id.includes('tailwindcss') || id.includes('autoprefixer')) {
+
+              // CSS related
+              if (id.includes('tailwindcss') || id.includes('autoprefixer') || id.includes('postcss')) {
                 return 'css-vendor';
               }
-              // Other node_modules in a general vendor chunk
+
+              // Auth et crypto - ne pas séparer pour éviter les problèmes d'exports
+              if (id.includes('jsonwebtoken') || id.includes('crypto') || id.includes('bcrypt')) {
+                return 'vendor';
+              }
+
+              // Supabase
+              if (id.includes('@supabase') || id.includes('postgrest')) {
+                return 'supabase-vendor';
+              }
+
+              // Other large libraries
+              if (id.includes('axios')) {
+                return 'http-vendor';
+              }
+
+              // Generic vendor for smaller libraries
               return 'vendor';
             }
           }
@@ -80,7 +134,12 @@ export default defineNuxtConfig({
       },
       sourcemap: false,
       minify: 'terser',
-      chunkSizeWarningLimit: 1000
+      chunkSizeWarningLimit: 500,
+      // Assurer la compatibilité CommonJS
+      commonjsOptions: {
+        include: [/node_modules/],
+        transformMixedEsModules: true
+      }
     },
     optimizeDeps: {
       include: [
@@ -88,9 +147,16 @@ export default defineNuxtConfig({
         'hls.js',
         '@videojs/http-streaming',
         'vue',
-        'vue-router'
+        'vue-router',
+        'crypto-browserify',
+        'stream-browserify',
+        'util',
+        'buffer',
+        'process/browser'
       ],
-      exclude: ['@nuxt/devtools']
+      exclude: ['@nuxt/devtools'],
+      // Force la pré-optimisation des dépendances problématiques
+      force: true
     }
   },
 
@@ -129,6 +195,10 @@ export default defineNuxtConfig({
      compressPublicAssets: true,
      prerender: {
        routes: ['/']
+     },
+     // Configuration pour éviter les erreurs d'exports côté serveur
+     rollupConfig: {
+       external: ['bcryptjs', 'pg', '@supabase/supabase-js']
      },
       routeRules: {
         '/api/**': {

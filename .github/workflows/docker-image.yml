@@ -66,6 +66,17 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          # Pass build arguments for environment variables
+          build-args: |
+            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+            SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
+            SEARCH_API_URL=${{ secrets.SEARCH_API_URL || 'https://179.43.149.218/template-php/defaut/fetch.php' }}
+            CATALOGUE_API_URL=${{ secrets.CATALOGUE_API_URL || 'https://179.43.149.218' }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+            JWT_EXPIRES_IN=${{ secrets.JWT_EXPIRES_IN || '7d' }}
+            JWT_REFRESH_EXPIRES_IN=${{ secrets.JWT_REFRESH_EXPIRES_IN || '30d' }}
+            NODE_ENV=production
           # Do not force a single platform here; let buildx build for the runner's architecture by default.
           # Use the detected architecture to separate cache refs per-arch.
           tags: |
@@ -85,5 +96,16 @@ jobs:
           docker pull ghcr.io/${{ github.repository_owner }}/gazes-v2:latest
           docker stop gazes || true
           docker rm gazes || true
-          docker run -d --restart=always --name gazes -p 3000:3000 -v gazes-data:/app/data ghcr.io/${{ github.repository_owner }}/gazes-v2:latest
+          docker run -d --restart=always --name gazes -p 3000:3000 \
+            -e SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            -e SUPABASE_KEY="${{ secrets.SUPABASE_KEY }}" \
+            -e SEARCH_API_URL="${{ secrets.SEARCH_API_URL || 'https://179.43.149.218/template-php/defaut/fetch.php' }}" \
+            -e CATALOGUE_API_URL="${{ secrets.CATALOGUE_API_URL || 'https://179.43.149.218' }}" \
+            -e JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+            -e JWT_REFRESH_SECRET="${{ secrets.JWT_REFRESH_SECRET }}" \
+            -e JWT_EXPIRES_IN="${{ secrets.JWT_EXPIRES_IN || '7d' }}" \
+            -e JWT_REFRESH_EXPIRES_IN="${{ secrets.JWT_REFRESH_EXPIRES_IN || '30d' }}" \
+            -e NODE_ENV="production" \
+            -v gazes-data:/app/data \
+            ghcr.io/${{ github.repository_owner }}/gazes-v2:latest
 
