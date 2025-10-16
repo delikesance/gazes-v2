@@ -2,6 +2,7 @@
 import { ref, watch, onMounted, onBeforeUnmount, computed, nextTick } from "vue";
 import { useSearch } from "~/composables/useSearch";
 import GenreFilter from "~/components/GenreFilter.vue";
+import RecommendationsRow from "~/components/RecommendationsRow.vue";
 import { SORTED_GENRES } from "~/shared/utils/genres";
 
 // Set page metadata
@@ -315,6 +316,21 @@ onBeforeUnmount(() => {
                     </button>
                 </div>
             </div>
+
+            <!-- Recommendations Section -->
+            <Suspense>
+                <RecommendationsRow />
+                <template #fallback>
+                    <div class="mb-8">
+                        <div class="h-8 bg-zinc-800 rounded-lg animate-pulse mb-4 w-48"></div>
+                        <div class="flex gap-4 overflow-hidden">
+                            <div v-for="i in 6" :key="i" class="w-[200px] h-[320px] bg-zinc-800 rounded-xl animate-pulse flex-shrink-0"></div>
+                        </div>
+                    </div>
+                </template>
+            </Suspense>
+
+            <div class="divider" />
 
             <!-- Search and Filters -->
             <div class="space-y-4 mb-6">

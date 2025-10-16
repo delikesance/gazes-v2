@@ -732,4 +732,123 @@ export class DatabaseService {
 
     return true
   }
+
+  // Anime metadata operations
+  async getAnimeMetadata(animeId: string): Promise<any | null> {
+    if (this.isMockMode) {
+      return null
+    }
+
+    const { data, error } = await this.supabase
+      .from('anime_metadata')
+      .select('*')
+      .eq('id', animeId)
+      .single()
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return null
+      }
+      console.error('📁 [DATABASE] Error getting anime metadata:', error)
+      throw error
+    }
+
+    return data
+  }
+
+  async saveAnimeMetadata(animeId: string, metadata: {
+    title: string
+    cover?: string
+    banner?: string
+    synopsis?: string
+    genres?: string[]
+    totalEpisodes?: number
+    seasonsData?: any
+    languageFlags?: any
+  }): Promise<void> {
+    if (this.isMockMode) {
+      return
+    }
+
+    const now = new Date()
+
+    const { error } = await this.supabase
+      .from('anime_metadata')
+      .upsert({
+        id: animeId,
+        title: metadata.title,
+        cover: metadata.cover,
+        banner: metadata.banner,
+        synopsis: metadata.synopsis,
+        genres: metadata.genres || [],
+        total_episodes: metadata.totalEpisodes,
+        seasons_data: metadata.seasonsData ? JSON.stringify(metadata.seasonsData) : null,
+        language_flags: metadata.languageFlags ? JSON.stringify(metadata.languageFlags) : null,
+        last_updated: now.toISOString(),
+        created_at: now.toISOString()
+      })
+
+    if (error) {
+      console.error('📁 [DATABASE] Error saving anime metadata:', error)
+      throw error
+    }
+  }
+
+  async getAnimeCount(): Promise<number> {
+    if (this.isMockMode) {
+      return 0
+    }
+
+    const { count, error } = await this.supabase
+      .from('anime_metadata')
+      .select('*', { count: 'exact', head: true })
+
+    if (error) {
+      console.error('📁 [DATABASE] Error getting anime count:', error)
+      throw error
+    }
+
+    return count || 0
+  }
+
+  async getAllAnimeMetadata(limit: number = 1000, offset: number = 0): Promise<any[]> {
+    if (this.isMockMode) {
+      return []
+    }
+
+    const { data, error } = await this.supabase
+      .from('anime_metadata')
+      .select('*')
+      .order('last_updated', { ascending: false })
+      .range(offset, offset + limit - 1)
+
+    if (error) {
+      console.error('📁 [DATABASE] Error getting all anime metadata:', error)
+      throw error
+    }
+
+    return data || []
+  }
+
+  async getAnimeByGenres(genres: string[], excludeIds: string[] = [], limit: number = 20): Promise<any[]> {
+    if (this.isMockMode) {
+      return []
+    }
+
+    // Use array overlap operator to find anime with matching genres
+    const { data, error } = await this.supabase
+      .from('anime_metadata')
+      .select('*')
+      .overlaps('genres', genres)
+      .not('id', 'in', `(${excludeIds.join(',')})`)
+      .order('last_updated', { ascending: false })
+      .limit(limit)
+
+    if (error) {
+      console.error('📁 [DATABASE] Error getting anime by genres:', error)
+      throw error
+    }
+
+    return data || []
+  }
 }

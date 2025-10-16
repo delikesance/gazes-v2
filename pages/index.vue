@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "nuxt/app";
 const CarouselRow = defineAsyncComponent(() => import('~/components/CarouselRow.vue'));
 const HeroBanner = defineAsyncComponent(() => import('~/components/HeroBanner.vue'));
 const ContinueWatchingRow = defineAsyncComponent(() => import('~/components/ContinueWatchingRow.vue'));
+const RecommendationsRow = defineAsyncComponent(() => import('~/components/RecommendationsRow.vue'));
 import { useSearch } from "~/composables/useSearch";
 
 // Set page metadata
@@ -348,6 +349,31 @@ const handleRetrySearch = () => {
                                     :key="i"
                                     class="snap-start shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/40 animate-pulse aspect-[9/12] w-[170px]"
                                 />
+                            </div>
+                        </div>
+                    </section>
+                </template>
+            </Suspense>
+
+            <!-- Recommendations Section -->
+            <Suspense>
+                <RecommendationsRow title="Recommandé pour vous" type="mixed" :limit="20" />
+                <template #fallback>
+                    <section class="py-8">
+                        <div class="mb-6 flex items-center justify-between px-4 md:px-20">
+                            <h3 class="text-xl font-semibold text-white">Recommandé pour vous</h3>
+                        </div>
+                        <div class="relative">
+                            <div class="pointer-events-none absolute inset-y-0 left-0 z-10 w-20 bg-gradient-to-r from-zinc-950 to-transparent" />
+                            <div class="pointer-events-none absolute inset-y-0 right-0 z-10 w-20 bg-gradient-to-l from-zinc-950 to-transparent" />
+                            <div class="flex gap-4 overflow-x-auto scroll-smooth px-4 md:px-20">
+                                <div v-for="i in 8" :key="i" class="flex-shrink-0 w-40">
+                                    <div class="aspect-[3/4] rounded-lg bg-zinc-800 animate-pulse" />
+                                    <div class="mt-3 p-3">
+                                        <div class="h-4 bg-zinc-800 rounded mb-2" />
+                                        <div class="h-4 bg-zinc-800 rounded w-3/4" />
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </section>

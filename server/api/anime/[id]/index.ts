@@ -1,5 +1,6 @@
 import { parseAnimePage, parseAnimeResults } from '#shared/utils/parsers'
 import { cachedApiCall, REDIS_CACHE_TTL } from '~/server/utils/redis-cache'
+import { DatabaseService } from '~/server/utils/database'
 import axios from 'axios'
 import https from 'https'
 
@@ -32,6 +33,24 @@ export default defineEventHandler(async (event) => {
 
 // Extract the actual anime fetching logic into a separate function
 async function fetchAnimeDetails(id: string) {
+    const db = DatabaseService.getInstance()
+
+    // First, check if we have cached metadata in the database
+    const cachedMetadata = await db.getAnimeMetadata(id)
+    if (cachedMetadata && cachedMetadata.last_updated > new Date(Date.now() - 24 * 60 * 60 * 1000)) {
+        // Return cached data if it's less than 24 hours old
+        return {
+            id,
+            title: cachedMetadata.title,
+            altTitle: cachedMetadata.alt_title,
+            cover: cachedMetadata.cover,
+            banner: cachedMetadata.banner,
+            synopsis: cachedMetadata.synopsis,
+            genres: cachedMetadata.genres || [],
+            seasons: cachedMetadata.seasons_data || [],
+            languageFlags: cachedMetadata.language_flags || {}
+        }
+    }
 
     const config = useRuntimeConfig()
     const catalogueApiUrl = config.catalogueApiUrl as string
@@ -98,6 +117,8 @@ async function fetchAnimeDetails(id: string) {
     if (animeData.seasons && animeData.seasons.length > 0) {
         const firstSeason = animeData.seasons[0]
         if (!firstSeason?.url) {
+            // Save to database cache
+            await saveAnimeToCache(id, animeData)
             return animeData
         }
         let seasonUrl = firstSeason.url
@@ -121,14 +142,37 @@ async function fetchAnimeDetails(id: string) {
             if (seasonResponse.status >= 200 && seasonResponse.status < 300) {
                 const seasonHtml = seasonResponse.data
                 const languageFlags = parseLanguageFlags(seasonHtml)
-                return { ...animeData, languageFlags }
+                const finalAnimeData = { ...animeData, languageFlags }
+
+                // Save to database cache
+                await saveAnimeToCache(id, finalAnimeData)
+                return finalAnimeData
             }
         } catch (error) {
             // Silent fail for language flags - don't let this slow down the main response
         }
     }
 
+    // Save to database cache
+    await saveAnimeToCache(id, animeData)
     return animeData
+}
+
+async function saveAnimeToCache(id: string, animeData: any) {
+    try {
+        const db = DatabaseService.getInstance()
+        await db.saveAnimeMetadata(id, {
+            title: animeData.title,
+            cover: animeData.cover,
+            banner: animeData.banner,
+            synopsis: animeData.synopsis,
+            genres: animeData.genres,
+            seasonsData: animeData.seasons,
+            languageFlags: animeData.languageFlags
+        })
+    } catch (error) {
+        console.warn('Failed to save anime metadata to cache:', error)
+    }
 }
 
 // Function to parse language flags from season page HTML
