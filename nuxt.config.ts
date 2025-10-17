@@ -35,6 +35,7 @@ export default defineNuxtConfig({
     public: {
       supabaseUrl: process.env.SUPABASE_URL,
       supabaseKey: process.env.SUPABASE_KEY,
+      siteUrl: process.env.SITE_URL || 'https://gazes.fr'
     }
   },
 
