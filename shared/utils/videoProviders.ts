@@ -10,11 +10,11 @@ export interface VideoProvider {
 // Verified providers configuration - ordered by reliability
 export const VERIFIED_PROVIDERS: VideoProvider[] = [
   {
-    hostname: 'video.sibnet.ru',
+    hostname: 'vidmoly.to',
     reliability: 10,
-    description: 'SibNet - Reliable MP4 URLs with relative path extraction',
-    extractionPatterns: ['MP4 relative paths in JavaScript'],
-    knownIssues: ['Requires relative-to-absolute URL conversion']
+    description: 'VidMoly - Priorité élevée pour de meilleures performances',
+    extractionPatterns: ['MP4/M3U8 in script tags'],
+    knownIssues: []
   },
   {
     hostname: 'streamtape.com',
@@ -24,11 +24,11 @@ export const VERIFIED_PROVIDERS: VideoProvider[] = [
     knownIssues: ['Sometimes requires referer header']
   },
   {
-    hostname: 'vidmoly.to',
+    hostname: 'video.sibnet.ru',
     reliability: 7,
-    description: 'Vidmoly - Standard video hosting with good extraction',
-    extractionPatterns: ['MP4/M3U8 in script tags'],
-    knownIssues: []
+    description: 'SibNet - Bon MP4 mais priorité réduite',
+    extractionPatterns: ['MP4 relative paths in JavaScript'],
+    knownIssues: ['Requires relative-to-absolute URL conversion']
   },
   {
     hostname: 'uqload.com',

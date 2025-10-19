@@ -29,8 +29,18 @@ export default defineEventHandler(async (event) => {
   try {
     const response = await axiosInstance.get(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-        'Referer': 'https://179.43.149.218/'
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0'
       },
       timeout: 10000
     })
@@ -55,6 +65,8 @@ export default defineEventHandler(async (event) => {
       sibnet_specific: /src:\s*["']([^"']*\.(?:mp4|m3u8)[^"']*)["']/gi,
       myvi_specific: /video_url["']?\s*:\s*["']([^"']+)["']/gi,
       sendvid_specific: /file:\s*["']([^"']*\.(?:mp4|m3u8)[^"']*)["']/gi,
+      vidmoly_specific: /["'](https:\/\/[^"']*vidmoly[^"']*\.(?:mp4|m3u8)[^"']*)["']/gi,
+      vidmoly_cdn: /["'](https:\/\/[^"']*\.vidmoly\.(?:to|me|net|org)[^"']*(?:mp4|m3u8)[^"']*)["']/gi,
       generic_file: /file\s*:\s*["']([^"']*\.(?:mp4|m3u8)[^"']*)["']/gi,
       generic_source: /source\s*:\s*["']([^"']*\.(?:mp4|m3u8)[^"']*)["']/gi
     }

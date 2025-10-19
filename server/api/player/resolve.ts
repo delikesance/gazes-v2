@@ -2,6 +2,7 @@
 import { Buffer } from 'buffer'
 import { getProviderInfo, getProviderReliability, sortUrlsByProviderReliability } from '~/server/utils/videoProviders'
 import { Agent } from 'https'
+import { getRedisCache, REDIS_CACHE_TTL } from '~/server/utils/redis-cache'
 
 // Decode base64url encoded string to UTF-8
 function decodeBase64Url(input: string): string {
@@ -18,61 +19,46 @@ function decodeBase64Url(input: string): string {
   }
 }
 
-// Video URL extraction patterns configuration
+// Video URL extraction patterns configuration - optimized for performance
 const VIDEO_URL_PATTERNS = [
-  // M3U8 HLS streams
+  // High-priority patterns (most common)
   {
-    regex: /https:\/\/[^\s"'<>]*\.m3u8[^\s"'<>]*/gi,
-    type: 'hls'
+    regex: /https?:\/\/[^\s"'<>]*\.(?:m3u8|mp4)[^\s"'<>]*/gi,
+    type: 'direct'
   },
-  // MP4 direct links
+  // Generic video URLs with common extensions
   {
-    regex: /https:\/\/[^\s"'<>]*\.mp4[^\s"'<>]*/gi,
-    type: 'mp4'
-  },
-  // Other video formats
-  {
-    regex: /https:\/\/[^\s"'<>]*\.(?:webm|mkv|avi|mov)[^\s"'<>]*/gi,
+    regex: /https?:\/\/[^\s"'<>]*\.(?:webm|mkv|avi|mov|flv)[^\s"'<>]*/gi,
     type: 'video'
   },
   // Quoted URLs (common in JavaScript)
   {
-    regex: /["']https:\/\/[^"']*\.(?:m3u8|mp4|webm|mkv|avi|mov)[^"']*["']/gi,
+    regex: /["']https?:\/\/[^"']*\.(?:m3u8|mp4|webm|mkv|avi|mov|flv)[^"']*["']/gi,
     type: 'quoted'
   },
-  // Video source attributes
+  // JavaScript variables
   {
-    regex: /src\s*=\s*["'](https:\/\/[^"']*\.(?:m3u8|mp4|webm|mkv|avi|mov)[^"']*)["']/gi,
-    type: 'src'
-  },
-  // File URLs in JavaScript
-  {
-    regex: /file\s*:\s*["'](https:\/\/[^"']*\.(?:m3u8|mp4|webm|mkv|avi|mov)[^"']*)["']/gi,
-    type: 'file'
-  },
-  // JavaScript variables containing URLs
-  {
-    regex: /(?:var|const|let)\s+\w+\s*=\s*["'](https:\/\/[^"']*\.(?:m3u8|mp4)[^"']*)["']/gi,
+    regex: /(?:var|const|let|window)\s+\w+\s*[:=]\s*["']https?:\/\/[^"']*\.(?:m3u8|mp4)[^"']*["']/gi,
     type: 'javascript'
   },
-  // API endpoint patterns (common in video players)
+  // API endpoints
   {
-    regex: /["']https:\/\/[^"']*\/(?:api|source|video|stream|player)[^"']*["']/gi,
+    regex: /["']https?:\/\/[^"']*(?:api|source|video|stream|player|embed)[^"']*["']/gi,
     type: 'api'
   },
-  // MyVi.top specific patterns
+  // CDN patterns
   {
-    regex: /["'](https:\/\/[^"']*myvi[^"']*\.(?:mp4|m3u8|json|php|aspx)[^"']*)["']/gi,
-    type: 'myvi'
-  },
-  // General video hosting patterns
-  {
-    regex: /["'](https:\/\/[^"']*(?:cdn|stream|video|media)[^"']*\.(?:mp4|m3u8)[^"']*)["']/gi,
+    regex: /["']https?:\/\/[^"']*\.(?:cdn|stream|video|media)\.[^"']*\.(?:mp4|m3u8)[^"']*["']/gi,
     type: 'cdn'
   },
-  // SibNet relative URLs (need to be converted to absolute)
+  // VidMoly specific
   {
-    regex: /src\s*:\s*["']([^"']*\/v\/[^"']*\.mp4)["']/gi,
+    regex: /["']https?:\/\/[^"']*vidmoly[^"']*\.(?:mp4|m3u8)[^"']*["']/gi,
+    type: 'vidmoly'
+  },
+  // SibNet relative URLs
+  {
+    regex: /src\s*:\s*["'][^"']*\/v\/[^"']*\.mp4["']/gi,
     type: 'sibnet_relative'
   }
 ] as const
@@ -207,9 +193,90 @@ async function* iterateMatches(html: string, patterns: typeof VIDEO_URL_PATTERNS
       await new Promise(resolve => setImmediate(resolve))
     }
   }
-}// Main extraction function with size limits and security checks
-async function extractVideoUrls(html: string): Promise<{ type: string; url: string; quality?: string }[]> {
+}
 
+// Special VidMoly JavaScript analysis function
+function analyzeVidMolyJavaScript(html: string): { type: string; url: string; quality?: string }[] {
+  const urls: { type: string; url: string; quality?: string }[] = []
+
+  // VidMoly often uses obfuscated JavaScript with encoded URLs
+  // Look for common patterns in their obfuscated code
+
+  // Pattern 1: Base64-like encoded strings that might contain URLs
+  const base64Pattern = /[A-Za-z0-9+/=]{20,}/g
+  let match
+  while ((match = base64Pattern.exec(html)) !== null) {
+    try {
+      // Try to decode as base64 and see if it contains video URLs
+      const decoded = Buffer.from(match[0], 'base64').toString('utf8')
+      if (decoded.includes('.m3u8') || decoded.includes('.mp4')) {
+        // Extract URLs from decoded content
+        const urlMatch = decoded.match(/https?:\/\/[^\s"'<>]+\.(?:m3u8|mp4)[^\s"'<>]*/gi)
+        if (urlMatch) {
+          urlMatch.forEach(url => {
+            if (validateUrl(url).isValid) {
+              urls.push({
+                type: 'vidmoly_decoded',
+                url: url,
+                quality: parseQuality(url)
+              })
+            }
+          })
+        }
+      }
+    } catch (e) {
+      // Ignore decoding errors
+    }
+  }
+
+  // Pattern 2: Look for JavaScript variables that might contain video URLs
+  const jsVarPatterns = [
+    /videoUrl\s*[:=]\s*["']([^"']+)["']/gi,
+    /streamUrl\s*[:=]\s*["']([^"']+)["']/gi,
+    /file\s*[:=]\s*["']([^"']+)["']/gi,
+    /src\s*[:=]\s*["']([^"']+)["']/gi
+  ]
+
+  jsVarPatterns.forEach(pattern => {
+    pattern.lastIndex = 0
+    while ((match = pattern.exec(html)) !== null) {
+      const url = match[1]
+      if ((url.includes('.m3u8') || url.includes('.mp4')) && validateUrl(url).isValid) {
+        urls.push({
+          type: 'vidmoly_js_var',
+          url: url,
+          quality: parseQuality(url)
+        })
+      }
+    }
+  })
+
+  // Pattern 3: Look for function calls that might load videos
+  const functionPatterns = [
+    /loadVideo\s*\(\s*["']([^"']+)["']\s*\)/gi,
+    /playVideo\s*\(\s*["']([^"']+)["']\s*\)/gi,
+    /setVideo\s*\(\s*["']([^"']+)["']\s*\)/gi
+  ]
+
+  functionPatterns.forEach(pattern => {
+    pattern.lastIndex = 0
+    while ((match = pattern.exec(html)) !== null) {
+      const url = match[1]
+      if ((url.includes('.m3u8') || url.includes('.mp4')) && validateUrl(url).isValid) {
+        urls.push({
+          type: 'vidmoly_function',
+          url: url,
+          quality: parseQuality(url)
+        })
+      }
+    }
+  })
+
+  return urls
+}
+
+// Optimized URL extraction with early termination
+async function extractVideoUrls(html: string): Promise<{ type: string; url: string; quality?: string }[]> {
   // Early size check to prevent processing huge documents
   if (html.length > EXTRACTION_CONFIG.MAX_HTML_SIZE) {
     console.warn(`⚠️ HTML too large (${html.length} bytes), truncating to ${EXTRACTION_CONFIG.MAX_HTML_SIZE} bytes`)
@@ -223,14 +290,66 @@ async function extractVideoUrls(html: string): Promise<{ type: string; url: stri
 
   const urls: { type: string; url: string; quality?: string }[] = []
   const uniqueUrls = new Set<string>()
+  const startTime = Date.now()
+  let totalUrlsFound = 0
+  const MAX_TOTAL_URLS = 10 // Limit total URLs for performance
 
   try {
-    // Single-pass extraction with async iterator for memory efficiency
-    for await (const urlData of iterateMatches(html, VIDEO_URL_PATTERNS)) {
-      // Deduplicate URLs
-      if (!uniqueUrls.has(urlData.url)) {
-        uniqueUrls.add(urlData.url)
-        urls.push(urlData)
+    // Special handling for VidMoly - analyze JavaScript first
+    if (html.includes('vidmoly') || html.includes('VidMoly')) {
+      console.log('🎯 VidMoly detected, applying special JavaScript analysis...')
+      const vidmolyUrls = analyzeVidMolyJavaScript(html)
+      vidmolyUrls.forEach(urlData => {
+        if (!uniqueUrls.has(urlData.url)) {
+          uniqueUrls.add(urlData.url)
+          urls.push(urlData)
+          totalUrlsFound++
+          console.log(`✅ VidMoly URL found: ${urlData.url}`)
+        }
+      })
+    }
+
+    // Process patterns efficiently
+    for (const pattern of VIDEO_URL_PATTERNS) {
+      if (Date.now() - startTime > EXTRACTION_CONFIG.PROCESSING_TIMEOUT) {
+        console.warn('⚠️ URL extraction timeout reached, stopping')
+        break
+      }
+
+      if (totalUrlsFound >= MAX_TOTAL_URLS) {
+        break
+      }
+
+      pattern.regex.lastIndex = 0
+      let match
+      let patternUrlsFound = 0
+      const MAX_PER_PATTERN = 3 // Limit URLs per pattern
+
+      while ((match = pattern.regex.exec(html)) !== null && patternUrlsFound < MAX_PER_PATTERN) {
+        const candidate = match[1] || match[0]
+
+        // Convert relative URLs to absolute URLs for specific providers
+        let processedCandidate = candidate
+        if (pattern.type === 'sibnet_relative' && !candidate.startsWith('http')) {
+          processedCandidate = `https://video.sibnet.ru${candidate.startsWith('/') ? '' : '/'}${candidate}`
+        }
+
+        const validation = validateUrl(processedCandidate)
+
+        if (validation.isValid && validation.url && !uniqueUrls.has(validation.url)) {
+          uniqueUrls.add(validation.url)
+          urls.push({
+            type: pattern.type,
+            url: validation.url,
+            quality: parseQuality(validation.url)
+          })
+          totalUrlsFound++
+          patternUrlsFound++
+        }
+
+        if (totalUrlsFound >= MAX_TOTAL_URLS) {
+          break
+        }
       }
     }
   } catch (error) {
@@ -276,15 +395,53 @@ export default defineEventHandler(async (event) => {
     // Get optional referer parameter
     const referer = query.referer as string
     
+    // Create cache key based on URL and referer
+    const cacheKey = `resolve:${Buffer.from(url + (referer || '')).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`
+    
+    // Check cache first
+    const cache = getRedisCache()
+    const cachedResult = await cache.get(cacheKey)
+    if (cachedResult) {
+      console.log('✅ Cache hit for resolve:', url)
+      return cachedResult
+    }
+    
+    // Cache miss - perform resolution
+    const resolutionResult = await performResolution(url, referer, query)
+    
+    // Cache successful results for 10 minutes
+    if (resolutionResult.ok && resolutionResult.urls.length > 0) {
+      await cache.set(cacheKey, resolutionResult, REDIS_CACHE_TTL.GENERAL)
+    }
+    
+    return resolutionResult
+    
+  } catch (error: any) {
+    console.error('❌ Resolve error:', error)
+    return {
+      ok: false,
+      urls: [],
+      message: `Error: ${error.message}`
+    }
+  }
+})
+
+// Separate function for the actual resolution logic
+async function performResolution(url: string, referer: string, query: any) {
     // Fetch the URL content
     const headers: Record<string, string> = {
-      'User-Agent': getHeader(event, 'user-agent') || 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.5',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+      'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
       'Accept-Encoding': 'gzip, deflate, br',
       'DNT': '1',
       'Connection': 'keep-alive',
       'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Cache-Control': 'max-age=0'
     }
     
     // Add referer if provided
@@ -294,7 +451,7 @@ export default defineEventHandler(async (event) => {
     
     // Create AbortController for timeout
     const controller = new AbortController()
-    const timeoutMs = 5000 // 5 second timeout for faster failure recovery
+    const timeoutMs = 3000 // Reduced to 3 seconds for faster failure recovery
     const timeoutId = setTimeout(() => {
       controller.abort()
     }, timeoutMs)
@@ -392,13 +549,4 @@ export default defineEventHandler(async (event) => {
         }
       }
     }
-    
-  } catch (error: any) {
-    console.error('❌ Resolve error:', error)
-    return {
-      ok: false,
-      urls: [],
-      message: `Error: ${error.message}`
-    }
-  }
-})
+}

@@ -1813,18 +1813,18 @@ function getLanguageName(langCode: string): string {
   }
   return names[langCode] || langCode.toUpperCase()
 }
-async function resolveSourcesForLanguage(targetLang: string, candidateUrls: string[]): Promise<{ type: string; url: string; directUrl: string; proxiedUrl: string; quality?: string }[]> {
+async function resolveSourcesImmediately(candidateUrls: string[], targetLang: string) {
   let candidates = candidateUrls
-  if (!candidates.length) return []
+  if (!candidates.length) return
 
   // Sort candidates by provider reliability (best first) for faster success
   candidates = candidates.sort((a, b) => {
     const getReliability = (url: string) => {
       try {
         const hostname = new URL(url).hostname.toLowerCase()
-        if (hostname.includes('sibnet')) return 10
+        if (hostname.includes('vidmoly')) return 10
         if (hostname.includes('streamtape')) return 8
-        if (hostname.includes('vidmoly')) return 7
+        if (hostname.includes('sibnet')) return 7
         if (hostname.includes('uqload')) return 5
         if (hostname.includes('doodstream')) return 4
         if (hostname.includes('myvi')) return 3
@@ -1837,14 +1837,130 @@ async function resolveSourcesForLanguage(targetLang: string, candidateUrls: stri
     return getReliability(b) - getReliability(a)
   })
 
-  // Try candidates sequentially for better reliability (less server load)
-  let resolvedUrls: any[] = []
-  let lastError = ''
+  // Try candidates in parallel and start playback immediately when one works
+  const maxCandidates = Math.min(candidates.length, 3)
+  const resolvePromises = candidates.slice(0, maxCandidates).map(async (targetUrl, index) => {
+    if (!targetUrl) return null
 
-  // Process candidates sequentially to avoid overwhelming servers
-  for (let i = 0; i < Math.min(candidates.length, 3); i++) {
-    const targetUrl = candidates[i]
-    if (!targetUrl) continue
+    try {
+      const encoder = new TextEncoder()
+      const data = encoder.encode(targetUrl)
+      const base64 = btoa(String.fromCharCode(...data))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "")
+
+      let referer: string | undefined
+      try {
+        const u = new URL(targetUrl)
+        referer = u.origin + "/"
+      } catch {}
+
+      const resolveResponse = await $fetch<any>("/api/player/resolve", {
+        params: {
+          u64: base64,
+          referer,
+          ...(debug.value ? { debug: "1" } : {}),
+        },
+        timeout: 1500, // Fast timeout for immediate playback
+      })
+
+      if (resolveResponse?.ok && resolveResponse?.urls?.length > 0) {
+        // Immediately start playback with the first working source
+        if (!playUrl.value) {
+          resolvedList.value = resolveResponse.urls
+          resolvedSourcesByLanguage.value[targetLang] = {
+            sources: resolveResponse.urls,
+            resolvedAt: Date.now(),
+            episode: episodeNum.value,
+            season: season.value
+          }
+
+          currentSourceIndex.value = 0
+          const hlsFirst = resolveResponse.urls.find((u: any) => u.type === "hls") || resolveResponse.urls[0]
+          if (hlsFirst) {
+            playUrl.value = hlsFirst.proxiedUrl || hlsFirst.url
+            console.log(`🎬 Started playback immediately with provider ${index + 1}`)
+          }
+        }
+
+        return resolveResponse.urls
+      }
+    } catch (error: any) {
+      // Continue to next candidate
+    }
+    return null
+  })
+
+  // Wait for all to complete to get the full list
+  const results = await Promise.allSettled(resolvePromises)
+  const allSources: any[] = []
+
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value) {
+      allSources.push(...result.value)
+    }
+  }
+
+  // Update with all available sources if we got more than what we started with
+  if (allSources.length > (resolvedList.value?.length || 0)) {
+    // Remove duplicates
+    const uniqueSources = new Map<string, any>()
+    for (const source of allSources) {
+      if (!uniqueSources.has(source.url)) {
+        uniqueSources.set(source.url, source)
+      }
+    }
+
+    const finalSources = Array.from(uniqueSources.values()).sort((a, b) => {
+      const reliabilityA = a.provider?.reliability || 0
+      const reliabilityB = b.provider?.reliability || 0
+      return reliabilityB - reliabilityA
+    })
+
+    resolvedList.value = finalSources
+    resolvedSourcesByLanguage.value[targetLang] = {
+      sources: finalSources,
+      resolvedAt: Date.now(),
+      episode: episodeNum.value,
+      season: season.value
+    }
+  }
+
+  // If no sources worked at all, show error
+  if (!playUrl.value && allSources.length === 0) {
+    resolveError.value = "Aucune source vidéo trouvée"
+  }
+}
+
+async function resolveSourcesForLanguage(targetLang: string, candidateUrls: string[]): Promise<{ type: string; url: string; directUrl: string; proxiedUrl: string; quality?: string }[]> {
+  let candidates = candidateUrls
+  if (!candidates.length) return []
+
+  // Sort candidates by provider reliability (best first) for faster success
+  candidates = candidates.sort((a, b) => {
+    const getReliability = (url: string) => {
+      try {
+        const hostname = new URL(url).hostname.toLowerCase()
+        if (hostname.includes('vidmoly')) return 10
+        if (hostname.includes('streamtape')) return 8
+        if (hostname.includes('sibnet')) return 7
+        if (hostname.includes('uqload')) return 5
+        if (hostname.includes('doodstream')) return 4
+        if (hostname.includes('myvi')) return 3
+        if (hostname.includes('sendvid')) return 1
+        return 0
+      } catch {
+        return 0
+      }
+    }
+    return getReliability(b) - getReliability(a)
+  })
+
+  // Test up to 3 candidates in parallel for much faster resolution
+  const maxCandidates = Math.min(candidates.length, 3)
+  const testPromises = candidates.slice(0, maxCandidates).map(async (targetUrl, index) => {
+    if (!targetUrl) return null
 
     try {
       // Resolve the provider URL to actual video stream
@@ -1868,31 +1984,85 @@ async function resolveSourcesForLanguage(targetLang: string, candidateUrls: stri
             referer,
             ...(debug.value ? { debug: "1" } : {}),
           },
-          timeout: 4000, // Reduced to 4s for faster failure detection
+          timeout: 1500, // Reduced to 1.5s for faster parallel resolution
         })
 
         if (resolveResponse?.ok && resolveResponse?.urls?.length > 0) {
-          resolvedUrls = resolveResponse.urls
-          break // Use the first successful result
+          return { urls: resolveResponse.urls, index }
         } else {
           const error = resolveResponse?.message || "No URLs found"
-          console.warn(`❌ Candidate ${i + 1} failed for ${targetLang}: ${error}`)
-          lastError = error
+          console.warn(`❌ Candidate ${index + 1} failed for ${targetLang}: ${error}`)
+          return null
         }
       } catch (resolveError: any) {
         const errorMsg = resolveError?.message || 'Network error during resolution'
-        console.warn(`❌ Candidate ${i + 1} resolution error for ${targetLang}: ${errorMsg}`)
-        lastError = errorMsg
+        console.warn(`❌ Candidate ${index + 1} resolution error for ${targetLang}: ${errorMsg}`)
+        return null
       }
     } catch (error: any) {
       const errorMsg = error?.message || 'Network error'
-      console.warn(`❌ Candidate ${i + 1} error for ${targetLang}: ${errorMsg}`)
-      lastError = errorMsg
+      console.warn(`❌ Candidate ${index + 1} error for ${targetLang}: ${errorMsg}`)
+      return null
+    }
+  })
+
+  // Wait for all parallel requests to complete
+  const results = await Promise.allSettled(testPromises)
+
+  // Find the first successful result (preferring higher reliability)
+  let resolvedUrls: any[] = []
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value?.urls) {
+      resolvedUrls = result.value.urls
+      break // Use the first successful result
     }
   }
 
   if (resolvedUrls.length === 0) {
-    throw new Error(lastError || "Toutes les sources ont échoué")
+    // If no parallel requests succeeded, try one more time sequentially with longer timeout
+    console.warn(`⚠️ All parallel requests failed for ${targetLang}, trying sequential fallback...`)
+    for (let i = 0; i < maxCandidates; i++) {
+      const targetUrl = candidates[i]
+      if (!targetUrl) continue
+
+      try {
+        const encoder = new TextEncoder()
+        const data = encoder.encode(targetUrl)
+        const base64 = btoa(String.fromCharCode(...data))
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/, "")
+
+        let referer: string | undefined
+        try {
+          const u = new URL(targetUrl)
+          referer = u.origin + "/"
+        } catch {}
+
+        const resolveResponse = await $fetch<any>("/api/player/resolve", {
+          params: {
+            u64: base64,
+            referer,
+            ...(debug.value ? { debug: "1" } : {}),
+          },
+          timeout: 3000, // Longer timeout for fallback
+        })
+
+        if (resolveResponse?.ok && resolveResponse?.urls?.length > 0) {
+          resolvedUrls = resolveResponse.urls
+          break
+        }
+      } catch (error: any) {
+        // Continue to next candidate
+      }
+    }
+  }
+
+  if (resolvedUrls.length === 0) {
+    const errors = results
+      .filter(r => r.status === 'rejected')
+      .map(r => (r as PromiseRejectedResult).reason?.message || 'Unknown error')
+    throw new Error(`Toutes les sources ont échoué: ${errors.join(', ')}`)
   }
 
   return resolvedUrls
@@ -1969,14 +2139,11 @@ async function resolveEpisode() {
       return
     }
 
-    const currentLangSources = await resolveSourcesForLanguage(lang.value, epUrls)
-    resolvedList.value = currentLangSources
-    resolvedSourcesByLanguage.value[lang.value] = {
-      sources: currentLangSources,
-      resolvedAt: Date.now(),
-      episode: episodeNum.value,
-      season: season.value
-    }
+    // Start resolving sources immediately and begin playback as soon as one works
+    resolveSourcesImmediately(epUrls, lang.value).catch(error => {
+      console.error('Failed to resolve sources:', error)
+      resolveError.value = 'Erreur de résolution des sources'
+    })
 
     // Pre-resolve sources for other available languages in background
     const availableLangs = languageResults.filter(r => r.hasCurrentEpisode && r.lang !== lang.value)
@@ -2000,15 +2167,6 @@ async function resolveEpisode() {
           resolvingLanguages.value.delete(otherLang)
         })
       }
-    }
-
-    currentSourceIndex.value = 0
-    const hlsFirst = resolvedList.value.find((u: any) => u.type === "hls") || resolvedList.value[0]
-    if (hlsFirst) {
-      playUrl.value = hlsFirst.proxiedUrl || hlsFirst.url
-    } else {
-      resolveError.value = "Aucune source vidéo trouvée"
-      return
     }
   } catch (e: any) {
     resolveError.value = e?.message || 'Erreur de résolution'
@@ -2035,11 +2193,10 @@ async function preloadNextEpisode() {
     const nextEpisode = episodes.find((ep: any) => ep.episode === nextEpisodeNum)
 
     if (nextEpisode && nextEpisode.urls && nextEpisode.urls.length > 0) {
-      // Pre-resolve the next episode URLs in background
-      const firstUrl = nextEpisode.urls[0]
-
-      // Start background resolution (don't await)
+      // Pre-resolve the next episode URLs in background without blocking UI
+      console.log(`🔄 Preloading next episode ${nextEpisodeNum}...`)
       resolveEpisodeInBackground(id.value, season.value, lang.value, nextEpisodeNum, nextEpisode.urls)
+        .then(() => console.log(`✅ Next episode ${nextEpisodeNum} preloaded`))
         .catch(error => console.debug('Background preload failed:', error))
     }
   } catch (error) {
@@ -2055,9 +2212,9 @@ async function resolveEpisodeInBackground(animeId: string, season: string, lang:
     const getReliability = (url: string) => {
       try {
         const hostname = new URL(url).hostname.toLowerCase()
-        if (hostname.includes('sibnet')) return 10
+        if (hostname.includes('vidmoly')) return 10
         if (hostname.includes('streamtape')) return 8
-        if (hostname.includes('vidmoly')) return 7
+        if (hostname.includes('sibnet')) return 7
         if (hostname.includes('uqload')) return 5
         if (hostname.includes('doodstream')) return 4
         if (hostname.includes('myvi')) return 3
